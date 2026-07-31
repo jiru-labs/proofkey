@@ -52,7 +52,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
   shadow.append(badge);
 
   const card: SuggestionCard = createCard(shadow, {
-    apply: (suggestion) => applySuggestion(suggestion),
+    apply: (suggestion) => void applySuggestion(suggestion),
     dismiss: (suggestion) => {
       session?.dismissed.add(suggestion.id);
       rebuild();
@@ -254,11 +254,11 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
 
   // ---------------------------------------------------------------- applying
 
-  function applySuggestion(suggestion: Suggestion): void {
+  async function applySuggestion(suggestion: Suggestion): Promise<void> {
     if (!session) return;
     const active = session;
 
-    const applied = applyToTarget(
+    const applied = await applyToTarget(
       active.field.kind === 'input'
         ? {
             kind: 'input',

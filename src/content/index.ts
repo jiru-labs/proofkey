@@ -120,7 +120,7 @@ async function invoke(actionId: string): Promise<void> {
       return;
     }
 
-    const applied = applyToTarget(target, result.value.text);
+    const applied = await applyToTarget(target, result.value.text);
     if (!applied) {
       // Rather than lose the result, hand it over so it can still be pasted.
       await navigator.clipboard.writeText(result.value.text).catch(() => undefined);

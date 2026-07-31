@@ -234,6 +234,7 @@ async function run() {
     if (field === 'rich') {
       check('bold survives whole-field rewrite', await page.evaluate(() => !!document.querySelector('#rich strong')));
     }
+
     await page.screenshot({ path: `${SHOTS}${field}-invoke.png` });
   }
 
