@@ -23,7 +23,9 @@
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types tools/diff-check.ts",
     "test:render": "vite build --config vite.harness.config.ts && node tools/render-test.mjs",
-    "serve": "python3 -m http.server 8777 --bind 127.0.0.1"
+    "serve": "python3 -m http.server 8777 --bind 127.0.0.1",
+    "test:ext": "node tools/extension-test.mjs",
+    "verify": "npm run typecheck && npm test && npm run build && npm run test:render && npm run test:ext"
   },
   "devDependencies": {
     "@lexical/history": "^0.49.0",

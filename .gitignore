@@ -8,3 +8,5 @@ dist/
 .vite/
 .test-shots/
 tools/lexical-editor.js
+.test-ext/
+.test-profile/
