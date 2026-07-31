@@ -6,3 +6,4 @@ dist/
 .env.*
 *.log
 .vite/
+.test-shots/
