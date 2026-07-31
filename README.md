@@ -18,7 +18,8 @@ Grammarly and LanguageTool are excellent, and both route your writing through th
 - **Editable prompts.** Every built-in action is a prompt you can rewrite, and you can add your own.
 - **34 providers** prefilled, plus a free-form Custom option for any OpenAI-compatible endpoint.
 - **Fallback chain.** Put a local model first and a cloud key second; ProofKey moves down the list when one fails, and tells you which one failed.
-- **Careful Spanish.** The proofreading prompt handles subjunctive triggers, gender/number agreement, diacritics, queísmo/dequeísmo, impersonal *haber*, and — importantly — preserves the author's regional variety instead of flattening Peninsular into Latin American or vice versa.
+- **Any language the model knows.** The interface is English; the text doesn't have to be. The prompts are written to detect the language and work inside it — including text that mixes two languages, which rule-based checkers cannot handle at all.
+- **Doesn't flatten your voice.** Regional variety (en-GB/en-US, pt-BR/pt-PT, zh-Hans/zh-Hant) and politeness register (tú/usted, du/Sie, tu/vous, Japanese registers) are treated as choices to preserve, not errors to normalise.
 
 ## Install (unpacked)
 

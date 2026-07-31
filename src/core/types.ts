@@ -155,6 +155,29 @@ export interface LiveCheckSettings {
   dictionary: string[];
 }
 
+/**
+ * The user's own writing rules, injected into every action.
+ *
+ * This is the thing rule-based checkers make expensive: LanguageTool needs XML
+ * files and a self-hosted server to enforce house terminology, and its personal
+ * dictionary cannot even hold a multi-word phrase. Against a language model the
+ * same requirement is a paragraph of prose and a list of strings.
+ */
+export interface WritingProfile {
+  /** Free-text house rules, e.g. "We write e-mail, not email. Avoid superlatives." */
+  styleGuide: string;
+  /** Terms never to flag or alter: brand names, product names, jargon. Phrases allowed. */
+  neverFlag: string[];
+  /**
+   * The author's first language, in English, e.g. "Portuguese". When set, the
+   * model is told to watch for the interference errors typical of its speakers —
+   * something no per-language ruleset can express.
+   */
+  nativeLanguage: string;
+  /** Language for explanations. Empty means explain in the text's own language. */
+  explainLanguage: string;
+}
+
 export interface Settings {
   schemaVersion: number;
   connections: Connection[];
@@ -165,6 +188,7 @@ export interface Settings {
   builtInOverrides: Record<string, BuiltInOverride>;
   /** Action run by the keyboard shortcut and the inline card's main button. */
   defaultActionId: string;
+  profile: WritingProfile;
   liveCheck: LiveCheckSettings;
 }
 
