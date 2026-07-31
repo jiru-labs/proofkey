@@ -215,10 +215,25 @@ function closestEditableHost(node: Node): HTMLElement | null {
 // ----------------------------------------------------------------- write
 
 /** Returns false when the text could not be written, so the caller can fall back. */
-export function applyToTarget(target: EditTarget, text: string): boolean {
+export async function applyToTarget(target: EditTarget, text: string): Promise<boolean> {
   if (target.kind === 'readonly') return false;
   if (target.kind === 'input') return applyToInput(target.node, target.start, target.end, text);
   return applyToContentEditable(target, text);
+}
+
+/**
+ * Waits for the editor to actually commit an edit.
+ *
+ * Frameworks queue DOM updates: Lexical (WhatsApp Web) applies `execCommand`
+ * through its own model and flushes later. Reading the DOM straight after the
+ * command shows the *previous* state, so a synchronous check passes no matter
+ * how wrong the edit was. Two frames covers a microtask flush and the render
+ * that follows it.
+ */
+function settle(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
 }
 
 function applyToInput(node: TextInput, start: number, end: number, text: string): boolean {
@@ -262,10 +277,10 @@ function applyToInput(node: TextInput, start: number, end: number, text: string)
  * on a hostile one formatting is lost but the text is right. Wrong text is never
  * an acceptable outcome.
  */
-function applyToContentEditable(
+async function applyToContentEditable(
   target: Extract<EditTarget, { kind: 'contenteditable' }>,
   replacement: string,
-): boolean {
+): Promise<boolean> {
   const { node, start, end } = target;
   node.focus();
 
@@ -277,8 +292,12 @@ function applyToContentEditable(
   if (original === replacement) return true;
 
   const changes = diffWords(original, replacement);
-  if (changes && changes.length > 0) {
-    if (applyChanges(node, selection, start, original, replacement, changes)) return true;
+
+  // Each surgical edit is a chance for an editor to place text somewhere we did
+  // not ask for. A handful is worth the formatting it preserves; fifteen is not,
+  // and a rewrite that large has usually restructured the text anyway.
+  if (changes && changes.length > 0 && changes.length <= MAX_SURGICAL_EDITS) {
+    if (await applyChanges(node, selection, start, original, replacement, changes)) return true;
   }
 
   // Recomputed from the original text, so it is correct no matter how far the
@@ -286,15 +305,17 @@ function applyToContentEditable(
   return replaceEverything(node, selection, before.slice(0, start) + replacement + before.slice(end));
 }
 
+const MAX_SURGICAL_EDITS = 4;
+
 /** Returns false the moment the document stops matching what we expect. */
-function applyChanges(
+async function applyChanges(
   node: HTMLElement,
   selection: Selection,
   start: number,
   original: string,
   replacement: string,
   changes: Change[],
-): boolean {
+): Promise<boolean> {
   let delta = 0;
 
   for (const change of changes) {
@@ -317,6 +338,9 @@ function applyChanges(
       : document.execCommand('delete');
     if (!applied) return false;
 
+    // Without this the next check reads pre-edit DOM and passes vacuously.
+    await settle();
+
     delta += change.replacement.length - (change.end - change.start);
   }
 
@@ -329,7 +353,11 @@ function applyChanges(
  * own Ctrl+A takes and therefore the one a framework editor keeps in sync with
  * its internal model.
  */
-function replaceEverything(node: HTMLElement, selection: Selection, text: string): boolean {
+async function replaceEverything(
+  node: HTMLElement,
+  selection: Selection,
+  text: string,
+): Promise<boolean> {
   node.focus();
 
   if (!document.execCommand('selectAll')) {
@@ -339,7 +367,14 @@ function replaceEverything(node: HTMLElement, selection: Selection, text: string
     selection.addRange(range);
   }
 
+  // An editor that keeps its own selection learns about this one from a
+  // `selectionchange` event, which is dispatched asynchronously. Inserting
+  // immediately means it still believes the caret is where it last left it,
+  // and the replacement lands there instead of over the selection.
+  await settle();
+
   if (document.execCommand('insertText', false, text)) {
+    await settle();
     if (flatten(node).text.trim() === text.trim()) return true;
   }
 
@@ -350,6 +385,7 @@ function replaceEverything(node: HTMLElement, selection: Selection, text: string
   node.dispatchEvent(
     new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }),
   );
+  await settle();
 
   return flatten(node).text.trim() === text.trim();
 }
