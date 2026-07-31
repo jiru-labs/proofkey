@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ProofKey playground</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f7f8fa;
+        --surface: #fff;
+        --fg: #1f2430;
+        --muted: #626b7d;
+        --border: #dfe3ea;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #101218;
+          --surface: #191c24;
+          --fg: #e8eaef;
+          --muted: #99a1b3;
+          --border: #2a2f3a;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      main { max-width: 720px; margin: 0 auto; padding: 40px 24px 120px; }
+      h1 { font-size: 24px; margin: 0 0 4px; }
+      .lede { color: var(--muted); margin: 0 0 28px; }
+      section {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 18px 20px;
+        margin-bottom: 18px;
+      }
+      h2 { font-size: 15px; margin: 0 0 2px; }
+      .why { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+      textarea, input[type="text"], input[type="password"], .rich {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: var(--bg);
+        color: var(--fg);
+        font: inherit;
+      }
+      textarea { min-height: 96px; resize: vertical; }
+      .rich { min-height: 84px; }
+      .rich:focus, textarea:focus, input:focus { outline: 2px solid #4f46e5; outline-offset: -1px; }
+      ol { padding-left: 20px; }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px;
+        background: var(--bg);
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      .ok { color: #15803d; }
+      @media (prefers-color-scheme: dark) { .ok { color: #4ade80; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>ProofKey playground</h1>
+      <p class="lede">
+        Deliberately broken text in different field types. Select some, then right-click →
+        <strong>ProofKey</strong>, or press <code>Ctrl+Shift+K</code> with the cursor in a field.
+      </p>
+
+      <section>
+        <h2>Plain textarea</h2>
+        <p class="why">The easy case. Should just work.</p>
+        <textarea>
+i has been working on this projet since last week and their is still alot of things to do. we should of started earlier but the team dont have enough time. Its going good tho.</textarea>
+      </section>
+
+      <section>
+        <h2>Single-line input</h2>
+        <p class="why">
+          Selection offsets in a one-line field. Expect <code>too</code> → <code>to</code>,
+          <code>meating</code> → <code>meeting</code>, <code>thursday</code> →
+          <code>Thursday</code>. Nothing else should move.
+        </p>
+        <input
+          type="text"
+          value="Hi team, just wanted too let you know the meating is moved to thursday"
+        />
+      </section>
+
+      <section>
+        <h2>contenteditable</h2>
+        <p class="why">
+          The rich-text path. Formatting below must survive — if the
+          <strong>bold</strong> disappears, replacement is destroying the DOM.
+        </p>
+        <div class="rich" contenteditable="true">
+          Our <strong>quarterly report</strong> show that revenue have increased by 12%, wich is
+          better then we expected. The team have done a excellent job this quarter.
+        </div>
+      </section>
+
+      <section>
+        <h2>Not English</h2>
+        <p class="why">
+          Each is broken in ways specific to its own language. Nothing should get translated, and
+          the regional variety of each should survive.
+        </p>
+        <textarea>
+Espero que puedes venir mañana, seria genial verte. Hay muchas cosas que quiero contarte y creo que te van a gustar.</textarea>
+        <br /><br />
+        <textarea>
+Je pense que nous devons parler de ce probleme avant qu'il devient plus grave. Est-ce que tu es libre demain matin?</textarea>
+        <br /><br />
+        <textarea>
+Ich habe gestern mit dem Team gesprochen und wir sind uns einig, das wir mehr Zeit brauchen. Können wir die Deadline verschieben?</textarea>
+      </section>
+
+      <section>
+        <h2>Mixed languages</h2>
+        <p class="why">
+          Code-switching. A rule-based checker detects one language and mangles the other; this
+          should fix both and keep the mixture.
+        </p>
+        <textarea>
+Hola! Just a quick heads up que el deploy esta scheduled para mañana. Si tenes algun problema, avisame y lo vemos together.</textarea>
+      </section>
+
+      <section>
+        <h2>Style guide test</h2>
+        <p class="why">
+          Put this in Settings → Your writing rules → Style guide:
+          <code>We write "e-mail", not "email". Never use "utilise" — say "use".</code>
+          Then fix the text below. Both should change even though neither is an error.
+        </p>
+        <textarea>
+Please email me the report so I can utilise it in tomorrow's meeting.</textarea>
+      </section>
+
+      <section>
+        <h2>Never-change test</h2>
+        <p class="why">
+          Add <code>ProofKey</code> and <code>Jiru Labs</code> to Settings → Never change these.
+          They should survive untouched.
+        </p>
+        <textarea>
+we are buildng ProofKey at Jiru Labs and its going to be relased soon.</textarea>
+      </section>
+
+      <section>
+        <h2>Password field <span class="ok">— must be refused</span></h2>
+        <p class="why">
+          Put the cursor here and press <code>Ctrl+Shift+K</code>. ProofKey must refuse rather than
+          send this anywhere. If it processes this field, that is a serious bug.
+        </p>
+        <input type="password" value="hunter2 correct horse battery staple" />
+      </section>
+
+      <section>
+        <h2>What to watch for</h2>
+        <ol>
+          <li>Does the replacement land in the right place?</li>
+          <li>Does <code>Ctrl+Z</code> undo it in one step?</li>
+          <li>Does the bold text in the contenteditable box survive?</li>
+          <li>Did anything get translated that should not have been?</li>
+          <li>Did the password field get refused?</li>
+        </ol>
+      </section>
+    </main>
+  </body>
+</html>

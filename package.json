@@ -20,7 +20,8 @@
   "scripts": {
     "build": "vite build && vite build --config vite.content.config.ts",
     "dev": "npm run build -- --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types tools/diff-check.ts"
   },
   "devDependencies": {
     "@types/chrome": "^0.2.4",
