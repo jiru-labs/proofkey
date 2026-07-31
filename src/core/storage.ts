@@ -1,5 +1,5 @@
 import { getPreset, PRESETS } from './presets';
-import { BUILT_IN_ACTIONS, DEFAULT_ACTION_ID } from './prompts';
+import { BUILT_IN_ACTIONS, DEFAULT_ACTION_ID, emptyProfile } from './prompts';
 import type { Connection, PresetId, Settings, WritingAction } from './types';
 
 export const SCHEMA_VERSION = 1;
@@ -42,6 +42,7 @@ export function defaultSettings(): Settings {
     customActions: [],
     builtInOverrides: {},
     defaultActionId: DEFAULT_ACTION_ID,
+    profile: emptyProfile(),
     liveCheck: {
       enabledOrigins: [],
       blockedOrigins: [],
@@ -64,6 +65,7 @@ export async function loadSettings(): Promise<Settings> {
   return {
     ...defaults,
     ...raw,
+    profile: { ...defaults.profile, ...(raw.profile ?? {}) },
     liveCheck: { ...defaults.liveCheck, ...(raw.liveCheck ?? {}) },
     connections: raw.connections?.length ? raw.connections : defaults.connections,
     activeConnectionId: raw.activeConnectionId ?? defaults.activeConnectionId,
