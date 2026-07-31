@@ -10,8 +10,11 @@
 /** Content script → service worker. */
 export type ContentRequest =
   | { type: 'proofkey:run'; actionId: string; text: string }
+  | { type: 'proofkey:check'; sentences: string[] }
   | { type: 'proofkey:explain'; original: string; replacement: string }
   | { type: 'proofkey:open-options' }
+  | { type: 'proofkey:set-live'; enabled: boolean }
+  | { type: 'proofkey:add-word'; word: string }
   | { type: 'proofkey:get-state' };
 
 /** Service worker → content script. */
@@ -22,6 +25,11 @@ export type WorkerRequest =
   | { type: 'proofkey:toggle-live' };
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
+
+export interface CheckResult {
+  /** One corrected sentence per input, in the same order. */
+  corrections: string[];
+}
 
 export interface RunResult {
   text: string;

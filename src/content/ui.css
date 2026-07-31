@@ -121,3 +121,199 @@
     color: #e8eaef;
   }
 }
+
+/* ------------------------------------------------- underlines and overlay */
+
+.pk-overlay {
+  position: fixed;
+  z-index: 2147483646;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+
+/*
+ * Mirrors the field's own text so the underlines land under the right glyphs.
+ * The text itself must be invisible but still occupy exactly the same space,
+ * so it is made transparent rather than hidden.
+ */
+.pk-overlay__content {
+  color: transparent;
+  margin: 0;
+  border-style: solid;
+  border-color: transparent;
+  overflow-wrap: break-word;
+}
+
+.pk-u {
+  color: transparent;
+  text-decoration: underline wavy #d92d20;
+  text-decoration-skip-ink: none;
+  background-color: rgba(217, 45, 32, 0.08);
+}
+
+.pk-u--style {
+  text-decoration-color: #2970ff;
+  background-color: rgba(41, 112, 255, 0.08);
+}
+
+/* ------------------------------------------------------------------ badge */
+
+.pk-badge {
+  position: fixed;
+  z-index: 2147483647;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #4f46e5;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(15, 20, 35, 0.3);
+}
+
+.pk-badge--clean {
+  background: #15803d;
+}
+
+.pk-badge--error {
+  background: #b45309;
+}
+
+.pk-badge--checking {
+  background: #8a93a6;
+  animation: pk-pulse 1s ease-in-out infinite;
+}
+
+@keyframes pk-pulse {
+  50% { opacity: 0.45; }
+}
+
+/* ------------------------------------------------------------------- card */
+
+.pk-card {
+  position: fixed;
+  z-index: 2147483647;
+  width: 320px;
+  padding: 12px 14px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+  color: #1f2430;
+  box-shadow: 0 8px 28px rgba(15, 20, 35, 0.2);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13.5px;
+  line-height: 1.5;
+  animation: pk-rise 120ms ease-out;
+}
+
+.pk-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.pk-chip {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: rgba(217, 45, 32, 0.12);
+  color: #b42318;
+}
+
+.pk-chip--style {
+  background: rgba(41, 112, 255, 0.12);
+  color: #1849a9;
+}
+
+.pk-card__close {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #8a93a6;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pk-card__change {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.pk-card__before {
+  text-decoration: line-through;
+  color: #8a93a6;
+}
+
+.pk-card__arrow {
+  color: #8a93a6;
+}
+
+.pk-card__after {
+  font-weight: 700;
+}
+
+.pk-card__explanation {
+  margin: 0 0 10px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(0, 0, 0, 0.07);
+  color: #4a5262;
+  font-size: 13px;
+}
+
+.pk-card__actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pk-btn {
+  padding: 5px 11px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #4f46e5;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pk-btn--primary {
+  background: #4f46e5;
+  color: #fff;
+}
+
+.pk-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+@media (prefers-color-scheme: dark) {
+  .pk-card {
+    background: #1c1f28;
+    color: #e8eaef;
+    border-color: rgba(255, 255, 255, 0.09);
+  }
+  .pk-card__explanation {
+    color: #b6bdcc;
+    border-top-color: rgba(255, 255, 255, 0.09);
+  }
+}

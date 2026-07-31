@@ -50,7 +50,7 @@ interface Chunk {
   end: number;
 }
 
-interface FlatText {
+export interface FlatText {
   text: string;
   chunks: Chunk[];
 }
@@ -61,7 +61,7 @@ interface FlatText {
  * Block boundaries and `<br>` become newlines; those positions belong to no
  * text node and are therefore not editable targets.
  */
-function flatten(root: HTMLElement): FlatText {
+export function flatten(root: HTMLElement): FlatText {
   const chunks: Chunk[] = [];
   let text = '';
 
@@ -96,7 +96,7 @@ function locate(flat: FlatText, offset: number): { node: Text; offset: number } 
   return null;
 }
 
-function rangeFor(flat: FlatText, start: number, end: number): Range | null {
+export function rangeFor(flat: FlatText, start: number, end: number): Range | null {
   const from = locate(flat, start);
   const to = locate(flat, end);
   if (!from || !to) return null;
@@ -111,7 +111,7 @@ function rangeFor(flat: FlatText, start: number, end: number): Range | null {
   return range;
 }
 
-function offsetOfPoint(flat: FlatText, node: Node, offset: number): number | null {
+export function offsetOfPoint(flat: FlatText, node: Node, offset: number): number | null {
   if (node.nodeType !== Node.TEXT_NODE) return null;
   const chunk = flat.chunks.find((candidate) => candidate.node === node);
   return chunk ? chunk.start + Math.min(offset, chunk.node.data.length) : null;

@@ -1,4 +1,5 @@
-import { askWorker, type RunResult, type WorkerRequest } from '../core/messages';
+import { askWorker, type ContentState, type RunResult, type WorkerRequest } from '../core/messages';
+import { createLive, type LiveController } from './live';
 import { applyToTarget, readTarget, type EditTarget } from './target';
 import { toast } from './toast';
 import css from './ui.css?inline';
@@ -44,12 +45,44 @@ chrome.runtime.onMessage.addListener((message: WorkerRequest, _sender, sendRespo
       return false;
 
     case 'proofkey:toggle-live':
-      // The underline layer lands next; acknowledge so the worker knows we are here.
-      toast(ui(), { kind: 'info', text: 'Live checking is not wired up yet.' });
+      void toggleLive();
       sendResponse(true);
       return false;
   }
 });
+
+// ------------------------------------------------------------- live layer
+
+let live: LiveController | null = null;
+
+async function startLive(): Promise<void> {
+  const state = await askWorker<ContentState>({ type: 'proofkey:get-state' });
+  if (!state.ok) return;
+  live = createLive(ui(), state.value);
+  live.setEnabled(state.value.liveEnabled);
+}
+
+async function toggleLive(): Promise<void> {
+  if (!live) await startLive();
+  if (!live) return;
+
+  const next = !live.isEnabled();
+  const saved = await askWorker<boolean>({ type: 'proofkey:set-live', enabled: next });
+  if (!saved.ok) {
+    toast(ui(), { kind: 'error', text: saved.error });
+    return;
+  }
+
+  live.setEnabled(next);
+  toast(ui(), {
+    kind: 'ok',
+    text: next
+      ? 'Live checking is on for this site. Click into a text field to start.'
+      : 'Live checking is off for this site.',
+  });
+}
+
+void startLive();
 
 // ------------------------------------------------------------------ action
 
