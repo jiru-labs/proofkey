@@ -1,0 +1,31 @@
+{
+  "name": "proofkey",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "BYOK AI writing assistant for Chrome (MV3). Your key, your provider, no backend.",
+  "license": "MIT",
+  "author": "Jiru Labs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jiru-labs/proofkey.git"
+  },
+  "homepage": "https://github.com/jiru-labs/proofkey#readme",
+  "bugs": {
+    "url": "https://github.com/jiru-labs/proofkey/issues"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build": "vite build && vite build --config vite.content.config.ts",
+    "dev": "npm run build -- --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.2.4",
+    "@types/node": "^26.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.0"
+  }
+}

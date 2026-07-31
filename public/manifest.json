@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "ProofKey",
+  "version": "0.1.0",
+  "description": "BYOK AI writing assistant. Fix grammar and rewrite text with your own LLM API key. No backend, no telemetry.",
+  "minimum_chrome_version": "116",
+  "permissions": ["storage", "contextMenus", "activeTab", "scripting"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "options_ui": {
+    "page": "options/index.html",
+    "open_in_tab": true
+  },
+  "action": {
+    "default_title": "ProofKey",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "commands": {
+    "run-default-action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+K",
+        "mac": "Command+Shift+K"
+      },
+      "description": "Run the default action on the selected text or focused field"
+    }
+  }
+}

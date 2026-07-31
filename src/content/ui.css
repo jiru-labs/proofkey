@@ -1,0 +1,16 @@
+/*
+ * Loaded with `?inline` and injected into a shadow root, so nothing here leaks
+ * into the host page and nothing on the host page leaks in.
+ */
+:host {
+  all: initial;
+}
+
+.pk-root {
+  position: fixed;
+  z-index: 2147483647;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #1f2430;
+}
