@@ -7,3 +7,4 @@ dist/
 *.log
 .vite/
 .test-shots/
+tools/lexical-editor.js

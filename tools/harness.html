@@ -65,6 +65,19 @@ The quarterly report show that revenue have increased. Their is more work to do.
     <div id="rerender" class="rich" contenteditable="true">una vez , hace muchos años , viajando en subte paso un viejito que vendia relatos, cuentos y cosas que habia escrito el fotocopiados y armados como para que fueran libritos, y me dejo uno que me lo puse a leer, contaba todas las cosas por las cuales habia pasado en su vida, todos los problemas y que habia terminado dentro de una jaula  por el resto de su vida, y terminaba diciendo: todo para despues descubrir, que la llave la tenia en el bolcillo de mi pantalon.</div>
 
 
+    <!--
+      The real Lexical editor — the library WhatsApp Web's composer is built on.
+      Two hand-written imitations of it failed to reproduce the reported bug, so
+      this runs the actual thing rather than a guess about it.
+    -->
+    <h2>contenteditable — real Lexical (WhatsApp's editor)</h2>
+    <div
+      id="lexical"
+      class="rich"
+      contenteditable="true"
+      data-seed="una vez , hace muchos años , viajando en subte paso un viejito que vendia relatos, cuentos y cosas que habia escrito el fotocopiados y armados como para que fueran libritos, y me dejo uno que me lo puse a leer, contaba todas las cosas por las cuales habia pasado en su vida, y terminaba diciendo: todo para despues descubrir, que la llave la tenia en el bolcillo de mi pantalon."
+    ></div>
+
     <h2>contenteditable — bold must survive</h2>
     <div id="rich" class="rich" contenteditable="true">
       Our <strong>quarterly report</strong> show that revenue have increased by 12%. Their is more
@@ -170,6 +183,8 @@ The quarterly report show that revenue have increased. Their is more work to do.
       });
     </script>
 
+    <!-- Editor first, so the field exists before ProofKey attaches. -->
+    <script src="/tools/lexical-editor.js"></script>
     <script src="/dist/content.js"></script>
 
     <script>
