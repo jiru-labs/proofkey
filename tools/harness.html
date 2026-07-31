@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ProofKey render harness</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        background: #fff;
+        color: #1f2430;
+        font: 15px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      h2 { font-size: 13px; margin: 0 0 6px; color: #626b7d; font-weight: 600; }
+      textarea, .rich, input {
+        width: 560px;
+        padding: 10px 12px;
+        border: 1px solid #dfe3ea;
+        border-radius: 7px;
+        font: inherit;
+        display: block;
+        margin-bottom: 22px;
+      }
+      textarea { height: 96px; resize: none; }
+      .rich { min-height: 70px; }
+      /* A deliberately awkward field: different font and letter-spacing, to
+         prove the mirror overlay copies typography rather than assuming it. */
+      .odd {
+        font-family: Georgia, serif;
+        font-size: 18px;
+        letter-spacing: 0.6px;
+        line-height: 2;
+        padding: 14px 18px;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Every field needs at least two sentences, because the sentence holding the
+      caret is deliberately never checked. The caret is placed at the end below,
+      where a typist's would be, so the earlier sentences are the ones tested.
+      Sentences start with a capital so ICU actually splits them — a lowercase
+      word after a full stop does not end a sentence under ICU rules.
+    -->
+    <h2>textarea — default typography</h2>
+    <textarea id="plain">
+Their is alot of things to do this week. We should of started the projet earlier. I am still waiting.</textarea
+    >
+
+    <h2>textarea — serif, letter-spaced, tall line-height</h2>
+    <textarea id="odd" class="odd">
+The quarterly report show that revenue have increased. Their is more work to do.</textarea
+    >
+
+    <h2>single-line input</h2>
+    <input id="single" type="text" value="The meating is thursday. Please dont be late." />
+
+    <!--
+      Reproduces a WhatsApp/Lexical-style composer: the editor rebuilds its own
+      text nodes on every input event. Any offset captured before an edit is
+      stale immediately after it, which is what scrambled a real message.
+      Text is verbatim from the bug report.
+    -->
+    <h2>contenteditable — editor that re-renders on every input</h2>
+    <div id="rerender" class="rich" contenteditable="true">una vez , hace muchos años , viajando en subte paso un viejito que vendia relatos, cuentos y cosas que habia escrito el fotocopiados y armados como para que fueran libritos, y me dejo uno que me lo puse a leer, contaba todas las cosas por las cuales habia pasado en su vida, todos los problemas y que habia terminado dentro de una jaula  por el resto de su vida, y terminaba diciendo: todo para despues descubrir, que la llave la tenia en el bolcillo de mi pantalon.</div>
+
+    <h2>contenteditable — bold must survive</h2>
+    <div id="rich" class="rich" contenteditable="true">
+      Our <strong>quarterly report</strong> show that revenue have increased by 12%. Their is more
+      to do.
+    </div>
+
+    <script>
+      // Stand-in for the service worker. Returns canned corrections so the whole
+      // content pipeline — segmentation, diff, offsets, rendering — runs for real
+      // against the shipped bundle without needing a provider or a key.
+      const FIXES = [
+        [/\bi has\b/g, 'I have'],
+        [/\bprojet\b/g, 'project'],
+        [/\btheir is\b/g, 'there is'],
+        [/\bTheir is\b/g, 'There is'],
+        [/\balot\b/g, 'a lot'],
+        [/\bwe should of\b/g, 'we should have'],
+        [/\breport show\b/g, 'report shows'],
+        [/\brevenue have\b/g, 'revenue has'],
+        [/\bwich\b/g, 'which'],
+        [/\bthen we\b/g, 'than we'],
+        [/\btoo let\b/g, 'to let'],
+        [/\bmeating\b/g, 'meeting'],
+        [/\bthursday\b/g, 'Thursday'],
+        [/\bdont\b/g, "don't"],
+        // Spanish fixes for the re-render case, from the bug report.
+        [/\bvendia\b/g, 'vendía'],
+        [/\bhabia\b/g, 'había'],
+        [/\bdejo uno\b/g, 'dejó uno'],
+        [/\bdespues\b/g, 'después'],
+        [/\bbolcillo\b/g, 'bolsillo'],
+        [/\bpantalon\b/g, 'pantalón'],
+        [/\bpaso un viejito\b/g, 'pasó un viejito'],
+      ];
+
+      const correct = (sentence) =>
+        FIXES.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), sentence);
+
+      window.__pkCorrect = correct;
+      const workerListeners = [];
+
+      // Lets the test fire the Ctrl+Shift+K path, which rewrites the whole
+      // field in one go — a different code path from applying a single card.
+      window.__pkInvoke = (actionId) => {
+        for (const listener of workerListeners) {
+          listener({ type: 'proofkey:invoke', actionId }, {}, () => {});
+        }
+      };
+
+      window.chrome = {
+        runtime: {
+          sendMessage: async (message) => {
+            switch (message.type) {
+              case 'proofkey:run':
+                return {
+                  ok: true,
+                  value: { text: correct(message.text), servedBy: 'harness', fallbackErrors: [] },
+                };
+              case 'proofkey:get-state':
+                return {
+                  ok: true,
+                  value: {
+                    actions: [{ id: 'fix-grammar', label: 'Fix grammar' }],
+                    defaultActionId: 'fix-grammar',
+                    liveEnabled: true,
+                    debounceMs: 120,
+                    minChars: 8,
+                    maxSentencesPerRequest: 8,
+                    dictionary: [],
+                    configured: true,
+                  },
+                };
+              case 'proofkey:check':
+                return { ok: true, value: { corrections: message.sentences.map(correct) } };
+              case 'proofkey:explain':
+                return { ok: true, value: { text: 'Subject and verb must agree.', servedBy: 'harness', fallbackErrors: [] } };
+              default:
+                return { ok: true, value: null };
+            }
+          },
+          onMessage: {
+            addListener: (listener) => workerListeners.push(listener),
+          },
+        },
+      };
+
+      // Which field to exercise, so each screenshot shows one attached session.
+      window.__pkTarget = new URLSearchParams(location.search).get('field') || 'plain';
+
+      // Stand-in for a framework-managed editor. Reconciling on input destroys
+      // and recreates the text nodes, so any DOM position captured beforehand
+      // is stale — the condition that scrambled a real WhatsApp message.
+      addEventListener('DOMContentLoaded', () => {
+        const editor = document.getElementById('rerender');
+        editor.addEventListener('input', () => {
+          // Rebuild the text nodes and normalise runs of whitespace, the way a
+          // framework editor reconciling its model does. The source text has a
+          // double space, so the first edit shifts every later offset by one —
+          // exactly the divergence the apply path has to notice and recover from.
+          const text = editor.textContent.replace(/[ \t]{2,}/g, ' ');
+          editor.replaceChildren(document.createTextNode(text));
+        });
+      });
+    </script>
+
+    <script src="/dist/content.js"></script>
+
+    <script>
+      const node = document.getElementById(window.__pkTarget);
+      node.focus();
+
+      // Put the caret at the end, where someone who just finished typing would
+      // leave it. Without this it sits at offset 0 and the first sentence — the
+      // one carrying the errors — is skipped by design.
+      if ('setSelectionRange' in node) {
+        node.setSelectionRange(node.value.length, node.value.length);
+      } else {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        range.collapse(false);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+
+      node.dispatchEvent(new Event('focusin', { bubbles: true }));
+      node.dispatchEvent(new Event('input', { bubbles: true }));
+
+      // Signal for the screenshot driver once underlines have been painted.
+      const marker = document.createElement('div');
+      marker.id = 'pk-harness-ready';
+      setTimeout(() => document.body.append(marker), 900);
+    </script>
+  </body>
+</html>

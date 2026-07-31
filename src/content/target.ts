@@ -1,4 +1,4 @@
-import { diffWords } from '../core/diff';
+import { diffWords, type Change } from '../core/diff';
 
 /**
  * Reading text out of a page and writing it back is the part that breaks
@@ -247,8 +247,20 @@ function applyToInput(node: TextInput, start: number, end: number, text: string)
 }
 
 /**
- * Applies the rewrite as a series of small edits rather than one block
- * replacement, so formatting outside the changed words survives.
+ * Applies the rewrite as a series of small edits so formatting outside the
+ * changed words survives — but never trusts that it worked.
+ *
+ * Framework-managed editors keep their own selection and document model. Lexical
+ * (WhatsApp Web) and its relatives may apply an edit at the caret they remember
+ * rather than the range we set, so corrections land in the wrong place and
+ * nothing is deleted — the text turns to noise. Because that cannot be detected
+ * up front, every edit is verified against the text it should have produced, and
+ * the moment reality diverges the surgical path is abandoned for one atomic
+ * replacement whose result is checked too.
+ *
+ * The trade is deliberate: on a cooperative editor formatting is preserved, and
+ * on a hostile one formatting is lost but the text is right. Wrong text is never
+ * an acceptable outcome.
  */
 function applyToContentEditable(
   target: Extract<EditTarget, { kind: 'contenteditable' }>,
@@ -260,20 +272,42 @@ function applyToContentEditable(
   const selection = window.getSelection();
   if (!selection) return false;
 
-  const flat = flatten(node);
-  const original = flat.text.slice(start, end);
+  const before = flatten(node).text;
+  const original = before.slice(start, end);
+  if (original === replacement) return true;
+
   const changes = diffWords(original, replacement);
+  if (changes && changes.length > 0) {
+    if (applyChanges(node, selection, start, original, replacement, changes)) return true;
+  }
 
-  if (changes === null) return replaceWholeRange(node, selection, start, end, replacement);
-  if (changes.length === 0) return true;
+  // Recomputed from the original text, so it is correct no matter how far the
+  // surgical attempt got before it was abandoned.
+  return replaceEverything(node, selection, before.slice(0, start) + replacement + before.slice(end));
+}
 
-  // Applied last-first: every edit shifts the text after it, so working
-  // backwards keeps the remaining offsets valid against the original.
-  for (const change of [...changes].reverse()) {
-    // Re-flattened each time because insertText splits and merges text nodes.
-    const current = flatten(node);
-    const range = rangeFor(current, start + change.start, start + change.end);
-    if (!range) return replaceWholeRange(node, selection, start, end, replacement);
+/** Returns false the moment the document stops matching what we expect. */
+function applyChanges(
+  node: HTMLElement,
+  selection: Selection,
+  start: number,
+  original: string,
+  replacement: string,
+  changes: Change[],
+): boolean {
+  let delta = 0;
+
+  for (const change of changes) {
+    // Re-read every time: insertText splits and merges text nodes, and a
+    // framework editor may have rebuilt the subtree entirely.
+    const flat = flatten(node);
+    const from = start + change.start + delta;
+    const to = start + change.end + delta;
+
+    if (flat.text.slice(from, to) !== original.slice(change.start, change.end)) return false;
+
+    const range = rangeFor(flat, from, to);
+    if (!range) return false;
 
     selection.removeAllRanges();
     selection.addRange(range);
@@ -281,34 +315,41 @@ function applyToContentEditable(
     const applied = change.replacement
       ? document.execCommand('insertText', false, change.replacement)
       : document.execCommand('delete');
+    if (!applied) return false;
 
-    if (!applied) return replaceWholeRange(node, selection, start, end, replacement);
+    delta += change.replacement.length - (change.end - change.start);
   }
 
-  return true;
+  return flatten(node).text.slice(start, start + replacement.length) === replacement;
 }
 
-/** Last resort: one flat replacement, which loses formatting inside the range. */
-function replaceWholeRange(
-  node: HTMLElement,
-  selection: Selection,
-  start: number,
-  end: number,
-  text: string,
-): boolean {
-  const range = rangeFor(flatten(node), start, end);
-  if (!range) return false;
+/**
+ * One atomic replacement of the whole field. `selectAll` is issued as an editing
+ * command rather than by setting a DOM range, because that is the path a user's
+ * own Ctrl+A takes and therefore the one a framework editor keeps in sync with
+ * its internal model.
+ */
+function replaceEverything(node: HTMLElement, selection: Selection, text: string): boolean {
+  node.focus();
 
-  selection.removeAllRanges();
-  selection.addRange(range);
+  if (!document.execCommand('selectAll')) {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
 
-  if (document.execCommand('insertText', false, text)) return true;
+  if (document.execCommand('insertText', false, text)) {
+    if (flatten(node).text.trim() === text.trim()) return true;
+  }
 
-  // Some editors block execCommand but must handle paste, since a user can
-  // always paste. Returning false from dispatchEvent means it was handled.
+  // Editors that block execCommand still have to accept a paste, since a user
+  // can always paste. A handled event returns false from dispatchEvent.
   const transfer = new DataTransfer();
   transfer.setData('text/plain', text);
-  return !node.dispatchEvent(
+  node.dispatchEvent(
     new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }),
   );
+
+  return flatten(node).text.trim() === text.trim();
 }

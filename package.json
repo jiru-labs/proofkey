@@ -21,11 +21,14 @@
     "build": "vite build && vite build --config vite.content.config.ts",
     "dev": "npm run build -- --watch",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types tools/diff-check.ts"
+    "test": "node --experimental-strip-types tools/diff-check.ts",
+    "test:render": "node tools/render-test.mjs",
+    "serve": "python3 -m http.server 8777 --bind 127.0.0.1"
   },
   "devDependencies": {
     "@types/chrome": "^0.2.4",
     "@types/node": "^26.1.2",
+    "playwright": "^1.62.1",
     "typescript": "^7.0.2",
     "vite": "^8.2.0"
   }
