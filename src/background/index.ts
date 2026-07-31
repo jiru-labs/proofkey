@@ -1,14 +1,27 @@
 import { injectFiles, isInjectableUrl } from '../core/browser';
 import type {
+  CheckResult,
   ContentRequest,
   ContentState,
   Result,
   RunResult,
   WorkerRequest,
 } from '../core/messages';
-import { composeExplainPrompt, composeSystemPrompt } from '../core/prompts';
+import {
+  composeCheckPrompt,
+  composeExplainPrompt,
+  composeSystemPrompt,
+  formatCheckPayload,
+  parseCheckReply,
+} from '../core/prompts';
 import { runCompletion, validateConnection } from '../core/providers';
-import { connectionChain, findAction, loadSettings, resolveActions } from '../core/storage';
+import {
+  connectionChain,
+  findAction,
+  loadSettings,
+  resolveActions,
+  saveSettings,
+} from '../core/storage';
 
 const MENU_ROOT = 'proofkey:root';
 const MENU_ACTION_PREFIX = 'proofkey:action:';
@@ -168,9 +181,100 @@ async function handle(
     case 'proofkey:run':
       return runAction(message.actionId, message.text);
 
+    case 'proofkey:check':
+      return check(message.sentences);
+
     case 'proofkey:explain':
       return explain(message.original, message.replacement);
+
+    case 'proofkey:set-live':
+      return setLive(sender, message.enabled);
+
+    case 'proofkey:add-word':
+      return addWord(message.word);
   }
+}
+
+async function addWord(word: string): Promise<Result<string[]>> {
+  const trimmed = word.trim();
+  if (!trimmed) return { ok: false, error: 'Nothing to add.' };
+
+  const settings = await loadSettings();
+  const dictionary = new Set(settings.liveCheck.dictionary);
+  dictionary.add(trimmed);
+  settings.liveCheck.dictionary = [...dictionary];
+  await saveSettings(settings);
+  return { ok: true, value: settings.liveCheck.dictionary };
+}
+
+/**
+ * Checks a batch of sentences in one request. If the model breaks the numbered
+ * contract the batch is retried one sentence at a time — mis-attributing a
+ * correction to the wrong sentence would underline the wrong words, which is
+ * worse than spending a few extra requests.
+ */
+async function check(sentences: string[]): Promise<Result<CheckResult>> {
+  if (sentences.length === 0) return { ok: true, value: { corrections: [] } };
+
+  const settings = await loadSettings();
+  const chain = liveChain(settings);
+
+  try {
+    const result = await runCompletion(chain, {
+      systemPrompt: composeCheckPrompt(settings.profile, sentences.length),
+      userText: formatCheckPayload(sentences),
+    });
+
+    const parsed = parseCheckReply(result.text, sentences.length);
+    if (parsed) return { ok: true, value: { corrections: parsed } };
+
+    if (sentences.length === 1) {
+      // Nothing to fall back to; treat the reply as the correction itself.
+      return { ok: true, value: { corrections: [stripNumbering(result.text)] } };
+    }
+
+    const individually = await Promise.all(
+      sentences.map(async (sentence) => {
+        const single = await runCompletion(chain, {
+          systemPrompt: composeCheckPrompt(settings.profile, 1),
+          userText: formatCheckPayload([sentence]),
+        });
+        return parseCheckReply(single.text, 1)?.[0] ?? sentence;
+      }),
+    );
+    return { ok: true, value: { corrections: individually } };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function stripNumbering(text: string): string {
+  return text.trim().replace(/^\s*\d+\s*[.)]\s?/, '');
+}
+
+/** Live checking may be pinned to a cheaper connection than the actions use. */
+function liveChain(settings: Awaited<ReturnType<typeof loadSettings>>) {
+  const pinned = settings.liveCheck.connectionId
+    ? settings.connections.find((c) => c.id === settings.liveCheck.connectionId)
+    : undefined;
+  return pinned ? [pinned] : connectionChain(settings);
+}
+
+async function setLive(
+  sender: chrome.runtime.MessageSender,
+  enabled: boolean,
+): Promise<Result<boolean>> {
+  const origin = originOf(sender.url ?? sender.tab?.url);
+  if (!origin) return { ok: false, error: 'This page has no origin ProofKey can remember.' };
+
+  const settings = await loadSettings();
+  const enabledOrigins = new Set(settings.liveCheck.enabledOrigins);
+  if (enabled) enabledOrigins.add(origin);
+  else enabledOrigins.delete(origin);
+
+  settings.liveCheck.enabledOrigins = [...enabledOrigins];
+  await saveSettings(settings);
+  return { ok: true, value: enabled };
 }
 
 async function runAction(actionId: string, text: string): Promise<Result<RunResult>> {
