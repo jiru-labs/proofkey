@@ -200,13 +200,24 @@ async function run() {
 
   // The Ctrl+Shift+K path: one rewrite of the whole field. Distinct from
   // applying a single card, and the path that scrambled a WhatsApp message.
-  for (const field of ['rerender', 'rich']) {
+  for (const field of ['lexical', 'rerender', 'rich']) {
     console.log(`\n${field} — whole-field invoke:`);
     await page.goto(`${BASE}?field=${field}`, { waitUntil: 'load' });
     await page.waitForTimeout(400);
 
+    const read = (id) =>
+      id === 'lexical' && window.__pkLexicalText
+        ? window.__pkLexicalText()
+        : document.getElementById(id).textContent;
+
     const expected = await page.evaluate(
-      (id) => window.__pkCorrect(document.getElementById(id).textContent),
+      (id) => {
+        const readField = (i) =>
+          i === 'lexical' && window.__pkLexicalText
+            ? window.__pkLexicalText()
+            : document.getElementById(i).textContent;
+        return window.__pkCorrect(readField(id));
+      },
       field,
     );
 
@@ -214,7 +225,10 @@ async function run() {
     await page.waitForTimeout(700);
 
     const actual = await page.evaluate(
-      (id) => document.getElementById(id).textContent,
+      (id) =>
+        id === 'lexical' && window.__pkLexicalText
+          ? window.__pkLexicalText()
+          : document.getElementById(id).textContent,
       field,
     );
 
