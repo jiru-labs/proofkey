@@ -319,6 +319,20 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     active.suggestions = suggestions.sort((a, b) => a.start - b.start);
     active.highlighter.render(active.suggestions);
 
+    // An open card outlives nothing it describes. The user can paste, undo, or
+    // type one more character while it is up, and the offsets it carries were
+    // captured when it opened — so an offer left on screen after its underline
+    // has gone is an offer to write over whatever replaced it. Surviving
+    // suggestions can still have moved, and are re-anchored rather than closed.
+    const openId = card.currentId();
+    if (openId) {
+      const rect = active.suggestions.some((suggestion) => suggestion.id === openId)
+        ? active.highlighter.rectFor(openId)
+        : null;
+      if (rect) card.move(rect);
+      else card.hide();
+    }
+
     if (suggestions.length > 0) {
       setBadge('issues');
       return;
@@ -360,7 +374,13 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
           },
       suggestion.replacement,
     );
-    if (!applied) return;
+    if (!applied) {
+      // Either the editor refused the write, or the text moved and it was
+      // refused for us. Either way what is on screen no longer matches what was
+      // offered, so re-derive from the field and let that close the card.
+      rebuild();
+      return;
+    }
 
     // Applying is deliberately not recorded as a dismissal. `dismissed` is keyed
     // by sentence content and the cache never forgets, so marking the applied

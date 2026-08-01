@@ -9,6 +9,12 @@ export interface CardHandlers {
 
 export interface SuggestionCard {
   show(suggestion: Suggestion, anchor: DOMRect): void;
+  /**
+   * Re-anchors an open card without redrawing it. Editing an earlier sentence
+   * shifts the word this one points at; re-rendering would work too, but it
+   * would throw away an explanation the user just waited for.
+   */
+  move(anchor: DOMRect): void;
   hide(): void;
   isOpen(): boolean;
   currentId(): string | null;
@@ -144,6 +150,9 @@ export function createCard(shadow: ShadowRoot, handlers: CardHandlers): Suggesti
 
   return {
     show,
+    move(anchor) {
+      if (open) position(anchor);
+    },
     hide,
     isOpen: () => open !== null,
     currentId: () => open?.id ?? null,
