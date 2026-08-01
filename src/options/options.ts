@@ -642,6 +642,30 @@ function renderLiveCheck(): HTMLElement {
       'Takes priority over the list above.',
     ),
 
+    field(
+      'Connection',
+      select(
+        [
+          { value: '', label: 'Same as the active connection' },
+          ...settings.connections.map((connection) => ({
+            value: connection.id,
+            label: connection.model ? `${connection.label} — ${connection.model}` : connection.label,
+          })),
+        ],
+        liveCheck.connectionId ?? '',
+        {
+          on: {
+            change: (e) => {
+              const value = (e.target as HTMLSelectElement).value;
+              if (value) liveCheck.connectionId = value;
+              else delete liveCheck.connectionId;
+            },
+          },
+        },
+      ),
+      'Live checking runs far more often than the quick actions do, so it is worth pointing at a cheaper and faster model. Unlike the actions, this one does not fall through a chain — if it fails, the check is skipped.',
+    ),
+
     el(
       'div',
       { class: 'row' },

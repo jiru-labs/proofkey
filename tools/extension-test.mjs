@@ -167,6 +167,11 @@ async function run() {
     'writing-rules section is present',
     (await page.locator('text=Your writing rules').count()) > 0,
   );
+  check(
+    'live checking can be pinned to its own connection',
+    (await page.locator('option', { hasText: 'Same as the active connection' }).count()) > 0,
+    'liveCheck.connectionId is the biggest lever on cost; it has to be reachable from the UI',
+  );
 
   for (const transport of ['chat_completions', 'anthropic_messages']) {
     console.log(`\n${transport}:`);
