@@ -2,16 +2,27 @@
 
 ProofKey runs on whatever you point it at, which makes "which model should I
 use?" a real question with a real cost attached. This page answers it for
-Gemini, and gives you the method for any other provider.
+**Gemini and Grok**, and gives you the method for any other provider.
 
 It follows the same discipline as [COMPATIBILITY.md](COMPATIBILITY.md): claims
 carry their evidence. The cost half is **calculated** — arithmetic over prompt
 sizes measured from the source. The effectiveness half is **measured**, for
-three models so far, by a harness in the repo that anyone can run against
-anything.
+eight model configurations so far, by a harness in the repo that anyone can run
+against anything.
 
 Do not read a cost ranking as a quality ranking. Measuring changed the
 recommendation on this page: the cheapest model is not the one to use.
+
+Two things measuring a second provider changed, both of which had been stated
+here as general truths on one provider's evidence:
+
+- `reasoning_effort: "none"` is **not** safely ignored by endpoints that do not
+  understand it. xAI returns HTTP 400.
+- Forced reasoning is **not** merely a latency concern. On Grok it is billed,
+  and on `grok-build-0.1` the thinking outweighs the reply 20 to 1.
+
+A provider-shaped claim tends to look like a general one until there is a second
+provider.
 
 ## Two workloads, different economics
 
@@ -42,7 +53,7 @@ prompts are edited.
 | Fix grammar | 855 | 150 | one paragraph, rewritten at about the same length |
 | Summarize | 451 | 45 | one paragraph in, a short summary out |
 
-### Cost per 1,000 operations
+### Cost per 1,000 operations — Google Gemini
 
 | Model | Live check | Fix grammar | Summarize | Thinking |
 |---|---|---|---|---|
@@ -54,30 +65,67 @@ prompts are edited.
 | `gemini-3.5-flash` | $2.65 | $2.63 | $1.08 | cannot be disabled |
 | `gemini-2.5-pro` | $2.68 | $2.57 | $1.01 | cannot be disabled |
 
-**Assumptions.** 4 characters per token (Latin script — languages that tokenize
-worse, like CJK, land nearer 2, so roughly double those figures);
-90-character sentences, 8 per live-check request; a 600-character paragraph for
-a quick action; an empty writing profile, since a style guide adds its own
-length to *every* request.
+Prices checked **2026-08-01** against
+[ai.google.dev/gemini-api/docs/pricing](https://ai.google.dev/gemini-api/docs/pricing).
 
-Prices are USD per million tokens on the standard tier, checked **2026-08-01**
-against [ai.google.dev/gemini-api/docs/pricing](https://ai.google.dev/gemini-api/docs/pricing).
+### Cost per 1,000 operations — xAI (Grok)
+
+| Model | Live check | Fix grammar | Summarize | Thinking |
+|---|---|---|---|---|
+| `grok-4.20-0309-non-reasoning` | $1.50 | $1.67 | $0.91 | never thinks |
+| `grok-4.3 + reasoning_effort:none` | $1.50 | $1.67 | $0.91 | disabled |
+| `grok-4.3` | $3.21 | $1.67 | $0.91 | on by default |
+| `grok-build-0.1` | $5.12 | $1.34 | $0.72 | cannot be disabled |
+| `grok-4.5` | $5.69 | $2.98 | $1.54 | cannot be disabled |
+
+The live-check column includes **measured** thinking tokens where thinking
+cannot be turned off, which is why `grok-build-0.1` is the second most expensive
+row despite having the cheapest per-token price on the table. Those counts come
+from the eval's 14-sentence request, scaled linearly to 8 — approximate, since
+thinking almost certainly has a fixed component too. Quick actions carry no
+thinking figure at all, because nobody has measured it for that shape of
+request; those rows are therefore floors, not estimates.
+
+Every xAI row also carries 184 tokens of overhead — see below. Prices are the
+sub-200k-token tier, checked **2026-08-01** against
+[docs.x.ai/docs/models](https://docs.x.ai/docs/models); past 200k every rate
+doubles, which ProofKey never approaches.
+
+**Assumptions.** 4 characters per token; 90-character sentences, 8 per
+live-check request; a 600-character paragraph for a quick action; an empty
+writing profile, since a style guide adds its own length to *every* request.
+
 **They change.** Re-check before trusting them, and regenerate with
 `npm run cost -- --markdown`.
 
 ## What actually drives the number
 
-### Output tokens dominate, so compare output prices
+### Usually output dominates — but check, because it is not a law
 
-ProofKey rewrites text. The output is about as long as the input, and output is
-priced 4–8× higher than input on every model above. So the output column is the
-one that decides your bill — which is not how people usually skim a pricing
-page.
+ProofKey rewrites text, so the output is about as long as the input. On Gemini,
+output is priced 4–8× higher than input, so the output column is the one that
+decides your bill — which is not how people usually skim a pricing page. That is
+why `gemini-2.5-flash-lite` is not marginally cheaper than the current default
+but **~5× cheaper**: $0.40 versus $2.50 per million output tokens.
 
-That is why `gemini-2.5-flash-lite` is not marginally cheaper than the current
-default but **~5× cheaper**: $0.40 versus $2.50 per million output tokens.
+Grok breaks the rule twice over. Its output multiplier is only 2–3×, and it adds
+184 input tokens to every request, so on a non-thinking model the input side
+wins. Where the money actually goes on one live check:
 
-### Reasoning: less of a tax than expected
+| Model | Input share | Output share |
+|---|---|---|
+| `gemini-2.5-flash` | 29% | **71%** |
+| `gemini-2.5-flash-lite` | 46% | 54% |
+| `grok-4.20-0309-non-reasoning` | **69%** | 31% |
+| `grok-4.3` (thinking on) | 32% | **68%** |
+| `grok-build-0.1` | 16% | **84%** |
+
+So the rule of thumb is really: **whatever the model thinks with, it bills you
+for.** Turn thinking off and the fixed input overhead becomes the thing to look
+at instead. Shortening the system prompt is worth almost nothing on
+`gemini-2.5-flash` and worth real money on a non-thinking Grok.
+
+### Reasoning: a tax on some providers and not others
 
 [Per Google's OpenAI-compatibility docs](https://ai.google.dev/gemini-api/docs/openai),
 thinking **cannot be disabled** on Gemini 3.x models or on 2.5 Pro. On Gemini
@@ -99,10 +147,31 @@ barely thinks on a task this mechanical, or the compatibility layer does not
 report reasoning separately — the harness reads
 `completion_tokens_details.reasoning_tokens` and found nothing to read.
 
-So treat forced reasoning as a **latency and control** concern rather than a
-billing one, until someone measures otherwise on a longer input. Setting
-`reasoning_effort: "none"` where it is supported is still worth doing — it is
-free, and it removes a variable.
+**This does not generalise, and Grok is the counter-example.** On the same
+14-sentence request, xAI reports reasoning separately and charges for it:
+
+| Model | `completion_tokens` | `reasoning_tokens` | Latency |
+|---|---|---|---|
+| `grok-4.20-0309-non-reasoning` | 174 | 0 | 1,556ms |
+| `grok-4.3` + `reasoning_effort: "none"` | 174 | 0 | 1,545ms |
+| `grok-4.3` (default) | 174 | **1,199** | 8,217ms |
+| `grok-4.5` | 182 | **849** | 14,736ms |
+| `grok-build-0.1` | 174 | **3,428** | 22,191ms |
+
+Two things to read off that. The reply is the same size in every row — thinking
+buys deliberation, not a longer answer. And `grok-build-0.1` spends **20× more
+tokens thinking than writing**, to proofread fourteen sentences.
+
+Those tokens are billed, and they are *not* included in `completion_tokens`, so
+summing the two visible numbers understates the bill. xAI returns
+`usage.cost_in_usd_ticks`, which settles it: the figure matches exactly when
+reasoning tokens are added to completion tokens at the output rate, and is 5×
+too low when they are not.
+
+So the honest version of the earlier conclusion is narrower: **on Gemini**,
+forced reasoning proved to be a latency concern rather than a billing one. On
+xAI it is both, and the billing half is the larger. Measure it per provider —
+`npm run eval` prints the reasoning column that makes it visible.
 
 ### Turning thinking off
 
@@ -113,8 +182,60 @@ code change. In the connection editor, add:
 { "reasoning_effort": "none" }
 ```
 
-Endpoints that do not know the field ignore it, so this is safe to leave set on
-a connection you also point at other providers.
+**This is not safe to leave set on a connection you point at another provider.**
+An earlier version of this page said it was, on the reasoning that an endpoint
+which does not know a field will drop it. Gemini does. xAI does not — it returns
+HTTP 400:
+
+| Model | `reasoning_effort: "none"` |
+|---|---|
+| `grok-4.3` | accepted, and thinking does stop |
+| `grok-4.5` | `This model does not support reasoning_effort value none` |
+| `grok-4.20-0309-reasoning` | `does not support parameter reasoningEffort` |
+| `grok-4.20-0309-non-reasoning` | `does not support parameter reasoningEffort` |
+| `grok-build-0.1` | `does not support parameter reasoningEffort` |
+
+So the field belongs on the connection whose provider you have checked it
+against, and nowhere else. `grok-4.5` accepts `minimal`, `low`, `medium` and
+`high`, but they made no measurable difference — 65, 65, 65 and 63 reasoning
+tokens on an identical prompt. Treat thinking on `grok-4.5` as not adjustable.
+
+### The 184 tokens nobody bills you for on paper
+
+A pricing page charges for the tokens you send. Providers also add their own —
+a chat template, a hidden system prompt — and those are billed too.
+
+On xAI it is **184 tokens on every request, whatever it contains**. Measured by
+sending a one-character message and subtracting what xAI's own tokenizer
+(`POST /v1/tokenize-text`) says that message is worth:
+
+| Message | Tokenizer says | Billed `prompt_tokens` | Difference |
+|---|---|---|---|
+| `a` | 1 | 185 | 184 |
+| a 155-character sentence | 30 | 214 | 184 |
+
+A fixed addend hurts small frequent requests most, which is exactly what a live
+check is: 184 tokens on a 641-token request is **+29% input**. `tools/cost.ts`
+now adds it to every xAI row. Nothing equivalent has been measured for Gemini,
+so those rows do not carry one — absent, not zero.
+
+### Caching pays for repetition, and this workload is repetition
+
+ProofKey sends a byte-identical system prompt on every live check, which is the
+best case for prompt caching. On xAI that is worth more than half the bill.
+Three identical 8-sentence checks:
+
+| Call | `prompt_tokens` | of which cached | Cost per 1,000 |
+|---|---|---|---|
+| 1 | 695 | 128 | $0.97 |
+| 2 | 695 | **640** | $0.44 |
+| 3 | 695 | **640** | $0.44 |
+
+Cached input is $0.20 per million against $1.25 uncached, so a warm cache takes
+55% off. `tools/cost.ts` does **not** model this, which is why its estimates run
+high — on a realistic 8×90-character check it predicted $1.50 per 1,000 against
+$1.14 measured cold and $0.52 warm. That is the safe direction for a budgeting
+tool, but do not read its numbers as a forecast of your bill.
 
 ## The recommendation
 
@@ -132,6 +253,28 @@ prompt only. `gemini-2.5-flash` scores *worst* of the three there (11/14), but
 that is a result about one prompt, not about the model's judgement on
 "improve writing" or "make professional" — which nobody has measured. Do not
 read the live-check ranking as a general ranking.
+
+### If you are on xAI
+
+Grok is a good proofreader and a poor live checker, and those are the same fact
+seen from two sides: what makes it accurate is thinking, and thinking takes
+seconds.
+
+| Use | Model | Why |
+|---|---|---|
+| **Live check** | `grok-4.20-0309-non-reasoning` | The only Grok fast enough to underline as you type (1.6s). 13/14, no false alarms, contract held, $1.50 per 1,000. The preset default. |
+| **Quick actions** | `grok-4.3` | 14/14, and the 8s wait is fine when you pressed a button on purpose. Leave thinking on — it is what buys the last two points. |
+| **Avoid for live check** | `grok-4.5`, `grok-build-0.1` | 15s and 22s. `grok-build-0.1` also spends 3,428 thinking tokens on the eval's 14-sentence request, making the cheapest per-token model the second most expensive to run. |
+
+Do **not** put `{"reasoning_effort": "none"}` on an xAI connection unless the
+model is `grok-4.3`. Every other Grok model rejects the field with HTTP 400 and
+the request fails outright.
+
+Against Gemini, honestly: Grok costs about 10× more for live checking
+($1.50 versus $0.14 per 1,000) and is slower, at one fixture *worse*. If live
+checking is why you are here, Gemini is the better buy on this evidence. Grok
+earns its place on the quick-actions side, and the setting below lets you have
+both.
 
 ### Using two models
 
@@ -175,7 +318,14 @@ export PROOFKEY_EVAL_KEY=...          # a key for the endpoint you're testing
 npm run eval                          # 3 runs each of gemini-2.5-flash-lite and -flash
 npm run eval -- --models gemini-3.1-flash-lite --runs 5
 npm run eval -- --base https://api.groq.com/openai/v1 --models llama-3.3-70b
+npm run eval -- --base https://api.x.ai/v1 --models grok-4.3 --reasoning off
 ```
+
+Flags: `--base`, `--models`, `--runs`, `--reasoning` (a value, or `off` to omit
+the field for providers that reject it) and `--max-tokens` (default 8192 —
+generous because on most providers thinking is spent out of the same budget, and
+a reasoning model given a tight cap thinks until it runs out and returns
+nothing, which looks identical to a model that cannot hold the format).
 
 It sends the **real** composed prompt from `src/core/prompts.ts` and parses the
 reply with the **real** `parseCheckReply`, so what it measures is ProofKey
@@ -198,7 +348,10 @@ It reports five things, and only one of them is accuracy:
    the fixture did not anticipate. **Do not quote a score without reading them**;
    the results above are a live demonstration of why.
 5. **Real token counts** from the provider, reasoning tokens included where the
-   provider reports them, as the honest check on `tools/cost.ts`.
+   provider reports them, and the provider's own **cost** figure where it states
+   one — xAI returns `usage.cost_in_usd_ticks`. That last one is the only
+   measured cost in the repo; everything in `tools/cost.ts` is calculated, so
+   where both exist they should agree.
 
 The fixtures cover English, Spanish, French, German and mixed ES/EN, plus
 register preservation (tú vs usted), URLs, mentions, hashtags, emoji, and one
@@ -219,6 +372,61 @@ All three are now perfectly stable — identical score on every run, where the
 worst of them previously ranged 9–13 on identical input. A model that answers
 differently each time underlines a sentence, drops it, and underlines it again
 as you type, so this matters as much as the score.
+
+xAI, same 14 fixtures × 3 runs, 2026-08-01:
+
+| Model | Correct | Spread | False alarms | Contract | Latency | Thinking | Reported by |
+|---|---|---|---|---|---|---|---|
+| `grok-4.3` | **14.0/14** | 14–14 | 0.0 | held 3/3 | 8,217ms | 1,199 | maintainer |
+| `grok-4.5` | **14.0/14** | 14–14 | 0.0 | held 3/3 | 14,736ms | 849 | maintainer |
+| `grok-build-0.1` | **14.0/14** | 14–14 | 0.0 | held 3/3 | 22,191ms | 3,428 | maintainer |
+| `grok-4.20-0309-non-reasoning` | 13.0/14 | 13–13 | 0.0 | held 3/3 | **1,556ms** | 0 | maintainer |
+| `grok-4.3` + `reasoning_effort:none` | 12.7/14 | 12–13 | 0.0 | held 3/3 | 1,545ms | 0 | maintainer |
+
+Run with:
+
+```bash
+export PROOFKEY_EVAL_KEY=...
+npm run eval -- --base https://api.x.ai/v1 --reasoning off \
+  --models grok-4.20-0309-non-reasoning,grok-4.3,grok-4.5,grok-build-0.1
+```
+
+`--reasoning off` is required. The harness used to hardcode
+`reasoning_effort: "none"`, which four of these five models reject outright, so
+it could not test them at all until that became a flag.
+
+**Every Grok model held the contract on every run, and none produced a single
+false alarm.** That is the strongest column here and the one that decides
+usability — a model that mangles the numbered-line format is worthless at any
+price, and a model that "corrects" clean text is worse than none.
+
+The interesting row is the last two. Same model, same fixtures, thinking the
+only difference: **14/14 at 8.2 seconds, or 12.7/14 at 1.5 seconds.** Thinking
+is doing real work on this task, which is not what the Gemini numbers predicted.
+
+The two failures without thinking are both familiar: "There **is** a lot of
+things to do" (agreement missed, as on every Gemini model) and a full stop added
+to "…since last week". `grok-4.20-0309-non-reasoning` loses its one point to the
+same full stop, or to "The meeting is **on** Thursday" — it alternates between
+the two across runs, which is why it shows 13/14 but with two unstable fixtures.
+
+### The latency problem
+
+Latency is where Grok loses this, and it is not close:
+
+| | Fastest Gemini | Fastest Grok | Best-scoring Grok |
+|---|---|---|---|
+| Live check | 918ms | 1,556ms | 8,217ms |
+
+Live checking fires ~1s after you stop typing. Add 8 seconds and the underline
+arrives long after you have moved on; add 22 seconds, as `grok-build-0.1` does,
+and you will have sent the message. ProofKey's request timeout is 60s
+(`src/core/providers/request.ts:79`), so none of these *fail* — they just arrive
+too late to be an as-you-type feature.
+
+The thinking models are still perfectly reasonable for **quick actions**, where
+you press a button and wait on purpose. That split is what the two-connection
+setting exists for.
 
 Only one failure survives in the two flash-lite models: "Their is alot of things
 to do" comes back as "There **is** a lot of things to do" — the homophone and
@@ -288,8 +496,18 @@ The method transfers. For any provider:
 1. Take the token footprint above — it is a property of ProofKey's prompts, not
    of the provider.
 2. Multiply by that provider's prices, weighting **output** heavily.
-3. Check whether reasoning can be switched off.
-4. Run `npm run eval -- --base <url> --models <ids>` to find out whether it can
-   hold the contract.
+3. Check whether reasoning can be switched off, **and what happens when you try**
+   — the field may be accepted, ignored, or rejected with an error.
+4. Measure the fixed per-request overhead: send a one-character message and
+   compare `prompt_tokens` against what the provider's tokenizer says that
+   message is worth. It was 184 tokens on xAI.
+5. Run `npm run eval -- --base <url> --models <ids>` to find out whether it can
+   hold the contract, and how long it takes to do so.
 
-Steps 1–3 are arithmetic. Step 4 is the one that actually decides it.
+Steps 1–4 are arithmetic. Step 5 is the one that actually decides it — and on
+Grok it was **latency**, a column that does not appear on any pricing page,
+that settled the recommendation.
+
+Add what you find to `PROVIDERS` in `tools/cost.ts`. It takes prices, a source
+URL, a check date, an optional per-request overhead, and measured thinking
+tokens per model — no code changes beyond the table.

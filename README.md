@@ -6,7 +6,7 @@ No backend, no account, no telemetry. Your text goes from your browser straight 
 
 > **Status: in development.** The provider layer, settings model, inline assistant and options UI are in place. Not yet on the Chrome Web Store.
 >
-> **What is actually known to work is a much shorter list than what is built.** One site (WhatsApp Web) and one provider (Google Gemini) have been confirmed by a human; the rest is covered by automated tests, or by nothing. [COMPATIBILITY.md](COMPATIBILITY.md) says exactly which is which — and [reports](CONTRIBUTING.md) are the fastest way to grow that list.
+> **What is actually known to work is a much shorter list than what is built.** One site (WhatsApp Web) and two providers (Google Gemini, xAI) have been confirmed against real keys; the rest is covered by automated tests, or by nothing. [COMPATIBILITY.md](COMPATIBILITY.md) says exactly which is which — and [reports](CONTRIBUTING.md) are the fastest way to grow that list.
 
 ---
 
@@ -107,7 +107,7 @@ One honest caveat: `chrome.storage.sync` means Chrome syncs your settings — in
 
 Live checking spends your key. ProofKey is built to keep that small: it checks about a second after you stop typing rather than on every keystroke, sends only sentences whose text changed, never sends the sentence your cursor is inside, and caches results per sentence. Inline checking is off by default and is enabled per site.
 
-Which model you pick matters more than any of that — the cost spread across current Gemini models is about 20×, and the fastest one measured is also nearly the cheapest. [MODELS.md](MODELS.md) has the arithmetic, worked out from ProofKey's real prompt sizes, plus measured quality and latency for three models. `npm run cost` recalculates it; `npm run eval` measures a model you are considering.
+Which model you pick matters more than any of that — the cost spread across current Gemini models is about 20×, and the fastest one measured is also nearly the cheapest. Across providers the spread is wider still: the same live check costs $0.14 per 1,000 on Gemini and $1.50 on Grok, and takes 1s against 1.6–22s. [MODELS.md](MODELS.md) has the arithmetic, worked out from ProofKey's real prompt sizes, plus measured quality and latency for eight model configurations. `npm run cost` recalculates it; `npm run eval` measures a model you are considering.
 
 ## Permissions
 

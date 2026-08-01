@@ -122,7 +122,11 @@ export const PRESETS: readonly Preset[] = [
   openaiCompatible('mistral', 'Mistral', 'https://api.mistral.ai/v1', {
     defaultModel: 'mistral-small-latest',
   }),
-  openaiCompatible('xai', 'xAI (Grok)', 'https://api.x.ai/v1'),
+  openaiCompatible('xai', 'xAI (Grok)', 'https://api.x.ai/v1', {
+    defaultModel: 'grok-4.20-0309-non-reasoning',
+    hint: 'Grok models think by default, which costs seconds per live check. The non-reasoning variant is the measured pick — see MODELS.md. Do not set reasoning_effort here: most Grok models reject the field outright.',
+    docsUrl: 'https://console.x.ai/',
+  }),
   openaiCompatible('together', 'Together AI', 'https://api.together.xyz/v1'),
   openaiCompatible('fireworks', 'Fireworks AI', 'https://api.fireworks.ai/inference/v1'),
   openaiCompatible('cerebras', 'Cerebras', 'https://api.cerebras.ai/v1'),
