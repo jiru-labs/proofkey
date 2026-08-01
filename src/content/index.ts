@@ -1,6 +1,6 @@
 import { askWorker, type ContentState, type RunResult, type WorkerRequest } from '../core/messages';
 import { createLive, type LiveController } from './live';
-import { applyToTarget, readTarget, type EditTarget } from './target';
+import { applyToTarget, readTarget, targetIsCurrent, type EditTarget } from './target';
 import { toast } from './toast';
 import css from './ui.css?inline';
 
@@ -117,6 +117,19 @@ async function invoke(actionId: string): Promise<void> {
 
     if (!result.ok) {
       showFailure(result.error);
+      return;
+    }
+
+    // The round-trip takes seconds and the user can type through it. `target`
+    // was read before the request went out, so writing now would land the
+    // rewrite over text the model never saw. `applyToTarget` refuses this too;
+    // catching it here is only so the message can say what actually happened.
+    if (!targetIsCurrent(target)) {
+      await navigator.clipboard.writeText(result.value.text).catch(() => undefined);
+      toast(ui(), {
+        kind: 'error',
+        text: 'The text changed while this was running, so the result was copied to your clipboard instead.',
+      });
       return;
     }
 

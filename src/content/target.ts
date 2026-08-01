@@ -214,9 +214,29 @@ function closestEditableHost(node: Node): HTMLElement | null {
 
 // ----------------------------------------------------------------- write
 
+/**
+ * Whether the field still holds the text this target was built from.
+ *
+ * Every write below indexes the field by offsets captured earlier — when a
+ * suggestion card was rendered, or when Ctrl+Shift+K read the selection. The
+ * user can move the text out from under them in the meantime by pasting,
+ * undoing, or typing one more character, and writing anyway puts the
+ * replacement over whatever happens to occupy those offsets now. A card left
+ * open over a pasted-over field did exactly that: Apply turned "at noon" into
+ * "at noI", because the offsets still pointed at where "ai" used to be.
+ *
+ * `target.text` has always carried the expectation. Nothing checked it.
+ */
+export function targetIsCurrent(target: EditTarget): boolean {
+  if (target.kind === 'readonly') return false;
+  const current = target.kind === 'input' ? target.node.value : flatten(target.node).text;
+  return current.slice(target.start, target.end) === target.text;
+}
+
 /** Returns false when the text could not be written, so the caller can fall back. */
 export async function applyToTarget(target: EditTarget, text: string): Promise<boolean> {
   if (target.kind === 'readonly') return false;
+  if (!targetIsCurrent(target)) return false;
   if (target.kind === 'input') return applyToInput(target.node, target.start, target.end, text);
   return applyToContentEditable(target, text);
 }

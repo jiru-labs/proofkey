@@ -128,6 +128,20 @@ asserts the count returns, on a `<textarea>` and on a rich-text field both,
 since the two report sites compose in a contenteditable and the textarea is what
 shows the fault was in the session bookkeeping rather than in either editor.
 
+Chasing that one turned up a fourth, and this one could damage a message rather
+than merely mislead about it. A suggestion card stayed open when the text under
+it changed. Its offsets were captured when it opened, every write indexes the
+field by exactly those offsets, and nothing verified that what sits there is
+still what was offered — so pasting over a field with a card up and pressing
+Apply wrote the replacement wherever those numbers happened to land. In the test
+that reproduces it, `at noon` became `at noI`. `EditTarget.text` had carried the
+expectation all along; no path checked it. Now `applyToTarget` refuses when the
+field no longer matches, and `rebuild` closes a card whose suggestion is gone
+and re-anchors one that merely moved. The same guard covers `Ctrl+Shift+K`,
+where the gap is much wider — the whole model round-trip — and typing through it
+would otherwise have landed the rewrite over text the model never saw; that case
+now says so and leaves the result on the clipboard.
+
 ## Providers
 
 Thirty-four presets, but only **two transports** — so this is not thirty-four

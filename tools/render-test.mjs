@@ -89,6 +89,19 @@ async function applyEachInTurn(page, probeArgs, limit = 8) {
   return { started, rounds, state };
 }
 
+/** What the suggestion card is showing, or null when it is closed. */
+const cardProbe = () => {
+  const shadow = document.getElementById('proofkey-root')?.shadowRoot;
+  const card = shadow?.querySelector('.pk-card');
+  if (!card || card.hidden) return null;
+  const rect = card.getBoundingClientRect();
+  return {
+    before: shadow.querySelector('.pk-card__before')?.textContent,
+    after: shadow.querySelector('.pk-card__after')?.textContent,
+    rect: { x: rect.x, y: rect.y },
+  };
+};
+
 /** Replaces a field's whole contents and leaves the caret at the end, as a paste does. */
 const paste = ([id, text]) => {
   const field = document.getElementById(id);
@@ -368,6 +381,118 @@ async function run() {
       `badge reads ${JSON.stringify(after.badge?.text ?? '(hidden)')} over ${JSON.stringify(after.fieldText.trim().slice(0, 60))}`);
 
     await page.screenshot({ path: `${SHOTS}${field}-pasted-back.png` });
+  }
+
+  // An open card describes text that can move out from under it — a paste, an
+  // undo, one more keystroke. Its offsets were captured when it opened, and the
+  // write path indexes the field by exactly those offsets, so an Apply pressed
+  // afterwards lands the replacement over whatever now sits at them.
+  //
+  // Two defences, tested separately because either alone leaves the other case
+  // open: the card closes when the text it describes goes, and the write itself
+  // refuses when the text under the offsets is not what was offered.
+  {
+    const REPLACED = 'The meeting is at noon and we all need to be there. ';
+
+    /** Loads the chat field and opens the card on its first underline. */
+    async function openFirstCard() {
+      await page.goto(`${BASE}?field=chat`, { waitUntil: 'load' });
+      await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(600);
+      const state = await page.evaluate(probe, ['chat', MIRRORED]);
+      const rect = state.marks[0]?.rect;
+      if (!rect) return null;
+      await page.mouse.click(rect.x + rect.w / 2, rect.y + rect.h / 2);
+      await page.waitForTimeout(200);
+      return page.evaluate(cardProbe);
+    }
+
+    console.log('\nchat — a card left open while the text changes underneath it:');
+    let opened = await openFirstCard();
+    check('a card is open to begin with', !!opened,
+      opened ? `"${opened.before}" -> "${opened.after}"` : 'card stayed hidden');
+
+    await page.evaluate(paste, ['chat', REPLACED]);
+    await page.waitForTimeout(1600);
+
+    const lingering = await page.evaluate(cardProbe);
+    check('the card closes once the text it described is gone', lingering === null,
+      lingering ? `still offering "${lingering.before}" -> "${lingering.after}"` : 'closed');
+
+    console.log('\nchat — Apply pressed before the card could close:');
+    opened = await openFirstCard();
+    check('a card is open to begin with', !!opened,
+      opened ? `"${opened.before}" -> "${opened.after}"` : 'card stayed hidden');
+
+    // Paste and press Apply inside one task, so the debounce that closes the
+    // card has not run: it is still open and still describes the old text. This
+    // is the race a user hits by pasting and clicking straight away, and
+    // nothing about the test's timing decides the outcome.
+    await page.evaluate((text) => {
+      const field = document.getElementById('chat');
+      field.focus();
+      field.value = text;
+      field.setSelectionRange(text.length, text.length);
+      field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste' }));
+
+      const shadow = document.getElementById('proofkey-root').shadowRoot;
+      shadow.querySelector('.pk-btn--primary').click();
+    }, REPLACED);
+    await page.waitForTimeout(700);
+
+    const afterApply = await page.evaluate(probe, ['chat', MIRRORED]);
+    check('an Apply against text that has moved is refused',
+      afterApply.fieldText === REPLACED,
+      `field reads ${JSON.stringify(afterApply.fieldText)}`);
+  }
+
+  // The other half of that rule. A suggestion can survive an edit and still
+  // move — inserting a sentence ahead of it shifts every offset after it — and
+  // a card left pinned where the word used to be points at the wrong one.
+  {
+    console.log('\nplain — a card follows the word it describes:');
+    await page.goto(`${BASE}?field=plain`, { waitUntil: 'load' });
+    await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const before = await page.evaluate(probe, ['plain', MIRRORED]);
+    // Deliberately a word in a later sentence, so inserting ahead of it moves it
+    // without touching the sentence it lives in — its cache entry has to survive
+    // for this to be testing re-anchoring rather than a re-check.
+    const word = before.marks.find((mark) => mark.text === 'projet') ?? before.marks.at(-1);
+    check('a later sentence has an underline to open', !!word,
+      word ? `"${word.text}"` : `marks: ${before.marks.map((m) => m.text).join(', ')}`);
+
+    if (word) {
+      await page.mouse.click(word.rect.x + word.rect.w / 2, word.rect.y + word.rect.h / 2);
+      await page.waitForTimeout(200);
+      const opened = await page.evaluate(cardProbe);
+      check('card opens on it', !!opened,
+        opened ? `"${opened.before}" -> "${opened.after}"` : 'card stayed hidden');
+
+      await page.evaluate(() => {
+        const field = document.getElementById('plain');
+        field.focus();
+        field.value = `Adding a whole new sentence in front of it here. ${field.value}`;
+        field.setSelectionRange(0, 0);
+        field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
+      });
+      await page.waitForTimeout(1600);
+
+      const after = await page.evaluate(probe, ['plain', MIRRORED]);
+      const moved = after.marks.find((mark) => mark.text === opened?.before);
+      const card = await page.evaluate(cardProbe);
+
+      check('the card stays open on the same word', !!card && card.before === opened?.before,
+        card ? `"${card.before}" -> "${card.after}"` : 'card closed');
+      // GAP is 8px below the word, and this field sits high enough on the page
+      // that the card never flips above it.
+      check('and re-anchors to where that word moved to',
+        !!(moved && card) && Math.abs(card.rect.y - (moved.rect.y + moved.rect.h + 8)) < 2,
+        moved && card
+          ? `card top ${Math.round(card.rect.y)}, word bottom ${Math.round(moved.rect.y + moved.rect.h)}`
+          : 'word or card missing');
+    }
   }
 
   // The Ctrl+Shift+K path: one rewrite of the whole field. Distinct from
