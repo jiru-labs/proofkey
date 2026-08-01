@@ -89,6 +89,12 @@ interface Price {
    * component too. Undefined means "not measured", not "zero".
    */
   thinkingTokens?: number;
+  /**
+   * Overrides the provider-level figure, for aggregators where it is not a
+   * provider-level property at all: on OpenRouter the same measurement runs
+   * from 1 token to 193 depending on which upstream serves the model.
+   */
+  overheadTokens?: number;
 }
 
 interface Provider {
@@ -152,6 +158,100 @@ const PROVIDERS: Provider[] = [
       'grok-4.5': { in: 2.0, out: 6.0, thinking: 'cannot be disabled', thinkingTokens: 485 },
     },
   },
+  {
+    // An aggregator, so almost nothing here is a property of OpenRouter itself.
+    // It bills the serving upstream's price and takes its margin when you buy
+    // credits, so these rows are other vendors' prices seen through one key —
+    // `google/gemini-2.5-flash-lite` costs exactly what it costs direct.
+    //
+    // Two consequences for this table, both measured rather than assumed:
+    //
+    //   - Per-request overhead is *not* provider-level, because there is no
+    //     single provider. It is recorded per model below and ranges over two
+    //     orders of magnitude, from 1 token to 193.
+    //   - These are the *catalogue* prices, and they are not always what gets
+    //     charged. A model id can have 22 upstream endpoints at up to 10x the
+    //     price spread, and routing picks one per request. Checked against
+    //     `usage.cost` on ten models: seven matched to eight decimal places,
+    //     and the three that did not each reconcile exactly with the price of
+    //     whichever upstream served them — llama-3.3-70b billed at DeepInfra's
+    //     $0.10/$0.32, deepseek-v4-flash at Baidu's $0.09/$0.179, and
+    //     mistral-small-3.2 at Venice's $0.09375/$0.25. Treat these rows as
+    //     +/-25%, or read `GET /models/{id}/endpoints` for the one you get.
+    name: 'OpenRouter',
+    source: 'https://openrouter.ai/api/v1/models (the key\'s own catalogue)',
+    checked: '2026-08-01',
+    models: {
+      // Overheads are `prompt_tokens` for a one-character message, minus one
+      // for the character — which assumes "x" is a single token in each of
+      // these tokenizers. True for all of them as far as anything here can
+      // check, but it is an assumption, not a measurement, unlike the xAI
+      // figure above which was confirmed against that provider's tokenizer.
+      'mistralai/mistral-nemo': { in: 0.019, out: 0.03, thinking: 'never thinks', overheadTokens: 5 },
+      'openai/gpt-oss-20b': {
+        in: 0.03,
+        out: 0.13,
+        // Rejects reasoning_effort with HTTP 400 rather than ignoring it.
+        thinking: 'cannot be disabled',
+        thinkingTokens: 585,
+        overheadTokens: 65,
+      },
+      'qwen/qwen3.7-flash + reasoning_effort:none': {
+        in: 0.03,
+        out: 0.13,
+        thinking: 'disabled',
+        overheadTokens: 10,
+      },
+      'qwen/qwen3.7-flash': {
+        in: 0.03,
+        out: 0.13,
+        thinking: 'on by default',
+        thinkingTokens: 1801,
+        overheadTokens: 10,
+      },
+      'mistralai/mistral-small-3.2-24b-instruct': {
+        in: 0.075,
+        out: 0.2,
+        thinking: 'never thinks',
+        overheadTokens: 3,
+      },
+      'google/gemini-2.5-flash-lite': {
+        in: 0.1,
+        out: 0.4,
+        thinking: 'off via reasoning_effort',
+        // A one-character message bills exactly 1 token: no chat template on
+        // top at all, the only model measured here with none.
+        overheadTokens: 0,
+      },
+      'openai/gpt-4.1-nano': { in: 0.1, out: 0.4, thinking: 'never thinks', overheadTokens: 7 },
+      'meta-llama/llama-3.3-70b-instruct': {
+        in: 0.13,
+        out: 0.4,
+        thinking: 'never thinks',
+        overheadTokens: 10,
+      },
+      'deepseek/deepseek-v4-flash + reasoning_effort:none': {
+        in: 0.14,
+        out: 0.28,
+        thinking: 'disabled',
+        overheadTokens: 4,
+      },
+      'deepseek/deepseek-v4-flash': {
+        in: 0.14,
+        out: 0.28,
+        thinking: 'on by default',
+        thinkingTokens: 487,
+        overheadTokens: 4,
+      },
+      'openai/gpt-4.1-mini': { in: 0.4, out: 1.6, thinking: 'never thinks', overheadTokens: 7 },
+      'anthropic/claude-haiku-4.5': {
+        in: 1.0,
+        out: 5.0,
+        thinking: 'off by default',
+        overheadTokens: 7,
+      },
+    },
+  },
 ];
 
 // ----------------------------------------------------------------- workloads
@@ -207,7 +307,7 @@ function workloads(): Workload[] {
  * be inventing data.
  */
 function costPer1000(w: Workload, price: Price, provider: Provider): number {
-  const input = w.inputTokens + (provider.overheadTokens ?? 0);
+  const input = w.inputTokens + (price.overheadTokens ?? provider.overheadTokens ?? 0);
   const output = w.outputTokens + (w.name === 'Live check' ? (price.thinkingTokens ?? 0) : 0);
   return ((input * price.in + output * price.out) / 1_000_000) * 1000;
 }
@@ -252,6 +352,14 @@ function main(): void {
     if (provider.overheadTokens) {
       notes.push(
         `includes ${provider.overheadTokens} tokens of fixed per-request overhead, measured`,
+      );
+    }
+    const perModelOverhead = Object.entries(provider.models).filter(([, p]) => p.overheadTokens);
+    if (perModelOverhead.length) {
+      notes.push(
+        `fixed per-request overhead differs by model and is included: ${perModelOverhead
+          .map(([m, p]) => `${m} ${p.overheadTokens}`)
+          .join(', ')}`,
       );
     }
     const thinkers = Object.entries(provider.models).filter(([, p]) => p.thinkingTokens);

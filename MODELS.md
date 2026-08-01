@@ -2,27 +2,39 @@
 
 ProofKey runs on whatever you point it at, which makes "which model should I
 use?" a real question with a real cost attached. This page answers it for
-**Gemini and Grok**, and gives you the method for any other provider.
+**Gemini, Grok and the ten models measured through OpenRouter**, and gives you
+the method for anything else.
 
 It follows the same discipline as [COMPATIBILITY.md](COMPATIBILITY.md): claims
 carry their evidence. The cost half is **calculated** — arithmetic over prompt
-sizes measured from the source. The effectiveness half is **measured**, for
-eight model configurations so far, by a harness in the repo that anyone can run
-against anything.
+sizes measured from the source — and now spot-checked against a provider that
+reports what it actually charged, which matched to eight decimal places on 7 of
+10 models. The effectiveness half is **measured**, for twenty-one model
+configurations so far, by a harness in the repo that anyone can run against
+anything.
 
 Do not read a cost ranking as a quality ranking. Measuring changed the
 recommendation on this page: the cheapest model is not the one to use.
 
-Two things measuring a second provider changed, both of which had been stated
-here as general truths on one provider's evidence:
+Each additional provider measured has demoted a claim that was written here as a
+general truth on one provider's evidence:
 
 - `reasoning_effort: "none"` is **not** safely ignored by endpoints that do not
-  understand it. xAI returns HTTP 400.
+  understand it. xAI returns HTTP 400, and `openai/gpt-oss-20b` returns a
+  different HTTP 400 — *"Reasoning is mandatory for this endpoint and cannot be
+  disabled"*. Three providers, three behaviours.
 - Forced reasoning is **not** merely a latency concern. On Grok it is billed,
   and on `grok-build-0.1` the thinking outweighs the reply 20 to 1.
+- Thinking is **not** generally worth paying for on this task. It bought Grok
+  1.3 points, `qwen3.7-flash` 0.7 points at 10.8× the bill, and
+  `deepseek-v4-flash` nothing at all.
+- A model id does **not** identify a price or a behaviour. Through an
+  aggregator, one id can have 22 upstreams spanning 10× on price — and one of
+  them turned out to be bimodal on quality, which three runs had been too few to
+  notice.
 
 A provider-shaped claim tends to look like a general one until there is a second
-provider.
+provider. A run-count-shaped claim looks fine until someone runs it 26 times.
 
 ## Two workloads, different economics
 
@@ -90,6 +102,36 @@ Every xAI row also carries 184 tokens of overhead — see below. Prices are the
 sub-200k-token tier, checked **2026-08-01** against
 [docs.x.ai/docs/models](https://docs.x.ai/docs/models); past 200k every rate
 doubles, which ProofKey never approaches.
+
+### Cost per 1,000 operations — OpenRouter
+
+| Model | Live check | Fix grammar | Summarize | Thinking |
+|---|---|---|---|---|
+| `mistralai/mistral-nemo` | $0.02 | $0.02 | $0.01 | never thinks |
+| `qwen/qwen3.7-flash + reasoning_effort:none` | $0.04 | $0.05 | $0.02 | disabled |
+| `mistralai/mistral-small-3.2-24b-instruct` | $0.09 | $0.09 | $0.04 | never thinks |
+| `openai/gpt-oss-20b` | $0.12 | $0.05 | $0.02 | cannot be disabled |
+| `google/gemini-2.5-flash-lite` | $0.14 | $0.15 | $0.06 | off via `reasoning_effort` |
+| `openai/gpt-4.1-nano` | $0.14 | $0.15 | $0.06 | never thinks |
+| `deepseek/deepseek-v4-flash + reasoning_effort:none` | $0.14 | $0.16 | $0.08 | disabled |
+| `meta-llama/llama-3.3-70b-instruct` | $0.16 | $0.17 | $0.08 | never thinks |
+| `qwen/qwen3.7-flash` | $0.28 | $0.05 | $0.02 | on by default |
+| `deepseek/deepseek-v4-flash` | $0.28 | $0.16 | $0.08 | on by default |
+| `openai/gpt-4.1-mini` | $0.56 | $0.58 | $0.26 | never thinks |
+| `anthropic/claude-haiku-4.5` | $1.59 | $1.61 | $0.68 | off by default |
+
+Overhead is per **model** here rather than per provider, because an aggregator
+has no single upstream: a one-character message bills 1 token through Google, 7
+through OpenAI, 10 through Llama and Qwen, and **65** through `gpt-oss-20b`.
+Those are included above. Live-check figures also include measured thinking
+tokens where thinking is on: `gpt-oss-20b` 585, `qwen3.7-flash` 1,801,
+`deepseek-v4-flash` 487.
+
+**These are catalogue prices, and three of ten measured requests were not billed
+at them** — see [the same model id is not the same
+model](#the-same-model-id-is-not-the-same-model). Treat an OpenRouter row as
+±25%, or read the price off `GET /models/{id}/endpoints` for the upstream you are
+actually routed to. Checked **2026-08-01** against the key's own catalogue.
 
 **Assumptions.** 4 characters per token; 90-character sentences, 8 per
 live-check request; a 600-character paragraph for a quick action; an empty
@@ -276,6 +318,27 @@ checking is why you are here, Gemini is the better buy on this evidence. Grok
 earns its place on the quick-actions side, and the setting below lets you have
 both.
 
+### If you are on OpenRouter
+
+One key, seven model vendors reached through it, and the preset default (`openai/gpt-4.1-mini`) is a
+defensible but expensive choice — it costs 28× the cheapest model measured to
+score one fixture better.
+
+| Use | Model | Why |
+|---|---|---|
+| **Live check** | `qwen/qwen3.7-flash` + `reasoning_effort: "none"` | 13.0/14, dead stable across runs, no false alarms, **$0.04** per 1,000 checks. Leave thinking on and it scores 13.7 for $0.28 — 0.7 points for 7× the bill. |
+| **Cheapest that is still honest** | `mistralai/mistral-nemo` | 12.0/14, zero variance, zero false alarms, fastest in the table at 294ms, **$0.02** per 1,000. Its misses are missed errors, never invented ones. |
+| **Quick actions** | `anthropic/claude-haiku-4.5` or `openai/gpt-4.1-mini` | Both held the contract with no false alarms. Same caveat as everywhere on this page: the eval measures live checking, not "improve writing". |
+| **Avoid for live check** | `mistralai/mistral-small-3.2-24b-instruct`, `meta-llama/llama-3.3-70b-instruct` | 8.7/14 and 10.7/14, both with false alarms — and llama flattened `usted` to `tú` and translated the mixed ES/EN fixture into Spanish. |
+| **Avoid entirely** | the `:free` variants | `gemma-4-31b-it:free` returned HTTP 429 on every attempt; `gpt-oss-20b:free` broke the contract by thinking through all 8,192 tokens. |
+
+Two OpenRouter-specific things to set up. Put `{"reasoning_effort": "none"}` in
+**Extra body fields** — it is accepted by every model measured here except
+`openai/gpt-oss-20b`, which rejects it with HTTP 400, and it cut the bill 10.8× on
+`qwen3.7-flash` and 3.2× on `deepseek-v4-flash` with no loss of accuracy on
+either. And if a specific price matters to you, pin the upstream: routing picks
+between as many as 22 endpoints per model at up to 10× the price spread.
+
 ### Using two models
 
 **Settings → Live checking → Connection.** Leave it on *Same as the active
@@ -293,6 +356,16 @@ expect to be up.
 ## The free tier
 
 Gemini has a free tier, and for casual use it may cost you nothing at all.
+
+OpenRouter's `:free` model variants are a different proposition, and on this
+evidence not a usable one. Both that were tried on 2026-08-01 failed: 
+`google/gemma-4-31b-it:free` returned HTTP 429 *"temporarily rate-limited
+upstream"* on every request across two separate attempts, and
+`openai/gpt-oss-20b:free` broke the live-check contract on one run in three by
+spending all 8,192 tokens thinking without writing a reply — the paid
+`gpt-oss-20b`, same weights, held 3/3 and thought 1,024 tokens. A free endpoint
+that answers 429 during a live check produces no underline at all, and the live
+check does not fall through the fallback chain.
 
 Concrete free-tier limits are **not published as a table** any more — Google's
 [rate limits page](https://ai.google.dev/gemini-api/docs/rate-limits) now points
@@ -319,6 +392,7 @@ npm run eval                          # 3 runs each of gemini-2.5-flash-lite and
 npm run eval -- --models gemini-3.1-flash-lite --runs 5
 npm run eval -- --base https://api.groq.com/openai/v1 --models llama-3.3-70b
 npm run eval -- --base https://api.x.ai/v1 --models grok-4.3 --reasoning off
+npm run eval -- --base https://openrouter.ai/api/v1 --models qwen/qwen3.7-flash
 ```
 
 Flags: `--base`, `--models`, `--runs`, `--reasoning` (a value, or `off` to omit
@@ -331,7 +405,7 @@ It sends the **real** composed prompt from `src/core/prompts.ts` and parses the
 reply with the **real** `parseCheckReply`, so what it measures is ProofKey
 rather than an approximation. `runs × models` small requests — cents at most.
 
-It reports five things, and only one of them is accuracy:
+It reports six things, and only one of them is accuracy:
 
 1. **Contract failures.** The numbered-line format is how a reply gets mapped
    back to sentences. A model that breaks it is unusable at any price, and small
@@ -349,9 +423,15 @@ It reports five things, and only one of them is accuracy:
    the results above are a live demonstration of why.
 5. **Real token counts** from the provider, reasoning tokens included where the
    provider reports them, and the provider's own **cost** figure where it states
-   one — xAI returns `usage.cost_in_usd_ticks`. That last one is the only
-   measured cost in the repo; everything in `tools/cost.ts` is calculated, so
-   where both exist they should agree.
+   one — xAI returns `usage.cost_in_usd_ticks`, OpenRouter returns `usage.cost`
+   in USD. Those are the only measured costs in the repo; everything in
+   `tools/cost.ts` is calculated, so where both exist they should agree. They
+   do, exactly, on 7 of the 10 OpenRouter models — and the three exceptions
+   found a real bug in the assumption that a model id has one price.
+6. **Which upstream served it**, where the endpoint says. On an aggregator a
+   model id does not identify the machine, and routing can differ between two
+   runs of the same model, which makes the latency column above an average over
+   more than one thing.
 
 The fixtures cover English, Spanish, French, German and mixed ES/EN, plus
 register preservation (tú vs usted), URLs, mentions, hashtags, emoji, and one
@@ -368,10 +448,17 @@ Gemini, 14 fixtures × 3 runs, 2026-08-01, `npm run eval -- --runs 3`:
 | `gemini-3.1-flash-lite` | 13.0/14 | 13–13 | 0.0 | held 3/3 | **918ms** | maintainer |
 | `gemini-2.5-flash` | 11.0/14 | 11–11 | 0.0 | held 3/3 | 1245ms | maintainer |
 
-All three are now perfectly stable — identical score on every run, where the
-worst of them previously ranged 9–13 on identical input. A model that answers
-differently each time underlines a sentence, drops it, and underlines it again
-as you type, so this matters as much as the score.
+All three gave an identical score on every run, where the worst of them
+previously ranged 9–13 on identical input. A model that answers differently each
+time underlines a sentence, drops it, and underlines it again as you type, so
+this matters as much as the score.
+
+**Three runs was not enough to say "stable", and a later measurement said so.**
+`gemini-2.5-flash-lite` reached through OpenRouter turned out to be
+[bimodal](#the-same-model-id-is-not-the-same-model) — 14/14 on about 85% of
+requests and 9–10/14 on the rest, on byte-identical input. Three runs miss a 15%
+failure mode more often than not. Read this table as "no instability visible in
+three runs", which is weaker than it was originally written.
 
 xAI, same 14 fixtures × 3 runs, 2026-08-01:
 
@@ -409,6 +496,117 @@ things to do" (agreement missed, as on every Gemini model) and a full stop added
 to "…since last week". `grok-4.20-0309-non-reasoning` loses its one point to the
 same full stop, or to "The meeting is **on** Thursday" — it alternates between
 the two across runs, which is why it shows 13/14 but with two unstable fixtures.
+
+### Results — OpenRouter, seven vendors through one key
+
+OpenRouter is an aggregator, so this is not a third provider so much as a way of
+reaching many at once. Same 14 fixtures × 3 runs, 2026-08-01, `--reasoning off`:
+
+| Model | Correct | Spread | False alarms | Contract | Latency | Thinking | Served by | Reported by |
+|---|---|---|---|---|---|---|---|---|
+| `qwen/qwen3.7-flash` | **13.7/14** | 13–14 | 0.0 | held 3/3 | 768ms | 3,152 | Alibaba | maintainer |
+| `openai/gpt-4.1-mini` | 13.0/14 | 13–13 | 0.0 | held 3/3 | 377ms | 0 | OpenAI | maintainer |
+| `deepseek/deepseek-v4-flash` | 12.7/14 | 12–14 | 0.7 | held 3/3 | 595ms | 853 | Baidu | maintainer |
+| `mistralai/mistral-nemo` | 12.0/14 | 12–12 | 0.0 | held 3/3 | **294ms** | 0 | Io Net / DeepInfra | maintainer |
+| `anthropic/claude-haiku-4.5` | 11.7/14 | 11–12 | 0.0 | held 3/3 | 957ms | 0 | Amazon Bedrock | maintainer |
+| `google/gemini-2.5-flash-lite` | 11.3/14 | 10–14 | 0.0 | held 3/3 | 682ms | 0 | Google | maintainer |
+| `openai/gpt-oss-20b` | 11.0/14 | 10–12 | 0.0 | held 3/3 | 610ms | 1,024 | CoreWeave | maintainer |
+| `openai/gpt-4.1-nano` | 10.7/14 | 8–12 | 0.3 | held 3/3 | 338ms | 0 | OpenAI | maintainer |
+| `meta-llama/llama-3.3-70b-instruct` | 10.7/14 | 7–13 | 0.3 | held 3/3 | 420ms | 0 | DeepInfra | maintainer |
+| `mistralai/mistral-small-3.2-24b-instruct` | 8.7/14 | 7–12 | 0.7 | held 3/3 | 615ms | 0 | DeepInfra | maintainer |
+| `openai/gpt-oss-20b:free` | 5.7/14 | 0–9 | 0.0 | **BROKE 1/3** | 2,878ms | 8,189 | Darkbloom | maintainer |
+| `google/gemma-4-31b-it:free` | — | — | — | **HTTP 429** | — | — | Google AI Studio | maintainer |
+
+And the four worth re-running with thinking disabled, same day, 3 runs:
+
+| Model | Correct | Spread | False alarms | Latency | Live check |
+|---|---|---|---|---|---|
+| `qwen/qwen3.7-flash` + `reasoning_effort:none` | 13.0/14 | 13–13 | 0.0 | 3,734ms | $0.04 |
+| `deepseek/deepseek-v4-flash` + `reasoning_effort:none` | 13.0/14 | 12–14 | 0.3 | 786ms | $0.14 |
+| `openai/gpt-4.1-mini` | 13.0/14 | 13–13 | 0.0 | 498ms | $0.56 |
+| `mistralai/mistral-nemo` | 12.0/14 | 12–12 | 0.0 | 318ms | $0.02 |
+
+```bash
+export PROOFKEY_EVAL_KEY=...
+npm run eval -- --base https://openrouter.ai/api/v1 --reasoning off \
+  --models openai/gpt-4.1-mini,qwen/qwen3.7-flash,mistralai/mistral-nemo
+```
+
+**Every paid model held the contract on all three runs.** The claim at the top of
+this page that "small models break it most" survives, but only just, and only at
+the free tier: the one contract failure in the whole table is `gpt-oss-20b:free`,
+and its `finish_reason` was `length` — it spent all 8,192 tokens thinking and
+never wrote a reply. That is a budget failure, not an inability to hold a format.
+The *paid* `gpt-oss-20b` is the same weights and held 3/3.
+
+Three results worth pulling out.
+
+**Thinking is not reliably worth paying for, and the Grok result did not
+generalise.** On `qwen3.7-flash` it buys 0.7 points for 10.8× the measured bill
+and 3,152 thinking tokens. On `deepseek-v4-flash` it buys **nothing** — 12.7/14
+with, 13.0
+without — while tripling the cost. Grok's 14/14-vs-12.7/14 gap was real, and it
+was a fact about Grok.
+
+**The cheapest model tested is not the worst.** `mistral-nemo` at $0.02 per 1,000
+live checks scores 12.0/14, perfectly stable across runs, zero false alarms, and
+is the fastest thing in the table at 294ms. It beats `gpt-4.1-nano`, which costs
+7× more, and `mistral-small-3.2-24b`, which is a bigger model from the same
+vendor. Its two misses are honest ones — a missed agreement and a missed verb
+form, no invented edits.
+
+**False alarms are where the cheap models actually fail**, not the contract.
+`mistral-small-3.2-24b` and `deepseek-v4-flash` average 0.7 unnecessary changes to
+clean text per run; `llama-3.3-70b` rewrote "¿Cómo está **usted** hoy?" to "¿Cómo
+estás hoy?", flattening exactly the register the prompt says to preserve, and
+translated the mixed ES/EN fixture into Spanish outright. On a live check those
+are the failures a user notices.
+
+### The same model id is not the same model
+
+Two findings that only appear once a request goes through an aggregator, both of
+which make the numbers above less repeatable than they look.
+
+**Routing decides what you pay, and the catalogue price is not it.** Calculated
+cost was checked against OpenRouter's own `usage.cost` on ten models. Seven
+matched to eight decimal places. Three did not — and each is explained exactly by
+which upstream served the request:
+
+| Model | Catalogue | Actually billed at | Gap |
+|---|---|---|---|
+| `meta-llama/llama-3.3-70b-instruct` | $0.13 / $0.40 | DeepInfra, $0.10 / $0.32 | 22% cheaper |
+| `deepseek/deepseek-v4-flash` | $0.14 / $0.28 | Baidu, $0.09 / $0.179 | 36% cheaper |
+| `mistralai/mistral-small-3.2-24b-instruct` | $0.075 / $0.20 | Venice, $0.09375 / $0.25 | 25% dearer |
+
+`GET /models/{id}/endpoints` shows why: `deepseek-v4-flash` has **22** upstreams
+and `llama-3.3-70b` has **13**, priced from $0.10/$0.32 to $1.04/$1.04 — a **10×
+spread on input for one model id**. Even `gemini-2.5-flash-lite` has five, from
+$0.05/$0.20 to $0.18/$0.72. So the OpenRouter rows above are the catalogue price,
+and what you are charged is a property of a routing decision made per request.
+`mistral-nemo` was served by two different upstreams across three runs of one
+eval.
+
+**One model went bimodal, and 3 runs is not enough to see it.**
+`gemini-2.5-flash-lite` scored 11.3/14 with a 10–14 spread here, against 14/14
+flat when this page measured it directly. Chasing that down: it is not
+`reasoning_effort` and not drift over the afternoon — an interleaved A/B of the
+two request shapes came back 14/14 on all twelve. Across 26 individually
+recorded runs on byte-identical requests, 22 scored **14/14** and 4 scored
+**9–10/14, missing the same five fixtures every time** — all of them the
+messaging-conventions rule, a full stop or comma added where the prompt forbids
+it. It is bimodal, not noisy: two behaviours behind one model id, roughly 15% of
+requests getting the worse one.
+
+Nothing in the response identifies which you got — same `provider`, same `model`,
+`system_fingerprint` null — but `completion_tokens` is a perfect proxy after the
+fact: **189 output tokens scored 14/14 every time**, and 193–195 tokens were
+always the degraded mode, the extra tokens being precisely the punctuation it
+should not have added.
+
+The honest conclusion is not "OpenRouter degrades Gemini". It is that **this
+page's own "perfectly stable" claim rested on three runs**, and three runs cannot
+see a 15% failure mode. Whether the direct endpoint is bimodal too is untested
+here — it needs a Gemini key, and this key is an OpenRouter one.
 
 ### The latency problem
 
@@ -481,9 +679,16 @@ page, arriving from the other direction.
 ### Caveats
 
 14 fixtures is a smoke test, not a benchmark: it will catch a model that is
-unusable, not separate two good ones. Three runs is enough to expose instability
-and not enough to rank. And add fixtures when you find a **real** failure — a
-case a model got wrong in the wild is worth more than one somebody invented.
+unusable, not separate two good ones. And add fixtures when you find a **real**
+failure — a case a model got wrong in the wild is worth more than one somebody
+invented.
+
+Three runs is **not** enough to call a model stable, which this page learned the
+hard way. `gemini-2.5-flash-lite` is bimodal at roughly 85/15, and a 15% failure
+mode survives three runs undetected 61% of the time. Three runs is enough to
+catch a model that is *obviously* erratic; a clean 3-run result means "no
+instability visible", not "stable". Use `--runs 10` before believing a spread of
+zero.
 
 Post yours as a
 [provider report](https://github.com/jiru-labs/proofkey/issues/new?template=provider-report.yml)
@@ -506,8 +711,21 @@ The method transfers. For any provider:
 
 Steps 1–4 are arithmetic. Step 5 is the one that actually decides it — and on
 Grok it was **latency**, a column that does not appear on any pricing page,
-that settled the recommendation.
+that settled the recommendation. On OpenRouter it was **false alarms**, another
+one that does not.
+
+Two amendments from measuring an aggregator, both of which apply to any provider
+that does not run its own hardware:
+
+6. **Check whether the provider reports what it charged**, and reconcile it
+   against step 2 before publishing a cost table. xAI and OpenRouter both do.
+   Doing this is what caught the assumption that a model id has one price.
+7. **Do not assume a model id is one thing.** Step 4's overhead, step 2's price
+   and step 5's score can all differ per upstream. `GET
+   /models/{id}/endpoints` lists them on OpenRouter; the eval prints whichever
+   one served each run.
 
 Add what you find to `PROVIDERS` in `tools/cost.ts`. It takes prices, a source
-URL, a check date, an optional per-request overhead, and measured thinking
-tokens per model — no code changes beyond the table.
+URL, a check date, a per-request overhead — provider-level, or per model where
+that is not a provider-level fact — and measured thinking tokens per model. No
+code changes beyond the table.

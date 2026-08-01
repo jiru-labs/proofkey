@@ -6,6 +6,7 @@
  *     node --experimental-strip-types tools/eval.ts --models gemini-2.5-flash-lite --runs 5
  *     node --experimental-strip-types tools/eval.ts --base https://api.groq.com/openai/v1 --models llama-3.3-70b
  *     node --experimental-strip-types tools/eval.ts --base https://api.x.ai/v1 --models grok-4.3 --reasoning off
+ *     node --experimental-strip-types tools/eval.ts --base https://openrouter.ai/api/v1 --models qwen/qwen3.7-flash
  *
  * This sends the **real** composed prompt from `src/core/prompts.ts` and parses
  * the reply with the **real** `parseCheckReply`, so what it measures is
@@ -190,6 +191,13 @@ interface Run {
    * hold the format look identical in the output — `length` tells them apart.
    */
   finishReason?: string;
+  /**
+   * Who actually served it, where the endpoint says. On an aggregator a model
+   * id does not identify the machine: OpenRouter returns `provider`, and it can
+   * differ between two runs of the same model, which makes latency and even
+   * scores less repeatable than they look.
+   */
+  servedBy?: string;
 }
 
 interface Options {
@@ -228,11 +236,12 @@ async function once({ base, key, model, reasoning, maxTokens }: Options): Promis
   const payload = await response.json();
   const reply = payload?.choices?.[0]?.message?.content ?? '';
   const finishReason = payload?.choices?.[0]?.finish_reason;
+  const servedBy = typeof payload?.provider === 'string' ? payload.provider : undefined;
   const usage = (payload?.usage ?? {}) as Record<string, unknown>;
   const parsed = parseCheckReply(reply, inputs.length);
 
   return parsed
-    ? { ms, usage, contractBroken: false, outputs: parsed }
+    ? { ms, usage, contractBroken: false, outputs: parsed, servedBy }
     : {
         ms,
         usage,
@@ -240,6 +249,7 @@ async function once({ base, key, model, reasoning, maxTokens }: Options): Promis
         outputs: FIXTURES.map(() => null),
         rawReply: reply,
         finishReason,
+        servedBy,
       };
 }
 
@@ -298,20 +308,25 @@ function reasoningTokens(usage: Record<string, unknown>): number | undefined {
 
 /**
  * What the provider says the request cost, where it says anything at all. Most
- * do not; xAI returns `usage.cost_in_usd_ticks`.
+ * do not. Two of the ones measured here do, in different units:
  *
- * A tick is 1e-10 USD. That is not documented, but it is forced by arithmetic:
- * ticks come out exactly equal to the sum of each token class times its price
- * from `GET /v1/models`, and those prices reproduce the published dollar
- * figures at 1e-4 USD per million tokens per unit.
+ *   - xAI returns `usage.cost_in_usd_ticks`. A tick is 1e-10 USD. That is not
+ *     documented, but it is forced by arithmetic: ticks come out exactly equal
+ *     to the sum of each token class times its price from `GET /v1/models`, and
+ *     those prices reproduce the published dollar figures at 1e-4 USD per
+ *     million tokens per unit.
+ *   - OpenRouter returns `usage.cost` in USD, already summed, alongside a
+ *     `cost_details` breakdown.
  *
- * Worth printing because every number in `tools/cost.ts` is *calculated*. This
- * is the one place a provider states the answer, so where both exist they
- * should agree, and a gap is a bug in the estimator.
+ * Worth printing because every number in `tools/cost.ts` is *calculated*. These
+ * are the places a provider states the answer, so where both exist they should
+ * agree, and a gap is a bug in the estimator.
  */
 function reportedCostUsd(usage: Record<string, unknown>): number | undefined {
   const ticks = usage['cost_in_usd_ticks'];
-  return typeof ticks === 'number' ? ticks * 1e-10 : undefined;
+  if (typeof ticks === 'number') return ticks * 1e-10;
+  const usd = usage['cost'];
+  return typeof usd === 'number' ? usd : undefined;
 }
 
 async function main(): Promise<void> {
@@ -395,6 +410,19 @@ async function main(): Promise<void> {
     '\nCost is the provider\'s own figure for these 14-fixture requests, scaled to 1,000 of them.',
   );
   console.log('It is not comparable to tools/cost.ts, which sizes a real 8-sentence live check.');
+
+  // Only aggregators report this. Two upstreams for one model id means the
+  // latency and score above are averages over different machines.
+  const routed = summaries
+    .map((s) => [s.model, new Set(s.runs.map((r) => r.servedBy).filter(Boolean))] as const)
+    .filter(([, upstreams]) => upstreams.size > 0);
+  if (routed.length) {
+    console.log('\nServed by, as reported by the endpoint:');
+    for (const [model, upstreams] of routed) {
+      const list = [...upstreams].join(', ');
+      console.log(`  ${model} — ${list}${upstreams.size > 1 ? '  [routing varied between runs]' : ''}`);
+    }
+  }
 
   const anyUnstable = summaries.some((s) => s.unstable.length);
   if (anyUnstable) {
