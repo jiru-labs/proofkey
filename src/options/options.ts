@@ -128,11 +128,16 @@ function renderConnectionBody(connection: Connection, problem: string | null): H
   });
 
   const modelStatus = el('p', { class: 'field__hint' });
+  // Filled in by "Fetch models" with a browse list. Kept out of the row so a
+  // long model id does not squeeze the input.
+  const modelPicker = el('div', { class: 'field__picker' });
   const modelRow = el(
     'div',
     { class: 'row' },
     modelInput,
-    button('Fetch models', () => void fetchModels(connection, modelInput, modelStatus)),
+    button('Fetch models', () =>
+      void fetchModels(connection, modelInput, modelPicker, modelStatus),
+    ),
   );
 
   const testStatus = el('p', { class: 'status' });
@@ -186,7 +191,14 @@ function renderConnectionBody(connection: Connection, problem: string | null): H
         : undefined,
     ),
 
-    el('div', { class: 'field' }, el('label', { class: 'field__label', text: 'Model' }), modelRow, modelStatus),
+    el(
+      'div',
+      { class: 'field' },
+      el('label', { class: 'field__label', text: 'Model' }),
+      modelRow,
+      modelPicker,
+      modelStatus,
+    ),
 
     el(
       'details',
@@ -365,6 +377,7 @@ function applyPreset(connection: Connection, presetId: PresetId): void {
 async function fetchModels(
   connection: Connection,
   target: HTMLInputElement,
+  picker: HTMLElement,
   status: HTMLElement,
 ): Promise<void> {
   status.textContent = 'Fetching…';
@@ -377,23 +390,63 @@ async function fetchModels(
   }
 
   try {
-    const models = await listModels(connection);
+    const preset = getPreset(connection.presetId);
+    const models = (await listModels(connection)).map((id) =>
+      preset.stripIdPrefix && id.startsWith(preset.stripIdPrefix)
+        ? id.slice(preset.stripIdPrefix.length)
+        : id,
+    );
+    clear(picker);
     if (models.length === 0) {
       status.textContent = 'The endpoint returned no models. Type the name manually.';
       return;
     }
 
+    // The datalist filters against whatever the input holds, so once the field
+    // contains a full model id it narrows to that single line. That is correct
+    // autocomplete behaviour and it reads as "the endpoint only has one model",
+    // which is why the browse list below exists: it always shows all of them.
     const list = el('datalist', { id: `models-${connection.id}` });
     for (const model of models) list.append(el('option', { value: model }));
     document.getElementById(list.id)?.remove();
     document.body.append(list);
     target.setAttribute('list', list.id);
 
-    if (!connection.model) {
-      connection.model = models[0]!;
-      target.value = models[0]!;
+    const BROWSE = '';
+    picker.append(
+      select(
+        [
+          { value: BROWSE, label: `Browse all ${models.length}…` },
+          ...models.map((model) => ({ value: model, label: model })),
+        ],
+        BROWSE,
+        {
+          on: {
+            change: (event) => {
+              const chosen = (event.target as HTMLSelectElement).value;
+              if (!chosen) return;
+              connection.model = chosen;
+              target.value = chosen;
+            },
+          },
+        },
+      ),
+    );
+
+    // Never adopt models[0]. The list is sorted alphabetically, so the winner is
+    // whatever sorts first rather than whatever is usable — on Gemini that is
+    // `antigravity-preview-05-2026`, ahead of every gemini-* entry. Take the
+    // preset's own default when the endpoint offers it, else leave the field
+    // empty so the browse list opens unfiltered.
+    if (!connection.model && preset.defaultModel && models.includes(preset.defaultModel)) {
+      connection.model = preset.defaultModel;
+      target.value = preset.defaultModel;
     }
-    status.textContent = `${models.length} models available — click the field to pick one.`;
+
+    const count = models.length === 1 ? '1 model' : `${models.length} models`;
+    status.textContent = connection.model
+      ? `${count}. Type in the field to filter, or use the list to browse all of them.`
+      : `${count}. Pick one from the list, or type a name.`;
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : String(error);
     status.className = 'field__hint field__hint--error';

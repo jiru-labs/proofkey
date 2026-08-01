@@ -51,6 +51,24 @@ function startStubProvider() {
         'access-control-allow-headers': '*',
       });
 
+      // Gemini's catalogue shape: ids carry the `models/` resource prefix, and
+      // `antigravity-preview-05-2026` sorts ahead of every gemini-* entry. That
+      // combination is what used to end up in an empty model field.
+      if (request.url.includes('/models')) {
+        response.end(
+          JSON.stringify({
+            object: 'list',
+            data: [
+              { id: 'models/gemini-2.5-flash' },
+              { id: 'models/antigravity-preview-05-2026' },
+              { id: 'models/embedding-001' },
+              { id: 'models/gemini-2.5-flash-lite' },
+            ],
+          }),
+        );
+        return;
+      }
+
       // Reply in whichever shape the caller asked for.
       response.end(
         request.url.includes('/messages')
@@ -117,6 +135,19 @@ function settingsFor(transport) {
       maxSentencesPerRequest: 8,
       dictionary: [],
     },
+  };
+}
+
+/**
+ * A Gemini-preset connection with an empty model field, pointed at the stub.
+ * The preset supplies `stripIdPrefix` and the default model, so this exercises
+ * the real registry row rather than a fixture of one.
+ */
+function geminiSettings() {
+  const base = settingsFor('chat_completions');
+  return {
+    ...base,
+    connections: [{ ...base.connections[0], presetId: 'gemini', model: '' }],
   };
 }
 
@@ -234,6 +265,61 @@ async function run() {
       'output contract present',
     );
   }
+
+  // ------------------------------------------------------------ model picker
+  // Regression test for a real report: the Gemini dropdown appeared to hold a
+  // single model, `models/antigravity-preview-05-2026`. Nothing was filtered —
+  // the list is sorted alphabetically, the empty field took entry [0], and the
+  // datalist then matched only the value now sitting in the field.
+  console.log('\nmodel picker:');
+
+  await page.evaluate(
+    (settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }),
+    geminiSettings(),
+  );
+  await page.reload();
+  await page.waitForTimeout(300);
+
+  const modelField = page.locator('input[placeholder="model name"]').first();
+  check('model field starts empty', (await modelField.inputValue()) === '');
+
+  await page.getByRole('button', { name: 'Fetch models' }).first().click();
+  await page.waitForTimeout(800);
+
+  const picked = await modelField.inputValue();
+  check(
+    'alphabetically-first model is not adopted',
+    picked !== 'antigravity-preview-05-2026' && picked !== 'models/antigravity-preview-05-2026',
+    picked || '(empty)',
+  );
+  check(
+    "preset's own default is adopted instead",
+    picked === 'gemini-2.5-flash',
+    picked || '(empty)',
+  );
+  check(
+    'models/ prefix stripped — the bare id is the measured form',
+    !picked.startsWith('models/'),
+    picked,
+  );
+
+  const browse = page.locator('.field__picker select').first();
+  check('browse list rendered', (await browse.count()) > 0);
+
+  const browseOptions = await browse.locator('option').allTextContents();
+  check(
+    'browse list holds every model regardless of the field',
+    browseOptions.filter((text) => !text.startsWith('Browse all')).length === 4,
+    `${browseOptions.length} options with the field reading "${picked}"`,
+  );
+  check(
+    'browse list is also stripped',
+    browseOptions.some((text) => text === 'gemini-2.5-flash-lite'),
+    browseOptions.join(', '),
+  );
+
+  const datalistOptions = await page.locator('datalist option').count();
+  check('datalist still populated for type-to-filter', datalistOptions === 4, `${datalistOptions}`);
 
   check('no uncaught worker errors', workerErrors.length === 0, workerErrors.join('; ') || 'clean');
 

@@ -276,6 +276,17 @@ code change. In the connection editor, add:
 { "reasoning_effort": "none" }
 ```
 
+**No preset ships this, deliberately** — you add it per connection. Presets only
+carry fields that are harmless if they end up somewhere unintended, and this one
+is not: only the provider dropdown rewrites a connection's extra body, so a
+connection repointed at another endpoint by editing its base URL keeps whatever
+it had. On xAI that is an HTTP 400, and 400 is not retryable, so the fallback
+chain stops instead of moving to the next connection.
+
+So **the extension's out-of-the-box behaviour is thinking on**, while every
+number below was measured with it off. Expect a connection you have not
+configured to cost more and run slower than these tables.
+
 **This is not safe to leave set on a connection you point at another provider.**
 An earlier version of this page said it was, on the reasoning that an endpoint
 which does not know a field will drop it. Gemini does. xAI does not — it returns
@@ -341,7 +352,7 @@ visible", which is [weaker than it sounds](#caveats):
 |---|---|---|
 | **Live check** | `gemini-2.5-flash-lite` + `reasoning_effort: "none"` | 14/14 on every run, no false alarms, and the cheapest model on the page at $0.14 per 1,000 checks. Both the best and the cheapest, which is not how this usually goes. |
 | **If latency matters more** | `gemini-3.1-flash-lite` | 250ms faster (918ms vs 1173ms), 13/14 and equally stable, at 3× the price. For as-you-type underlines that trade is worth considering. |
-| **Quick actions** | `gemini-2.5-flash` + `reasoning_effort: "none"` | The preset default, and volume is low enough that price barely matters. Note this is **not** what the eval measures — see the caveat below. |
+| **Quick actions** | `gemini-2.5-flash` + `reasoning_effort: "none"` | The preset's default *model* — the `reasoning_effort` half you add yourself, and no preset sets it. Volume is low enough that price barely matters. Note this is **not** what the eval measures — see the caveat below. |
 | **Avoid for live check** | 3.5-flash, 3.6-flash, 2.5-pro | 4–20× the cost on a task a flash-lite model does perfectly. |
 
 **Caveat on the quick-actions row.** `npm run eval` exercises the live-check
@@ -445,6 +456,69 @@ one it tries, and a failed check is skipped rather than retried elsewhere. That
 is deliberate — a silent retry storm on every keystroke pause is worse than a
 missing underline — but it means the connection you pin here should be one you
 expect to be up.
+
+## Forced reasoning
+
+**Models that think and cannot be told not to are out of scope for live
+checking, and a few are out of scope entirely.** Like [the free
+tier](#the-free-tier) this is a stated rule rather than a per-model judgement,
+so it is written down here together with what it rests on.
+
+The rule keys on **measured harm, not mechanism.** "Does it think" is the wrong
+question, because one forced-reasoning model on this page is the fastest thing
+measured. What disqualifies a model is one of:
+
+1. **It cannot arrive in time.** Live checking fires ~1s after you stop typing
+   and [does not fall through the fallback chain](#using-two-models) — a pinned
+   connection is the only one it tries, and a failed check is skipped, not
+   retried. A model that thinks for 15s does not produce a late underline, it
+   produces a feature that looks broken.
+2. **It bills you for the thinking.** On xAI reasoning tokens are charged and
+   are *not* counted in `completion_tokens`, so the visible numbers understate
+   the bill — `grok-build-0.1` spends [20× more tokens thinking than
+   writing](#reasoning-a-tax-on-some-providers-and-not-others).
+3. **Thinking breaks the reply.** `minimax-m3` scores 0.0/14 by writing its
+   reasoning into the reply instead of the correction.
+
+What does **not** disqualify a model: thinking you cannot switch off, on its own.
+`gemini-3.1-flash-lite` cannot be told to stop, returns no `reasoning_tokens` to
+be billed for, answers in 918ms and scores 13/14. It is the fastest option here
+and it stays recommended. Mechanism is not harm.
+
+### Out of scope entirely
+
+| Model | Provider | Measured reason |
+|---|---|---|
+| `minimax-m3` | OpenCode Go | 0.0/14 with 7.0 false alarms — thinks out loud into the reply |
+| `deepseek-v4-pro` | OpenCode Go | 98s average against ProofKey's 60s timeout — it fails rather than arriving late |
+| `qwen3.6-plus` | OpenCode Go | 73s average, same |
+
+### Out of scope for live checking, fine for quick actions
+
+There you press a button on purpose and wait; [the two-connection
+setting](#using-two-models) is what makes the split usable.
+
+| Model | Provider | Latency | Why it cannot be turned off |
+|---|---|---|---|
+| `grok-4.5` | xAI | 14.7s | rejects `reasoning_effort: "none"` |
+| `grok-build-0.1` | xAI | 22.2s | rejects the parameter outright |
+| `grok-4.20-0309-reasoning` | xAI | — | rejects the parameter outright |
+| `gemini-2.5-pro` | Gemini | — | Google documents thinking as non-disableable |
+| `gemini-3.5-flash`, `gemini-3.6-flash` | Gemini | — | same, and 4–20× a flash-lite on a task a flash-lite does perfectly |
+| all of OpenCode Go except `gpt-5.6-luna`, `glm-5.1`, `glm-5.2` | OpenCode Go | 15.5s–48s | coding models — thinking is the product |
+
+### What this means in the product
+
+No preset defaults to an excluded model, and that is checked rather than assumed:
+xAI defaults to `grok-4.20-0309-non-reasoning`, OpenCode Go to `gpt-5.6-luna`,
+Gemini to `gemini-2.5-flash`. `npm run eval` measures none of them by default
+either.
+
+Excluded models are **not deleted from the tables above.** Those measurements are
+the reason for excluding them, and removing them would leave the rule asserted
+instead of shown — the [same standard](#caveats) the rest of this page is held to.
+This is the one place the rule differs from the free-tier rule, which excludes
+models precisely because they *cannot* be measured meaningfully.
 
 ## The free tier
 

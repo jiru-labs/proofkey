@@ -38,6 +38,14 @@ const VOICE_RULES = `
 - Keep proper nouns, product names, usernames, and technical terms exactly as
   written, even when they look like errors.`.trim();
 
+/**
+ * Deliberately stricter about capitalisation than `composeCheckPrompt`, and the
+ * asymmetry is the point. Live checking is ambient — it fires on a pause you did
+ * not ask for, so a lowercase sentence start is treated as a messaging
+ * convention and left alone. This action runs because the user pressed a key on
+ * purpose, so it completes the correction instead. Left unstated, the model
+ * picked for itself and the two paths disagreed for no reason anyone chose.
+ */
 const FIX_GRAMMAR = `
 You are a meticulous multilingual proofreader. Correct errors of spelling,
 grammar, agreement, punctuation, diacritics and word choice in the user's text.
@@ -47,6 +55,10 @@ ${VOICE_RULES}
 - Preserve the author's voice and vocabulary. Do not rewrite, embellish,
   shorten, or "improve" anything that is already correct. This is proofreading,
   not editing.
+- Capitalise the first word of a sentence, and apply the capitalisation rules of
+  the language — proper nouns, and weekdays or months where that language
+  capitalises them. Leave deliberate lowercase alone in names, handles, hashtags
+  and code identifiers.
 
 Work at the level the language actually requires, for example:
 - Inflectional languages: agreement across gender, number and case; correct
