@@ -4,7 +4,9 @@ A Grammarly-style writing assistant for Chrome that talks to **your** LLM, using
 
 No backend, no account, no telemetry. Your text goes from your browser straight to the provider you picked, and nowhere else.
 
-> **Status: in development.** The provider layer and settings model are in place; the inline assistant and options UI are being built. Not yet on the Chrome Web Store.
+> **Status: in development.** The provider layer, settings model, inline assistant and options UI are in place. Not yet on the Chrome Web Store.
+>
+> **What is actually known to work is a much shorter list than what is built.** One site (WhatsApp Web) and one provider (Google Gemini) have been confirmed by a human; the rest is covered by automated tests, or by nothing. [COMPATIBILITY.md](COMPATIBILITY.md) says exactly which is which — and [reports](CONTRIBUTING.md) are the fastest way to grow that list.
 
 ---
 
@@ -16,7 +18,7 @@ Grammarly and LanguageTool are excellent, and both route your writing through th
 
 - **Quick actions** on any selected text, from the right-click menu or `Ctrl+Shift+K`: fix grammar, improve writing, make professional, make friendly, simplify, summarize, expand, convert to bullet points.
 - **Editable prompts.** Every built-in action is a prompt you can rewrite, and you can add your own.
-- **34 providers** prefilled, plus a free-form Custom option for any OpenAI-compatible endpoint.
+- **34 provider presets** over two transports, plus a free-form Custom option for any OpenAI-compatible endpoint. Prefilled is not the same as confirmed — one has been used against a real key so far, see [COMPATIBILITY.md](COMPATIBILITY.md).
 - **Fallback chain.** Put a local model first and a cloud key second; ProofKey moves down the list when one fails, and tells you which one failed.
 - **Any language the model knows.** The interface is English; the text doesn't have to be. The prompts are written to detect the language and work inside it — including text that mixes two languages, which rule-based checkers cannot handle at all.
 - **Doesn't flatten your voice.** Regional variety (en-GB/en-US, pt-BR/pt-PT, zh-Hans/zh-Hant) and politeness register (tú/usted, du/Sie, tu/vous, Japanese registers) are treated as choices to preserve, not errors to normalise.
@@ -79,6 +81,19 @@ OLLAMA_ORIGINS="chrome-extension://*" ollama serve
 
 Use **Custom**. Paste the base URL up to and including `/v1` — ProofKey appends `/chat/completions`. If the endpoint has quirks, the connection editor exposes escape hatches for them: extra headers, extra body fields, extra query parameters, and the auth style (`Bearer`, `x-api-key`, a custom header name, or a URL parameter). Between those, most gateways and proxies work without code changes.
 
+## Does it work where you need it?
+
+Honestly: probably, but nobody has checked. ProofKey has to survive two things it doesn't control — the editor you're typing into and the provider you point it at — and neither can be covered exhaustively by one person.
+
+[COMPATIBILITY.md](COMPATIBILITY.md) tracks both, and separates *an automated test asserts this* from *a maintainer ran it* from *a user reported it* from *nobody has tried*. Today that is one site and one provider confirmed by a human; almost everything else is untested. A row only moves when there's a link to point at.
+
+Which makes the most useful contribution right now a one-minute report:
+
+- **[Site report](https://github.com/jiru-labs/proofkey/issues/new?template=site-report.yml)** — it works on Slack, or it scrambled your text
+- **[Provider report](https://github.com/jiru-labs/proofkey/issues/new?template=provider-report.yml)** — you have a key for one of the other 33 presets
+
+Reports that it *worked* matter as much as bug reports. Nothing else moves a row out of `Untested`.
+
 ## Privacy
 
 - Your key and settings live in `chrome.storage.sync`. There is no ProofKey server to send them to.
@@ -91,6 +106,8 @@ One honest caveat: `chrome.storage.sync` means Chrome syncs your settings — in
 ### On cost
 
 Live checking spends your key. ProofKey is built to keep that small: it checks about a second after you stop typing rather than on every keystroke, sends only sentences whose text changed, never sends the sentence your cursor is inside, and caches results per sentence. Inline checking is off by default and is enabled per site.
+
+Which model you pick matters more than any of that — the cost spread across current Gemini models is about 20×, and the fastest one measured is also nearly the cheapest. [MODELS.md](MODELS.md) has the arithmetic, worked out from ProofKey's real prompt sizes, plus measured quality and latency for three models. `npm run cost` recalculates it; `npm run eval` measures a model you are considering.
 
 ## Permissions
 
@@ -109,7 +126,10 @@ There is no static `content_scripts` block, so ProofKey does not run on pages yo
 npm run build       # production build into dist/
 npm run dev         # rebuild on change
 npm run typecheck   # tsc --noEmit
+npm run verify      # typecheck, build, and the browser tests (needs `npm run serve` alongside)
 ```
+
+[CONTRIBUTING.md](CONTRIBUTING.md) covers what each test actually asserts, and the workflow for fixing a bug — reproduce it in `tools/harness.html` first, and confirm the new test fails *before* the fix. Two tests here passed while asserting nothing until that check was applied.
 
 Stack: TypeScript, Vite 8, Manifest V3, no UI framework. The options page and the in-page card are plain DOM; the in-page UI lives in a shadow root so host-page CSS cannot reach it.
 
