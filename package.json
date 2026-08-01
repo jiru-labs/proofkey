@@ -22,6 +22,8 @@
     "dev": "npm run build -- --watch",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types tools/diff-check.ts",
+    "cost": "node --experimental-strip-types tools/cost.ts",
+    "eval": "node --experimental-strip-types tools/eval.ts",
     "test:render": "vite build --config vite.harness.config.ts && node tools/render-test.mjs",
     "serve": "python3 -m http.server 8777 --bind 127.0.0.1",
     "test:ext": "node tools/extension-test.mjs",
