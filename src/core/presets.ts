@@ -20,6 +20,13 @@ export interface Preset {
   extraHeaders?: Record<string, string>;
   extraBody?: Record<string, unknown>;
   extraQuery?: Record<string, string>;
+  /**
+   * Namespace prefix this endpoint puts on the ids `GET /models` returns, which
+   * the options page strips before offering them. Gemini answers with Google
+   * resource names (`models/gemini-2.5-flash`), and the bare id is the only
+   * form measured against `/chat/completions`.
+   */
+  stripIdPrefix?: string;
   /** `primary` presets are listed first in the options page. */
   group: 'primary' | 'more';
   /** Shown under the fields in the options page. */
@@ -120,7 +127,15 @@ export const PRESETS: readonly Preset[] = [
     'https://generativelanguage.googleapis.com/v1beta/openai',
     {
       defaultModel: 'gemini-2.5-flash',
-      hint: "Gemini's OpenAI-compatible endpoint.",
+      // No `reasoning_effort` here on purpose, though every measurement in
+      // MODELS.md was taken with thinking off. Presets only ship fields that
+      // are inert if they leak — OpenRouter's X-Title, Azure's api-version.
+      // This one is fatal if it leaks: a connection repointed at xAI by base
+      // URL alone keeps its extra body (only the provider dropdown rewrites
+      // it), xAI answers 400, and 400 is not retryable, so the fallback chain
+      // stops rather than moving on. Users who want it add it per connection.
+      stripIdPrefix: 'models/',
+      hint: 'Gemini\'s OpenAI-compatible endpoint. Thinking is on by default and billed as output: add {"reasoning_effort": "none"} to extra body fields to turn it off on 2.5-flash and 2.5-flash-lite. Gemini 3.x and 2.5-pro ignore the field and think anyway; see MODELS.md.',
       docsUrl: 'https://aistudio.google.com/apikey',
     },
   ),

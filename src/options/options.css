@@ -112,6 +112,11 @@ body {
   color: var(--danger);
 }
 
+/* Empty until "Fetch models" fills it, so it must not take space before then. */
+.field__picker:not(:empty) {
+  margin-top: 6px;
+}
+
 .input {
   width: 100%;
   padding: 8px 11px;

@@ -19,6 +19,12 @@ someone forgot about — and it is where you can help. See
 | `Untested` | Takes the same code path as something above, but nobody has run it | — |
 | `Broken` | Known to fail | Link to the issue |
 | `Not supported` | Cannot work by design | The reason |
+| `Not recommended` | Measured, works, and deliberately excluded anyway | The measurement that excludes it |
+
+`Not recommended` is the one marker here that is not an evidence level — it is a
+scope decision sitting on top of one. A row carries it only when something was
+measured and the measurement is the argument *against* using it, which is why it
+still owes evidence like every other row.
 
 **The rule that keeps this file worth reading: a row never moves up a tier
 without a link.** No test name, no commit, no issue number — no promotion. A
@@ -99,6 +105,7 @@ agrees with whatever you send it. That is the gap this table exists to close.
 |---|---|---|---|---|
 | Google Gemini | `gemini-2.5-flash` (preset default) | `chat_completions` | `Verified` | The maintainer's daily driver — real corrections through the extension against a real key, not a stub |
 | Google Gemini | `gemini-2.5-flash-lite`, `gemini-3.1-flash-lite` | `chat_completions` | `Verified` | `npm run eval`, 2026-08-01 — both reachable on the preset's base URL and both held the live-check contract over 3 runs. See [MODELS.md](MODELS.md) |
+| Google Gemini | **Fetch models** | — | `Partly verified` | Observed 2026-08-01: `GET /v1beta/openai/models` populates, but returns Google resource names (`models/gemini-2.5-flash`) rather than bare ids. Only the bare form has been exercised against `/chat/completions`, so the options page strips the `models/` prefix. Whether the prefixed form also works is **untested** |
 | xAI (Grok) | `grok-4.20-0309-non-reasoning` (preset default), `grok-4.3`, `grok-4.5`, `grok-build-0.1` | `chat_completions` | `Verified` | `npm run eval`, 2026-08-01 — all four reachable on the preset's base URL, all held the live-check contract over 3 runs, none produced a false alarm. `GET /v1/models` also works, so **Fetch models** will populate. See [MODELS.md](MODELS.md) |
 | OpenRouter | `openai/gpt-4.1-mini` (preset default), `gpt-4.1-nano`, `gpt-oss-20b`, `anthropic/claude-haiku-4.5`, `google/gemini-2.5-flash-lite`, `meta-llama/llama-3.3-70b-instruct`, `deepseek/deepseek-v4-flash`, `qwen/qwen3.7-flash`, `mistralai/mistral-nemo`, `mistralai/mistral-small-3.2-24b-instruct` | `chat_completions` | `Verified` | `npm run eval`, 2026-08-01 — all ten reachable on the preset's base URL, all held the live-check contract over 3 runs. `GET /v1/models` returns 336 models, so **Fetch models** will populate. The preset's `X-Title` header is accepted. See [MODELS.md](MODELS.md) |
 | OpenCode Go | `grok-4.5`, `gpt-5.6-luna`, `glm-5.2`, `glm-5.1`, `kimi-k3`, `kimi-k2.7-code`, `kimi-k2.6`, `mimo-v2.5`, `mimo-v2.5-pro`, `minimax-m3`, `minimax-m2.7`, `qwen3.7-max`, `qwen3.7-plus`, `qwen3.6-plus`, `deepseek-v4-pro`, `hy3` | `chat_completions` | `Verified` | `npm run eval`, 2026-08-01 — 16 of the plan's 17 models reachable on the preset's base URL, all held the live-check contract over **10** runs, none produced a false alarm. `GET /v1/models` works, so **Fetch models** will populate. One caveat that the contract does not catch: `minimax-m3` scored **0.0/14** by returning its reasoning instead of corrections. See [MODELS.md](MODELS.md) |
@@ -107,6 +114,8 @@ agrees with whatever you send it. That is the gap this table exists to close.
 | OpenCode Go | `minimax-m2.5`, `kimi-k2.5`, `glm-5`, `qwen3.5-plus` | `chat_completions` | `Verified` | `npm run eval`, 2026-08-01 — all four answered and held the contract over 10 runs, but none is in the plan's documented 17. `GET /v1/models` advertises **24**, so **Fetch models** lists models the subscription does not document covering; they may stop working without notice |
 | OpenCode Zen | any | `chat_completions` | `Untested` | 2026-08-01 — `GET /v1/models` returns 60 models and the base URL is confirmed, but every paid model answered `CreditsError` on a key with no balance, and the free ones are out of scope by the rule below. Nothing was measured |
 | Any provider | free tiers and `:free` model variants | — | `Not tested` | Project rule, not an outcome: free endpoints are deliberately not measured or recommended. They are rate-limited, silently rerouted and withdrawn, so publishing a score would imply a durability the tier does not have |
+| OpenCode Go | `minimax-m3`, `deepseek-v4-pro`, `qwen3.6-plus` | `chat_completions` | `Not recommended` | Project rule, applied to a measurement: `minimax-m3` scores 0.0/14 by writing its reasoning into the reply; `deepseek-v4-pro` and `qwen3.6-plus` average 98s and 73s against a 60s timeout, so they fail rather than arrive late. Out of scope for every workload. See [MODELS.md](MODELS.md#forced-reasoning) |
+| xAI, Gemini, OpenCode Go | `grok-4.5`, `grok-build-0.1`, `grok-4.20-0309-reasoning`, `gemini-2.5-pro`, `gemini-3.5-flash`, `gemini-3.6-flash`, and OpenCode Go apart from `gpt-5.6-luna` / `glm-5.1` / `glm-5.2` | `chat_completions` | `Not recommended` | Project rule, applied to a measurement: thinking cannot be turned off and costs 14.7s–48s per check, against ~1s on a flash-lite. Excluded from **live checking only** — fine for quick actions, where you wait on purpose. Note the rule keys on measured harm, not on forced thinking: `gemini-3.1-flash-lite` also cannot be turned off, and stays recommended at 918ms. See [MODELS.md](MODELS.md#forced-reasoning) |
 
 These rows are narrower than they look: `npm run eval` calls the endpoint
 directly rather than through the extension, so it confirms the base URL, the key
