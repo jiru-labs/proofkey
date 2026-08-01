@@ -1,0 +1,7 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Does it work on your site?
+    url: https://github.com/jiru-labs/proofkey/discussions
+    about: >
+      Lower-friction than an issue — post what worked and what didn't and it
+      gets folded into COMPATIBILITY.md. No template, no obligation to debug.
