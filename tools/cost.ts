@@ -252,6 +252,62 @@ const PROVIDERS: Provider[] = [
       },
     },
   },
+  {
+    // Also an aggregator, and the same caveat applies: these are other vendors'
+    // prices seen through one key. Unlike OpenRouter there is no routing
+    // choice — one id, one upstream, one price — so a row here is not a
+    // +/-25% estimate the way an OpenRouter row is.
+    //
+    // Worth recording because it is the first cross-check this repo has on
+    // whether an aggregator marks prices up. It does not: every model OpenCode
+    // lists that is *also* priced elsewhere in this file matches to the cent —
+    // gemini-3.6-flash, gemini-3.5-flash and gemini-3.5-flash-lite against
+    // Google's own page, grok-4.5 and grok-build-0.1 against xAI's, and
+    // deepseek-v4-flash and claude-haiku-4.5 against OpenRouter's catalogue.
+    // Seven for seven at list price.
+    //
+    // Only the ProofKey-relevant end of a 60-model catalogue is listed. The
+    // rest is coding-agent tooling — Opus at $5/$25, GPT 5.5 Pro at $30/$180 —
+    // which nobody should point a live checker at.
+    //
+    // Where a row carries an overheadTokens or thinkingTokens figure, it was
+    // measured on the **Go** endpoint (/zen/go/v1) rather than on Zen, because
+    // the key available had a Go subscription and no Zen balance — every paid
+    // Zen model answered CreditsError. Same provider and same model id, but a
+    // different product, so treat those two figures as borrowed rather than
+    // measured in place. Rows without them are unmeasured, which is not the
+    // same as zero: the overheads that could be measured ranged from 0 to 249
+    // tokens, so guessing a small number would be inventing data.
+    name: 'OpenCode Zen',
+    source: 'https://opencode.ai/docs/zen/',
+    checked: '2026-08-01',
+    models: {
+      'gpt-5-nano': { in: 0.05, out: 0.4, thinking: 'not measured' },
+      'deepseek-v4-flash': { in: 0.14, out: 0.28, thinking: 'not measured' },
+      'gpt-5.6-luna': { in: 0.2, out: 1.2, thinking: 'not measured', overheadTokens: 6 },
+      'qwen3.5-plus': { in: 0.2, out: 1.2, thinking: 'not measured', overheadTokens: 10 },
+      'gpt-5.4-nano': { in: 0.2, out: 1.25, thinking: 'not measured' },
+      'minimax-m2.5': { in: 0.3, out: 1.2, thinking: 'not measured', overheadTokens: 41 },
+      'gpt-5.1-codex-mini': { in: 0.25, out: 2.0, thinking: 'not measured' },
+      'qwen3.7-plus': { in: 0.4, out: 1.6, thinking: 'not measured' },
+      'gemini-3.5-flash-lite': { in: 0.3, out: 2.5, thinking: 'cannot be disabled' },
+      'gemini-3-flash': { in: 0.5, out: 3.0, thinking: 'not measured' },
+      'claude-haiku-4-5': { in: 1.0, out: 5.0, thinking: 'off by default' },
+      // The one row where both figures exist, and the one worth comparing
+      // against the xAI table: same model, same list price, but 206 tokens of
+      // overhead through OpenCode against 184 measured on xAI direct, and 398
+      // thinking tokens against 485. Without the thinking term this row would
+      // read $2.41 against xAI's $5.69 and look like a discount that is not
+      // there.
+      'grok-4.5': {
+        in: 2.0,
+        out: 6.0,
+        thinking: 'cannot be disabled',
+        thinkingTokens: 398,
+        overheadTokens: 206,
+      },
+    },
+  },
 ];
 
 // ----------------------------------------------------------------- workloads

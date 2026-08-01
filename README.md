@@ -6,7 +6,7 @@ No backend, no account, no telemetry. Your text goes from your browser straight 
 
 > **Status: in development.** The provider layer, settings model, inline assistant and options UI are in place. Not yet on the Chrome Web Store.
 >
-> **What is actually known to work is a much shorter list than what is built.** One site (WhatsApp Web) and three providers (Google Gemini, xAI, OpenRouter) have been confirmed against real keys; the rest is covered by automated tests, or by nothing. [COMPATIBILITY.md](COMPATIBILITY.md) says exactly which is which — and [reports](CONTRIBUTING.md) are the fastest way to grow that list.
+> **What is actually known to work is a much shorter list than what is built.** One site (WhatsApp Web) and four providers (Google Gemini, xAI, OpenRouter, OpenCode Go) have been confirmed against real keys; the rest is covered by automated tests, or by nothing. [COMPATIBILITY.md](COMPATIBILITY.md) says exactly which is which — and [reports](CONTRIBUTING.md) are the fastest way to grow that list.
 
 ---
 
@@ -18,7 +18,7 @@ Grammarly and LanguageTool are excellent, and both route your writing through th
 
 - **Quick actions** on any selected text, from the right-click menu or `Ctrl+Shift+K`: fix grammar, improve writing, make professional, make friendly, simplify, summarize, expand, convert to bullet points.
 - **Editable prompts.** Every built-in action is a prompt you can rewrite, and you can add your own.
-- **34 provider presets** over two transports, plus a free-form Custom option for any OpenAI-compatible endpoint. Prefilled is not the same as confirmed — three have been used against a real key so far, see [COMPATIBILITY.md](COMPATIBILITY.md).
+- **36 provider presets** over two transports, plus a free-form Custom option for any OpenAI-compatible endpoint. Prefilled is not the same as confirmed — four have been used against a real key so far, see [COMPATIBILITY.md](COMPATIBILITY.md).
 - **Fallback chain.** Put a local model first and a cloud key second; ProofKey moves down the list when one fails, and tells you which one failed.
 - **Any language the model knows.** The interface is English; the text doesn't have to be. The prompts are written to detect the language and work inside it — including text that mixes two languages, which rule-based checkers cannot handle at all.
 - **Doesn't flatten your voice.** Regional variety (en-GB/en-US, pt-BR/pt-PT, zh-Hans/zh-Hant) and politeness register (tú/usted, du/Sie, tu/vous, Japanese registers) are treated as choices to preserve, not errors to normalise.
@@ -107,7 +107,7 @@ One honest caveat: `chrome.storage.sync` means Chrome syncs your settings — in
 
 Live checking spends your key. ProofKey is built to keep that small: it checks about a second after you stop typing rather than on every keystroke, sends only sentences whose text changed, never sends the sentence your cursor is inside, and caches results per sentence. Inline checking is off by default and is enabled per site.
 
-Which model you pick matters more than any of that — the cost spread across current Gemini models is about 20×, and the fastest one measured is also nearly the cheapest. Across providers the spread is wider still: the same live check costs $0.02 per 1,000 on the cheapest model measured through OpenRouter, $0.14 on Gemini and $1.50 on Grok, and takes 0.3s against 1s against 1.6–22s. [MODELS.md](MODELS.md) has the arithmetic, worked out from ProofKey's real prompt sizes, plus measured quality and latency for twenty-one model configurations. `npm run cost` recalculates it; `npm run eval` measures a model you are considering.
+Which model you pick matters more than any of that — the cost spread across current Gemini models is about 20×, and the fastest one measured is also nearly the cheapest. Across providers the spread is wider still: the same live check costs $0.02 per 1,000 on the cheapest model measured through OpenRouter, $0.14 on Gemini and $1.50 on Grok, and takes 0.3s against 1s against 1.6–22s — while OpenCode Go's coding models are flat-rate but run 4s to 100s, past ProofKey's own request timeout at the slow end. [MODELS.md](MODELS.md) has the arithmetic, worked out from ProofKey's real prompt sizes, plus measured quality and latency for forty model configurations. Free tiers are deliberately not measured on any provider. `npm run cost` recalculates it; `npm run eval` measures a model you are considering.
 
 ## Permissions
 
