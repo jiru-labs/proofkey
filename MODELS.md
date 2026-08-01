@@ -2,16 +2,19 @@
 
 ProofKey runs on whatever you point it at, which makes "which model should I
 use?" a real question with a real cost attached. This page answers it for
-**Gemini, Grok and the ten models measured through OpenRouter**, and gives you
-the method for anything else.
+**Gemini, Grok, the ten models measured through OpenRouter and the sixteen on
+OpenCode Go**, and gives you the method for anything else.
 
 It follows the same discipline as [COMPATIBILITY.md](COMPATIBILITY.md): claims
 carry their evidence. The cost half is **calculated** — arithmetic over prompt
 sizes measured from the source — and now spot-checked against a provider that
 reports what it actually charged, which matched to eight decimal places on 7 of
-10 models. The effectiveness half is **measured**, for twenty-one model
+10 models. The effectiveness half is **measured**, for forty model
 configurations so far, by a harness in the repo that anyone can run against
 anything.
+
+**Free tiers are out of scope**, on every provider, and are recorded as
+`Not tested` rather than measured. [Why](#the-free-tier).
 
 Do not read a cost ranking as a quality ranking. Measuring changed the
 recommendation on this page: the cheapest model is not the one to use.
@@ -20,21 +23,33 @@ Each additional provider measured has demoted a claim that was written here as a
 general truth on one provider's evidence:
 
 - `reasoning_effort: "none"` is **not** safely ignored by endpoints that do not
-  understand it. xAI returns HTTP 400, and `openai/gpt-oss-20b` returns a
-  different HTTP 400 — *"Reasoning is mandatory for this endpoint and cannot be
-  disabled"*. Three providers, three behaviours.
-- Forced reasoning is **not** merely a latency concern. On Grok it is billed,
-  and on `grok-build-0.1` the thinking outweighs the reply 20 to 1.
+  understand it. xAI returns HTTP 400, `openai/gpt-oss-20b` returns a different
+  HTTP 400 — *"Reasoning is mandatory for this endpoint and cannot be
+  disabled"* — and OpenCode Go returns a third thing: a generic *"Upstream
+  request failed"* that names neither the field nor the reason. Four providers,
+  four behaviours, and the newest one is the hardest to debug.
+- Forced reasoning is **not** merely a latency concern — nor merely a cost one.
+  On Grok it is billed, and on `grok-build-0.1` the thinking outweighs the reply
+  20 to 1. On a flat-rate plan it is billed at zero and still disqualifying,
+  because what it spends is seconds: OpenCode Go's median model takes 22s.
 - Thinking is **not** generally worth paying for on this task. It bought Grok
   1.3 points, `qwen3.7-flash` 0.7 points at 10.8× the bill, and
   `deepseek-v4-flash` nothing at all.
-- A model id does **not** identify a price or a behaviour. Through an
-  aggregator, one id can have 22 upstreams spanning 10× on price — and one of
-  them turned out to be bimodal on quality, which three runs had been too few to
-  notice.
+- Holding the reply contract does **not** mean the reply is usable.
+  `minimax-m3` held the numbered-line format on all ten runs and scored
+  **0.0/14**, because it returns its reasoning where the correction belongs.
+  Format validation cannot catch that.
+- A model id does **not** identify a price or a behaviour — but it sometimes
+  does. Through one aggregator, an id can have 22 upstreams spanning 10× on
+  price, and one turned out bimodal on quality. Through another, `grok-4.5`
+  came back 14.0/14 at the same latency and the same list price as calling xAI
+  directly. "Aggregator" is not itself a reason to distrust a number.
 
 A provider-shaped claim tends to look like a general one until there is a second
 provider. A run-count-shaped claim looks fine until someone runs it 26 times.
+And a claim can lose its evidence rather than be disproved: "small models break
+the contract most" was true of the free endpoints that were measured, and those
+are no longer in scope, so it now rests on nothing.
 
 ## Two workloads, different economics
 
@@ -132,6 +147,43 @@ at them** — see [the same model id is not the same
 model](#the-same-model-id-is-not-the-same-model). Treat an OpenRouter row as
 ±25%, or read the price off `GET /models/{id}/endpoints` for the upstream you are
 actually routed to. Checked **2026-08-01** against the key's own catalogue.
+
+### Cost per 1,000 operations — OpenCode Zen
+
+| Model | Live check | Fix grammar | Summarize | Thinking |
+|---|---|---|---|---|
+| `gpt-5-nano` | $0.11 | $0.10 | $0.04 | not measured |
+| `deepseek-v4-flash` | $0.14 | $0.16 | $0.08 | not measured |
+| `gpt-5.6-luna` | $0.35 | $0.35 | $0.15 | not measured |
+| `qwen3.5-plus` | $0.36 | $0.35 | $0.15 | not measured |
+| `gpt-5.4-nano` | $0.36 | $0.36 | $0.15 | not measured |
+| `minimax-m2.5` | $0.43 | $0.45 | $0.20 | not measured |
+| `gpt-5.1-codex-mini` | $0.54 | $0.51 | $0.20 | not measured |
+| `qwen3.7-plus` | $0.56 | $0.58 | $0.25 | not measured |
+| `gemini-3.5-flash-lite` | $0.66 | $0.63 | $0.25 | cannot be disabled |
+| `gemini-3-flash` | $0.88 | $0.88 | $0.36 | not measured |
+| `claude-haiku-4-5` | $1.58 | $1.60 | $0.68 | off by default |
+| `grok-4.5` | $5.21 | $3.02 | $1.58 | cannot be disabled |
+
+The ProofKey-relevant end of a 60-model catalogue; the rest is coding-agent
+tooling at Opus and GPT-5.5-Pro prices. **This table is Zen, the pay-as-you-go
+product.** [OpenCode Go](#if-you-are-on-opencode) is a flat monthly subscription
+over a different, smaller catalogue and has no per-request price at all, which is
+why it has no table here.
+
+Overhead is per model and included where it was measured: `gpt-5.6-luna` 6,
+`qwen3.5-plus` 10, `minimax-m2.5` 41, `grok-4.5` **206**. Blank means unmeasured,
+not zero. `grok-4.5` also includes 398 measured thinking tokens; without that term
+it would read $2.41 and look like a discount against xAI's $5.69, which it is
+not — it is the same list price with the thinking left out.
+
+Those two figures were measured on the Go endpoint rather than on Zen, because the
+key used had a Go subscription and no Zen balance. Same provider, same model ids,
+different product. Nothing in this table has been checked against an actual bill.
+
+Prices checked **2026-08-01** against
+[opencode.ai/docs/zen](https://opencode.ai/docs/zen/) — and they are the origin's
+list prices, [seven for seven](#an-aggregator-that-does-not-mark-prices-up).
 
 **Assumptions.** 4 characters per token; 90-character sentences, 8 per
 live-check request; a 600-character paragraph for a quick action; an empty
@@ -281,7 +333,9 @@ tool, but do not read its numbers as a forecast of your bill.
 
 ## The recommendation
 
-Cost is calculated, quality is measured over three runs each:
+Cost is calculated. Quality is measured over three runs each on Gemini, xAI and
+OpenRouter, and ten on OpenCode Go — read the three-run rows as "no instability
+visible", which is [weaker than it sounds](#caveats):
 
 | Use | Model | Why |
 |---|---|---|
@@ -330,7 +384,7 @@ score one fixture better.
 | **Cheapest that is still honest** | `mistralai/mistral-nemo` | 12.0/14, zero variance, zero false alarms, fastest in the table at 294ms, **$0.02** per 1,000. Its misses are missed errors, never invented ones. |
 | **Quick actions** | `anthropic/claude-haiku-4.5` or `openai/gpt-4.1-mini` | Both held the contract with no false alarms. Same caveat as everywhere on this page: the eval measures live checking, not "improve writing". |
 | **Avoid for live check** | `mistralai/mistral-small-3.2-24b-instruct`, `meta-llama/llama-3.3-70b-instruct` | 8.7/14 and 10.7/14, both with false alarms — and llama flattened `usted` to `tú` and translated the mixed ES/EN fixture into Spanish. |
-| **Avoid entirely** | the `:free` variants | `gemma-4-31b-it:free` returned HTTP 429 on every attempt; `gpt-oss-20b:free` broke the contract by thinking through all 8,192 tokens. |
+| **Not tested** | the `:free` variants | Free tiers are out of scope on this page, for every provider — [see below](#the-free-tier). |
 
 Two OpenRouter-specific things to set up. Put `{"reasoning_effort": "none"}` in
 **Extra body fields** — it is accepted by every model measured here except
@@ -338,6 +392,45 @@ Two OpenRouter-specific things to set up. Put `{"reasoning_effort": "none"}` in
 `qwen3.7-flash` and 3.2× on `deepseek-v4-flash` with no loss of accuracy on
 either. And if a specific price matters to you, pin the upstream: routing picks
 between as many as 22 endpoints per model at up to 10× the price spread.
+
+### If you are on OpenCode
+
+OpenCode ships **two** presets and they are two different products. `opencode-go`
+(`https://opencode.ai/zen/go/v1`) is a flat-rate subscription — $10/month at the
+time of writing — over open coding models. `opencode-zen`
+(`https://opencode.ai/zen/v1`) is pay-as-you-go over a 60-model catalogue. A key
+for one does not buy the other: the Go key measured here answered `CreditsError`
+on every paid Zen model.
+
+Only Go was measured. Everything below is about Go.
+
+The short version: **this is a catalogue of coding models, and it shows.** Every
+one of the sixteen plan models held the contract over ten runs and not one
+produced a false alarm — a cleaner sweep than any other provider on this page —
+but they think for tens of seconds, and that is disqualifying for the workload
+that actually matters.
+
+| Use | Model | Why |
+|---|---|---|
+| **Live check** | `gpt-5.6-luna` | 13.7/14, no false alarms, **4.2s** — the fastest thing in the plan that is also near the top on accuracy. Still four times slower than Gemini, so this is the best of a slow field, not a good live checker. |
+| **If you want it faster** | `glm-5.1` | 12.7/14 at 4.3s, or `glm-5.2` at 12.6/14 and 5.5s. No faster than luna in practice and a point worse. |
+| **Quick actions** | `grok-4.5` or `mimo-v2.5-pro` | Both 14.0/14 flat across ten runs with zero false alarms, at 15.5s and 16.6s. That wait is fine when you pressed a button on purpose. `kimi-k2.6` and `qwen3.7-max` also scored 14.0/14, at 27s and 48s. |
+| **Avoid entirely** | `minimax-m3` | **0.0/14 with 7.0 false alarms.** It does not proofread; it thinks out loud into the reply. See below. |
+| **Cannot work for live check** | `deepseek-v4-pro`, `qwen3.6-plus` | 98s and 73s average, against ProofKey's 60s request timeout. These do not arrive late, they fail. |
+
+Against the rest of this page, honestly: if live checking is why you are here,
+**Go is the wrong product**. Its fastest model is 4.2s where `gemini-3.1-flash-lite`
+is 918ms, and the flat rate does not help — you are paying a subscription for
+latency that makes the as-you-type feature feel broken. Where Go earns its place
+is quick actions, and [the setting below](#using-two-models) lets you point live
+checking somewhere else while keeping it.
+
+Two things to set up. Do **not** put `{"reasoning_effort": "none"}` in **Extra
+body fields** on a Go connection unless you have checked your model: `grok-4.5`
+and `minimax-m2.5` reject it, and the gateway disguises the rejection as
+*"Error from provider (Console Go): Upstream request failed"* rather than passing
+through the reason. And if you use **Fetch models**, know that it over-reports —
+see below.
 
 ### Using two models
 
@@ -355,19 +448,29 @@ expect to be up.
 
 ## The free tier
 
-Gemini has a free tier, and for casual use it may cost you nothing at all.
+**Free models are out of scope on this page, for every provider.** They are not
+measured, not scored and not recommended, and where a table would otherwise carry
+one it says `Not tested` instead. That covers OpenRouter's `:free` variants,
+OpenCode Zen's free tier and any equivalent elsewhere.
 
-OpenRouter's `:free` model variants are a different proposition, and on this
-evidence not a usable one. Both that were tried on 2026-08-01 failed: 
-`google/gemma-4-31b-it:free` returned HTTP 429 *"temporarily rate-limited
-upstream"* on every request across two separate attempts, and
-`openai/gpt-oss-20b:free` broke the live-check contract on one run in three by
-spending all 8,192 tokens thinking without writing a reply — the paid
-`gpt-oss-20b`, same weights, held 3/3 and thought 1,024 tokens. A free endpoint
-that answers 429 during a live check produces no underline at all, and the live
-check does not fall through the fallback chain.
+This is a deliberate rule rather than a result, and it is a rule about what a
+number would *mean*. A free endpoint is rate-limited, silently rerouted and
+withdrawn without notice, so a score measured today describes an endpoint that
+may not exist next week — it implies a durability the tier does not have. That is
+the same trap as [quoting a three-run result](#caveats): the figure looks solid
+and is not.
 
-Concrete free-tier limits are **not published as a table** any more — Google's
+The operational reason is narrower and harder. Live checking **does not fall
+through the fallback chain** — a pinned connection is the only one it tries, and
+a failed check is skipped rather than retried elsewhere. So a free endpoint that
+rate-limits mid-session produces no underline at all, silently, and the feature
+appears to have stopped working.
+
+Paid tiers of the same models are in scope and are measured throughout this page.
+
+Gemini's free tier is a different thing again — an allowance on a paid account
+rather than a separate free endpoint — and for casual use it may cost you nothing
+at all. Concrete limits are **not published as a table** any more — Google's
 [rate limits page](https://ai.google.dev/gemini-api/docs/rate-limits) now points
 you at [your own limits in AI Studio](https://aistudio.google.com/rate-limit),
 because they vary by account. So this page deliberately quotes no numbers rather
@@ -393,6 +496,8 @@ npm run eval -- --models gemini-3.1-flash-lite --runs 5
 npm run eval -- --base https://api.groq.com/openai/v1 --models llama-3.3-70b
 npm run eval -- --base https://api.x.ai/v1 --models grok-4.3 --reasoning off
 npm run eval -- --base https://openrouter.ai/api/v1 --models qwen/qwen3.7-flash
+npm run eval -- --base https://opencode.ai/zen/go/v1 --reasoning off --runs 10 \
+  --models gpt-5.6-luna,grok-4.5
 ```
 
 Flags: `--base`, `--models`, `--runs`, `--reasoning` (a value, or `off` to omit
@@ -514,8 +619,10 @@ reaching many at once. Same 14 fixtures × 3 runs, 2026-08-01, `--reasoning off`
 | `openai/gpt-4.1-nano` | 10.7/14 | 8–12 | 0.3 | held 3/3 | 338ms | 0 | OpenAI | maintainer |
 | `meta-llama/llama-3.3-70b-instruct` | 10.7/14 | 7–13 | 0.3 | held 3/3 | 420ms | 0 | DeepInfra | maintainer |
 | `mistralai/mistral-small-3.2-24b-instruct` | 8.7/14 | 7–12 | 0.7 | held 3/3 | 615ms | 0 | DeepInfra | maintainer |
-| `openai/gpt-oss-20b:free` | 5.7/14 | 0–9 | 0.0 | **BROKE 1/3** | 2,878ms | 8,189 | Darkbloom | maintainer |
-| `google/gemma-4-31b-it:free` | — | — | — | **HTTP 429** | — | — | Google AI Studio | maintainer |
+
+OpenRouter's `:free` model variants were measured once and are **no longer
+reported here**. Free tiers are out of scope across every provider on this page —
+see [the free tier](#the-free-tier) for why.
 
 And the four worth re-running with thinking disabled, same day, 3 runs:
 
@@ -532,12 +639,18 @@ npm run eval -- --base https://openrouter.ai/api/v1 --reasoning off \
   --models openai/gpt-4.1-mini,qwen/qwen3.7-flash,mistralai/mistral-nemo
 ```
 
-**Every paid model held the contract on all three runs.** The claim at the top of
-this page that "small models break it most" survives, but only just, and only at
-the free tier: the one contract failure in the whole table is `gpt-oss-20b:free`,
-and its `finish_reason` was `length` — it spent all 8,192 tokens thinking and
-never wrote a reply. That is a budget failure, not an inability to hold a format.
-The *paid* `gpt-oss-20b` is the same weights and held 3/3.
+**Every model in this table held the contract on all three runs**, and so did all
+twenty on OpenCode Go over ten runs each. The claim at the top of this page that
+"small models break it most" now has **no measured support left** once free tiers
+are out of scope — the only contract failures ever recorded here were on free
+endpoints, and free endpoints are no longer reported. Read it as untested rather
+than true.
+
+Worse, holding the contract turned out not to mean the reply is usable.
+`minimax-m3` held it on all ten runs and still scored **0.0/14** — see
+[OpenCode Go](#results--opencode-go-sixteen-coding-models-on-a-flat-rate) below.
+The format check catches a model that cannot count lines; it does not catch one
+that fills those lines with the wrong thing.
 
 Three results worth pulling out.
 
@@ -561,6 +674,134 @@ clean text per run; `llama-3.3-70b` rewrote "¿Cómo está **usted** hoy?" to "�
 estás hoy?", flattening exactly the register the prompt says to preserve, and
 translated the mixed ES/EN fixture into Spanish outright. On a live check those
 are the failures a user notices.
+
+### Results — OpenCode Go, sixteen coding models on a flat rate
+
+The first provider on this page measured at **ten runs** rather than three,
+because [the caveats section](#caveats) says to and there was no per-request cost
+to stop it. 14 fixtures × 10 runs, 2026-08-01, `--reasoning off`:
+
+| Model | Correct | Spread | False alarms | Contract | Latency | Thinking | Reported by |
+|---|---|---|---|---|---|---|---|
+| `kimi-k2.6` | **14.0/14** | 14–14 | 0.0 | held 10/10 | 26,547ms | not reported | maintainer |
+| `qwen3.7-max` | **14.0/14** | 14–14 | 0.0 | held 10/10 | 48,276ms | 1,546 | maintainer |
+| `mimo-v2.5-pro` | **14.0/14** | 14–14 | 0.0 | held 10/10 | 16,583ms | 346 | maintainer |
+| `grok-4.5` | **14.0/14** | 14–14 | 0.0 | held 10/10 | 15,519ms | 697 | maintainer |
+| `qwen3.7-plus` | 13.9/14 | 13–14 | 0.0 | held 10/10 | 58,179ms | 2,778 | maintainer |
+| `deepseek-v4-pro` | 13.8/14 | 13–14 | 0.0 | held 10/10 | 98,499ms | 2,434 | maintainer |
+| `gpt-5.6-luna` | 13.7/14 | 12–14 | 0.0 | held 10/10 | **4,167ms** | not reported | maintainer |
+| `qwen3.6-plus` | 13.6/14 | 13–14 | 0.0 | held 10/10 | 73,172ms | 2,853 | maintainer |
+| `kimi-k3` | 13.4/14 | 13–14 | 0.0 | held 10/10 | 48,834ms | 1,543 | maintainer |
+| `hy3` | 13.4/14 | 13–14 | 0.0 | held 10/10 | 39,669ms | 2,736 | maintainer |
+| `minimax-m2.7` | 12.8/14 | 11–14 | 0.0 | held 10/10 | 21,882ms | not reported | maintainer |
+| `glm-5.1` | 12.7/14 | 9–14 | 0.0 | held 10/10 | 4,297ms | not reported | maintainer |
+| `mimo-v2.5` | 12.7/14 | 10–14 | 0.0 | held 10/10 | 22,541ms | 1,257 | maintainer |
+| `glm-5.2` | 12.6/14 | 10–14 | 0.0 | held 10/10 | 5,452ms | not reported | maintainer |
+| `kimi-k2.7-code` | 12.0/14 | 10–14 | 0.0 | held 10/10 | 22,200ms | not reported | maintainer |
+| `minimax-m3` | **0.0/14** | 0–0 | **7.0** | held 10/10 | 15,178ms | not reported | maintainer |
+
+`deepseek-v4-flash` is the seventeenth plan model and could not be measured: it
+answers `RegionError` — *"only available hosted in China and requires explicit
+opt in"* — until you opt in per workspace.
+
+```bash
+export PROOFKEY_EVAL_KEY=...
+npm run eval -- --base https://opencode.ai/zen/go/v1 --reasoning off --runs 10 \
+  --models gpt-5.6-luna,grok-4.5,mimo-v2.5-pro,kimi-k2.6
+```
+
+**A model can hold the contract and still be unusable.** `minimax-m3` scored
+0.0/14 while holding the numbered-line format on all ten runs, and changed all
+seven clean fixtures. It is not a bad proofreader — it is not proofreading at
+all. It returns its reasoning where the correction should go:
+
+```
+2. "i has been working on this projet since last week" - "i" should be "I"
+   (capitalization). "has" should be "have" (subject-verb agreement - "I have").
+   "projet" should be "project" (spelling).
+```
+
+Every diagnosis in there is correct. It is still the worst possible output,
+because ProofKey would paste that commentary into the user's message. This is a
+failure mode the harness's contract check is structurally blind to — the format
+is the thing it validates, and the format was fine. It is also why the eval
+prints every distinct wrong answer, and why this page says not to quote a score
+without reading them.
+
+**Thinking is not optional here, and it is most of the response.** Only nine of
+the sixteen report a thinking count at all, and seven of those nine spend more
+than a thousand tokens on one 14-sentence request: `qwen3.6-plus` spends 2,853 and
+`qwen3.7-plus` 2,778, against a reply of about 200. The other seven models report
+nothing, which means unmeasured rather than zero — their latency says they are
+thinking too. On Grok that pattern cost money. On a flat rate it costs *seconds*,
+which is the currency live checking actually trades in — and the table above is
+sorted by accuracy, so read it against the latency column rather than down it.
+
+**Latency spans 23.6×, and the slow end is past ProofKey's own timeout.** From
+`gpt-5.6-luna` at 4.2s to `deepseek-v4-pro` at 98.5s. ProofKey gives a request 60s
+(`src/core/providers/request.ts:79`), so `deepseek-v4-pro` (98s) and
+`qwen3.6-plus` (73s) fail rather than lag, and `qwen3.7-plus` at 58s straddles the
+line. A 13.8/14 score means nothing if the request never returns.
+
+**Zero false alarms across every model but one.** Fifteen of sixteen never touched
+a clean fixture in ten runs — better than OpenRouter, where four of ten models
+averaged 0.3–0.7 unnecessary changes per run. Coding models are evidently
+conservative about editing text they were not asked to edit, which is exactly the
+disposition the live-check prompt wants. It is the one dimension where this
+catalogue beats everything else on the page.
+
+### Fetch models over-reports on OpenCode Go
+
+`GET /zen/go/v1/models` advertises **24** models. The plan
+[documents 17](https://opencode.ai/docs/go/). The seven extras are not a bonus:
+
+| Extra | What it does |
+|---|---|
+| `mimo-v2-pro`, `mimo-v2-omni` | HTTP 500 on all 10 runs |
+| `hy3-preview` | HTTP 400 — *"not supported on the lite model list"* |
+| `minimax-m2.5`, `kimi-k2.5`, `glm-5`, `qwen3.5-plus` | Answer normally and held the contract 10/10 — but are outside the documented plan |
+
+So **Fetch models** will offer you three models that cannot work and four that
+work today without the subscription documenting that they will tomorrow. The
+`hy3-preview` error is the informative one: it points you at
+`GET /inference/go/openai/v1/models` for the real list, and that URL 404s.
+
+For the record, since they did run: `kimi-k2.5` 13.9/14 (13–14) at 24.8s,
+`qwen3.5-plus` 13.6/14 (12–14) at 100s, `glm-5` 13.2/14 (12–14) at **3.5s** — the
+fastest thing on the endpoint — and `minimax-m2.5` 12.8/14 (12–13) at 21.6s.
+`glm-5` being both the fastest and undocumented is an awkward combination to
+recommend, which is why the table above does not.
+
+### An aggregator that does not mark prices up
+
+Worth recording because it is the first cross-check this repo has on the
+question, and the answer went the other way from
+[OpenRouter's](#the-same-model-id-is-not-the-same-model). Every model OpenCode
+Zen lists that this page had already priced against its origin matches **to the
+cent**:
+
+| Model | OpenCode Zen | Priced here as | Source |
+|---|---|---|---|
+| `gemini-3.6-flash` | $1.50 / $7.50 | $1.50 / $7.50 | Google direct |
+| `gemini-3.5-flash` | $1.50 / $9.00 | $1.50 / $9.00 | Google direct |
+| `gemini-3.5-flash-lite` | $0.30 / $2.50 | $0.30 / $2.50 | Google direct |
+| `grok-4.5` | $2.00 / $6.00 | $2.00 / $6.00 | xAI direct |
+| `grok-build-0.1` | $1.00 / $2.00 | $1.00 / $2.00 | xAI direct |
+| `deepseek-v4-flash` | $0.14 / $0.28 | $0.14 / $0.28 | OpenRouter catalogue |
+| `claude-haiku-4.5` | $1.00 / $5.00 | $1.00 / $5.00 | OpenRouter catalogue |
+
+Seven for seven at list price. That is a statement about the *catalogue*, not
+about a bill — nobody has run a paid Zen request through this key, because it had
+no balance. Contrast OpenRouter, where the catalogue price was right for seven of
+ten models and the other three were billed 22% cheaper to 25% dearer depending on
+which upstream served them.
+
+One number did survive the trip intact. `grok-4.5` measured directly on xAI scored
+14.0/14 at 14,736ms with 849 thinking tokens; through OpenCode Go it scored
+14.0/14 at 15,519ms with 697. Same model, same behaviour, one intermediary — which
+is the control the [bimodality finding](#the-same-model-id-is-not-the-same-model)
+needed and did not have. An aggregator in the path is not *by itself* a reason to
+distrust a number.
 
 ### The same model id is not the same model
 
@@ -683,12 +924,24 @@ unusable, not separate two good ones. And add fixtures when you find a **real**
 failure — a case a model got wrong in the wild is worth more than one somebody
 invented.
 
+It measures **live checking only**, which is a small fraction of what the model
+does for you. Nothing on this page measures "improve writing" or "make
+professional", so do not read a live-check ranking as a general one.
+
+A held contract is not a usable reply. The harness validates that the reply maps
+back to the sentences, and `minimax-m3` passed that check on every run while
+scoring 0.0/14. Read the wrong-answer dump, which is why it prints.
+
 Three runs is **not** enough to call a model stable, which this page learned the
 hard way. `gemini-2.5-flash-lite` is bimodal at roughly 85/15, and a 15% failure
 mode survives three runs undetected 61% of the time. Three runs is enough to
 catch a model that is *obviously* erratic; a clean 3-run result means "no
 instability visible", not "stable". Use `--runs 10` before believing a spread of
-zero.
+zero — the OpenCode Go table is the first here to do that, and it is the standard
+to hold new rows to.
+
+Free tiers are **not tested**, on any provider, by rule rather than by
+result — [see above](#the-free-tier).
 
 Post yours as a
 [provider report](https://github.com/jiru-labs/proofkey/issues/new?template=provider-report.yml)

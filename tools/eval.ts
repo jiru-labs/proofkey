@@ -7,6 +7,12 @@
  *     node --experimental-strip-types tools/eval.ts --base https://api.groq.com/openai/v1 --models llama-3.3-70b
  *     node --experimental-strip-types tools/eval.ts --base https://api.x.ai/v1 --models grok-4.3 --reasoning off
  *     node --experimental-strip-types tools/eval.ts --base https://openrouter.ai/api/v1 --models qwen/qwen3.7-flash
+ *     node --experimental-strip-types tools/eval.ts --base https://opencode.ai/zen/go/v1 --reasoning off --runs 10
+ *
+ * Free models are out of scope, on every provider. Do not add them to --models:
+ * a free endpoint is rate-limited, silently rerouted and withdrawn, so a score
+ * for one implies a durability it does not have. They are recorded as
+ * `Not tested` in COMPATIBILITY.md rather than measured.
  *
  * This sends the **real** composed prompt from `src/core/prompts.ts` and parses
  * the reply with the **real** `parseCheckReply`, so what it measures is
@@ -317,6 +323,11 @@ function reasoningTokens(usage: Record<string, unknown>): number | undefined {
  *     million tokens per unit.
  *   - OpenRouter returns `usage.cost` in USD, already summed, alongside a
  *     `cost_details` breakdown.
+ *   - OpenCode returns `usage.cost` in USD too, but as a **string** — `"0"` on
+ *     the free models, which are the only ones a key without a balance can
+ *     reach. Same field name, same units, different JSON type, so a `typeof
+ *     === 'number'` test drops it silently and the column reads "not reported"
+ *     when the provider did in fact report.
  *
  * Worth printing because every number in `tools/cost.ts` is *calculated*. These
  * are the places a provider states the answer, so where both exist they should
@@ -326,7 +337,13 @@ function reportedCostUsd(usage: Record<string, unknown>): number | undefined {
   const ticks = usage['cost_in_usd_ticks'];
   if (typeof ticks === 'number') return ticks * 1e-10;
   const usd = usage['cost'];
-  return typeof usd === 'number' ? usd : undefined;
+  if (typeof usd === 'number') return usd;
+  // Number('') is 0, which would report a free request where there was no
+  // figure at all, so an empty string has to fall through as unreported.
+  if (typeof usd === 'string' && usd.trim() !== '' && Number.isFinite(Number(usd))) {
+    return Number(usd);
+  }
+  return undefined;
 }
 
 async function main(): Promise<void> {

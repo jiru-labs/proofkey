@@ -88,8 +88,10 @@ export const PRESETS: readonly Preset[] = [
     hint: 'Start the local server in LM Studio, then use "Fetch models" to list what is loaded.',
   }),
   openaiCompatible('opencode-go', 'OpenCode Go', 'https://opencode.ai/zen/go/v1', {
+    defaultModel: 'gpt-5.6-luna',
     group: 'primary',
-    hint: 'Use "Fetch models" to list the models your account can reach.',
+    hint: 'Flat-rate plan over coding models, which think — the fastest measured is 4.2s per live check and the slowest exceeds ProofKey\'s 60s timeout. gpt-5.6-luna is the measured pick; see MODELS.md. Do not set reasoning_effort: grok-4.5 and minimax-m2.5 reject it and the error does not say so. "Fetch models" over-reports — 3 of the 24 it lists cannot answer.',
+    docsUrl: 'https://opencode.ai/docs/go/',
   }),
   {
     id: 'anthropic',
@@ -105,7 +107,13 @@ export const PRESETS: readonly Preset[] = [
   },
 
   // ------------------------------------------------- OpenAI-compatible, more
-  openaiCompatible('opencode-zen', 'OpenCode Zen', 'https://opencode.ai/zen/v1'),
+  // A different product from OpenCode Go above, not a different URL for it:
+  // pay-as-you-go over a 60-model catalogue, and a Go subscription buys none of
+  // it — every paid model answers CreditsError without a balance.
+  openaiCompatible('opencode-zen', 'OpenCode Zen', 'https://opencode.ai/zen/v1', {
+    hint: 'Pay-as-you-go, and separate from an OpenCode Go plan — this needs its own balance. No model here has been measured; see MODELS.md for the prices.',
+    docsUrl: 'https://opencode.ai/docs/zen/',
+  }),
   openaiCompatible(
     'gemini',
     'Google Gemini',
