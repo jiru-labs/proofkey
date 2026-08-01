@@ -12,8 +12,15 @@ import { applyToTarget, flatten, offsetOfPoint } from './target';
  * Cost is the whole design constraint: every check spends the user's own key,
  * so three rules keep requests rare. Checks fire only after typing stops; only
  * sentences whose text changed since the last check are sent; and the sentence
- * the caret sits in is never sent, because a half-typed sentence produces
+ * the caret sits in is held back, because a half-typed sentence produces
  * confident nonsense and pays for the privilege.
+ *
+ * Held back, not dropped. Taken literally, that third rule meant a message of
+ * one unterminated sentence — a tweet, a chat line, most of what this extension
+ * is typed into — was never checked at all, and the badge reported the silence
+ * as a clean result. The settle pass below is the correction: once the caret
+ * has sat at the end of the field for longer than the ordinary debounce, the
+ * sentence is no longer half-typed in any sense that matters, and it is sent.
  *
  * Results are cached by sentence content, so going back to fix paragraph four
  * never re-sends paragraphs one through three.
@@ -21,6 +28,18 @@ import { applyToTarget, flatten, offsetOfPoint } from './target';
 
 const TEXTUAL_INPUT_TYPES = new Set(['text', 'search', 'url', 'tel', 'email', '']);
 const MIN_SENTENCE_LENGTH = 4;
+
+/**
+ * How much longer than the ordinary debounce the caret's own sentence waits
+ * before being sent. Expressed as a multiplier so it scales with the user's
+ * debounce setting instead of fighting it.
+ *
+ * The delay is what keeps the cost rule intact. Someone typing in bursts longer
+ * than the debounce would otherwise pay for every growing prefix of the
+ * sentence they are still writing — each prefix hashes differently, so each is
+ * a fresh request. Waiting for a real stop collapses that to one.
+ */
+const SETTLE_MULTIPLIER = 3;
 
 interface Session {
   field: FieldRef;
@@ -30,6 +49,8 @@ interface Session {
   suggestions: Suggestion[];
   dismissed: Set<string>;
   timer: number;
+  /** Separate from `timer`: the longer wait before the caret's sentence is sent. */
+  settleTimer: number;
   inFlight: boolean;
   dirtyWhileChecking: boolean;
 }
@@ -95,6 +116,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
       suggestions: [],
       dismissed: new Set(),
       timer: 0,
+      settleTimer: 0,
       inFlight: false,
       dirtyWhileChecking: false,
     };
@@ -105,6 +127,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
   function detach(): void {
     if (!session) return;
     clearTimeout(session.timer);
+    clearTimeout(session.settleTimer);
     session.field.node.removeEventListener('input', onInput);
     session.highlighter.destroy();
     session = null;
@@ -130,7 +153,39 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
   function schedule(): void {
     if (!session) return;
     clearTimeout(session.timer);
-    session.timer = window.setTimeout(() => void check(), state.debounceMs);
+    // Any keystroke also cancels a pending settle: the sentence just changed,
+    // so the pause it was waiting for did not happen.
+    clearTimeout(session.settleTimer);
+    session.timer = window.setTimeout(() => void check(false), state.debounceMs);
+  }
+
+  /**
+   * Arms the settle pass, but only when there is something for it to do: the
+   * caret sitting at the end of a long-enough sentence nobody has checked yet.
+   *
+   * Self-terminating by construction. The settle pass caches that sentence, and
+   * only the ordinary check arms a settle — so a settle never arms another, and
+   * a failed one is retried by the next keystroke rather than by a loop.
+   */
+  function maybeScheduleSettle(): void {
+    if (!session) return;
+    const active = session;
+
+    const text = fieldText(active.field);
+    const caret = caretOffset(active.field);
+    if (!caretAtEnd(text, caret)) return;
+
+    const sentences = segment(text);
+    const sentence = sentences[sentenceAt(sentences, caret)];
+    if (!sentence) return;
+    if (sentence.text.trim().length < MIN_SENTENCE_LENGTH) return;
+    if (active.cache.has(sentenceKey(sentence.text))) return;
+
+    clearTimeout(active.settleTimer);
+    active.settleTimer = window.setTimeout(
+      () => void check(true),
+      state.debounceMs * SETTLE_MULTIPLIER,
+    );
   }
 
   // ------------------------------------------------------------- the check
@@ -147,7 +202,17 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     return offsetOfPoint(flatten(field.node), selection.focusNode, selection.focusOffset) ?? -1;
   }
 
-  async function check(): Promise<void> {
+  /**
+   * Whether the caret is at the end of everything written, trailing whitespace
+   * aside. This is the gate on the settle pass, and it is what separates "typed
+   * a message and stopped" from "clicked back into the middle to fix a word" —
+   * the second really is mid-edit and keeps the original hands-off treatment.
+   */
+  function caretAtEnd(text: string, caret: number): boolean {
+    return caret >= 0 && text.slice(caret).trim().length === 0;
+  }
+
+  async function check(includeCaret: boolean): Promise<void> {
     if (!session || session.inFlight) return;
     const active = session;
 
@@ -160,17 +225,19 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     }
 
     const sentences = segment(text);
-    const caretIndex = sentenceAt(sentences, caretOffset(active.field));
+    const caret = caretOffset(active.field);
+    const skipIndex = includeCaret && caretAtEnd(text, caret) ? -1 : sentenceAt(sentences, caret);
 
     const pending = sentences.filter(
       (sentence, index) =>
-        index !== caretIndex &&
+        index !== skipIndex &&
         sentence.text.trim().length >= MIN_SENTENCE_LENGTH &&
         !active.cache.has(sentenceKey(sentence.text)),
     );
 
     if (pending.length === 0) {
       rebuild();
+      if (!includeCaret) maybeScheduleSettle();
       return;
     }
 
@@ -208,6 +275,8 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
         if (active.dirtyWhileChecking || pending.length > batch.length) {
           active.dirtyWhileChecking = false;
           schedule();
+        } else if (!includeCaret) {
+          maybeScheduleSettle();
         }
       }
     }
@@ -249,7 +318,22 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
 
     active.suggestions = suggestions.sort((a, b) => a.start - b.start);
     active.highlighter.render(active.suggestions);
-    setBadge(suggestions.length === 0 ? 'clean' : 'issues');
+
+    if (suggestions.length > 0) {
+      setBadge('issues');
+      return;
+    }
+
+    // A tick is a claim about text that was actually sent. Anything still
+    // uncached has not been — the caret's sentence before the settle pass, or a
+    // batch too big for one request — and reporting that as clean is how this
+    // whole path came to look like it was working when it had done nothing.
+    const unchecked = sentences.some(
+      (sentence) =>
+        sentence.text.trim().length >= MIN_SENTENCE_LENGTH &&
+        !active.cache.has(sentenceKey(sentence.text)),
+    );
+    setBadge(unchecked ? 'waiting' : 'clean');
   }
 
   // ---------------------------------------------------------------- applying
@@ -279,25 +363,57 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     if (!applied) return;
 
     active.dismissed.add(suggestion.id);
-    // The corrected sentence hashes differently, so it would be re-sent on the
-    // next pass. Record it as clean instead.
+
+    // The corrected sentence hashes differently now, so the next pass would pay
+    // to check it again. Carrying the findings across to the new hash avoids
+    // that — but it has to carry the *remaining* ones. Recording the sentence
+    // clean instead, as this used to, retired every other finding in it: fix
+    // one word of three and the badge went green over the other two.
+    //
+    // Offsets here are relative to the trimmed sentence, and `delta` is a pure
+    // length difference, so the same number shifts both coordinate systems.
+    const hash = suggestion.id.lastIndexOf('#');
+    const previousKey = suggestion.id.slice(0, hash);
+    const appliedIndex = Number(suggestion.id.slice(hash + 1));
+    const previous = active.cache.get(previousKey) ?? [];
+    const appliedChange = previous[appliedIndex];
     const delta = suggestion.replacement.length - (suggestion.end - suggestion.start);
-    for (const other of active.suggestions) {
-      if (other.start > suggestion.start) {
-        other.start += delta;
-        other.end += delta;
-      }
+
+    const remaining = previous
+      .filter((_, index) => index !== appliedIndex)
+      .map((change) =>
+        appliedChange && change.start > appliedChange.start
+          ? { ...change, start: change.start + delta, end: change.end + delta }
+          : change,
+      );
+
+    const sentences = segment(fieldText(active.field));
+    const rewritten = sentences.find(
+      (sentence) => suggestion.start >= sentence.start && suggestion.start <= sentence.end,
+    );
+
+    if (rewritten) {
+      const key = sentenceKey(rewritten.text);
+      active.cache.set(key, remaining);
+      // Dismissals are keyed by position in the old array. Dropping one entry
+      // renumbers everything after it, so they have to be re-indexed or a
+      // suggestion the user dismissed reappears the moment they apply another.
+      previous.forEach((_, index) => {
+        if (index === appliedIndex) return;
+        if (!active.dismissed.has(`${previousKey}#${index}`)) return;
+        active.dismissed.add(`${key}#${index < appliedIndex ? index : index - 1}`);
+      });
     }
-    for (const sentence of segment(fieldText(active.field))) {
-      const key = sentenceKey(sentence.text);
-      if (!active.cache.has(key)) active.cache.set(key, []);
-    }
+
     rebuild();
   }
 
   // ----------------------------------------------------------------- badge
 
-  function setBadge(kind: 'checking' | 'clean' | 'issues' | 'error', title = ''): void {
+  function setBadge(
+    kind: 'checking' | 'clean' | 'issues' | 'error' | 'waiting',
+    title = '',
+  ): void {
     if (!session || !enabled) {
       badge.hidden = true;
       return;
@@ -316,13 +432,13 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
       kind === 'issues' ? String(session.suggestions.length) : kind === 'clean' ? '✓' : '';
     badge.title =
       title ||
-      (kind === 'checking'
-        ? 'ProofKey is checking…'
-        : kind === 'clean'
-          ? 'No issues found'
-          : kind === 'error'
-            ? 'Check failed'
-            : `${session.suggestions.length} suggestion(s)`);
+      {
+        checking: 'ProofKey is checking…',
+        clean: 'No issues found',
+        error: 'Check failed',
+        waiting: 'Not checked yet — pause for a moment',
+        issues: `${session.suggestions.length} suggestion(s)`,
+      }[kind];
   }
 
   badge.addEventListener('click', () => {

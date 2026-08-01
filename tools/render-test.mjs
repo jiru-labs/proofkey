@@ -107,7 +107,7 @@ async function run() {
   });
   page.on('pageerror', (error) => console.log(`    [page exception] ${error.message}`));
 
-  for (const field of ['plain', 'odd', 'single', 'rich']) {
+  for (const field of ['plain', 'odd', 'single', 'chat', 'rich']) {
     console.log(`\n${field}:`);
     await page.goto(`${BASE}?field=${field}`, { waitUntil: 'load' });
     await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
@@ -145,6 +145,16 @@ async function run() {
     check('badge shown near field', !!before.badge, before.badge
       ? `"${before.badge.text}" at ${Math.round(before.badge.rect.x)},${Math.round(before.badge.rect.y)}`
       : 'missing');
+
+    if (field === 'chat') {
+      // The reported bug, stated as an assertion. A single unterminated
+      // sentence is the caret's own sentence, so nothing was ever sent — and
+      // the badge reported that silence as a clean result. The tick is only
+      // honest once the settle pass has actually checked something.
+      check('lone sentence is not reported clean without being checked',
+        before.badge?.text !== '✓',
+        `badge reads ${JSON.stringify(before.badge?.text ?? '(hidden)')}`);
+    }
 
     await page.screenshot({ path: `${SHOTS}${field}.png` });
 
@@ -193,9 +203,74 @@ async function run() {
     check('apply writes the correction', applied,
       applied ? `field now contains "${card.after.trim()}"` : `field text: ${JSON.stringify(after.fieldText.slice(0, 80))}`);
 
+    // Applying one correction must not retire the others. The corrected
+    // sentence hashes differently afterwards, and the apply path used to record
+    // that new hash as clean — which threw away every remaining finding in the
+    // same sentence and left a green tick over text that still had errors in it.
+    const countOf = (probed) => (isOverlay ? probed.marks.length : probed.highlightCounts);
+    if (countOf(before) > 1) {
+      check('other suggestions survive an apply',
+        countOf(after) === countOf(before) - 1,
+        `${countOf(before)} before -> ${countOf(after)} after, badge reads ${JSON.stringify(after.badge?.text ?? '(hidden)')}`);
+    }
+
     if (field === 'rich') {
       check('bold survives the edit', after.hasStrong);
     }
+  }
+
+  // Applying every suggestion one at a time, the way a user actually works
+  // through a message. One apply is not enough to catch this: the bug retired
+  // the *other* findings in the corrected sentence, so the failure only shows
+  // from the second correction onwards. The tick at the end has to be earned by
+  // arriving at the same text the model would have written in one pass.
+  {
+    console.log('\nchat — apply every suggestion in turn:');
+    await page.goto(`${BASE}?field=chat`, { waitUntil: 'load' });
+    await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const expected = await page.evaluate(() =>
+      window.__pkCorrect(document.getElementById('chat').value),
+    );
+
+    let rounds = 0;
+    let state = await page.evaluate(probe, ['chat', MIRRORED]);
+    const started = state.marks.length;
+
+    while (state.marks.length > 0 && rounds < 8) {
+      const rect = state.marks[0].rect;
+      await page.mouse.click(rect.x + rect.w / 2, rect.y + rect.h / 2);
+      await page.waitForTimeout(200);
+
+      const applyAt = await page.evaluate(() => {
+        const shadow = document.getElementById('proofkey-root').shadowRoot;
+        const card = shadow.querySelector('.pk-card');
+        if (!card || card.hidden) return null;
+        const button = shadow.querySelector('.pk-btn--primary').getBoundingClientRect();
+        return { x: button.x + button.width / 2, y: button.y + button.height / 2 };
+      });
+      if (!applyAt) break;
+
+      await page.mouse.click(applyAt.x, applyAt.y);
+      await page.waitForTimeout(300);
+      rounds++;
+      state = await page.evaluate(probe, ['chat', MIRRORED]);
+    }
+
+    check('every suggestion could be applied in turn', rounds === started,
+      `${started} found, ${rounds} applied, ${state.marks.length} left`);
+    check('text matches a single-pass correction',
+      state.fieldText.trim() === expected.trim(),
+      `got ${JSON.stringify(state.fieldText.trim())}`);
+    // Asserted as a conjunction on purpose. A bare `badge === '✓'` passes in the
+    // broken state too — the tick was exactly what the bug produced — so on its
+    // own it would be one more check that has never failed and proves nothing.
+    check('tick appears only once the text is actually clean',
+      state.badge?.text === '✓' && state.fieldText.trim() === expected.trim(),
+      `badge reads ${JSON.stringify(state.badge?.text ?? '(hidden)')} over ${JSON.stringify(state.fieldText.trim())}`);
+
+    await page.screenshot({ path: `${SHOTS}chat-applied.png` });
   }
 
   // The Ctrl+Shift+K path: one rewrite of the whole field. Distinct from

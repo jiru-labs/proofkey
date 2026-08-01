@@ -191,6 +191,12 @@
   animation: pk-pulse 1s ease-in-out infinite;
 }
 
+/* Grey and still: nothing is in flight, but nothing has been checked either.
+   Deliberately not green — the tick means a verdict, and there isn't one. */
+.pk-badge--waiting {
+  background: #8a93a6;
+}
+
 @keyframes pk-pulse {
   50% { opacity: 0.45; }
 }
