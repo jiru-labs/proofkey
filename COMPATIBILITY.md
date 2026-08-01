@@ -77,7 +77,7 @@ here, that alone is worth a report.
 | Notion | ProseMirror-like | `Untested` | — |
 | Discord | Slate | `Untested` | — |
 | LinkedIn | Quill | `Untested` | — |
-| X / Twitter | Draft.js / custom | `Verified` (quick actions only) | `Ctrl+Shift+K` run by the maintainer 2026-08-02. Live checking on the same visit did nothing — a universal bug, not an X one; see below |
+| X / Twitter | Draft.js / custom | `Verified` | `Ctrl+Shift+K` run by the maintainer 2026-08-02. Live checking did nothing on that same visit — two universal bugs, not X ones — and was confirmed working by the maintainer after f56f4ec, same day |
 | Reddit | Lexical | `Untested` | — |
 | GitHub (comments, issues) | `<textarea>`, CodeMirror in places | `Untested` | — |
 | Google Docs | canvas | `Not supported` | See above |
@@ -93,7 +93,13 @@ absence of findings. Any site would have done the same. The harness could not
 express the case at all, because every field in it carried at least two
 sentences *by design*, with a comment saying so; the assumption that hid the bug
 had been written into the thing meant to catch it. It now has a `chat` field,
-and the row above stays split until live checking is re-run on X itself.
+and live checking was re-run on X after the fix and confirmed working, which is
+what moved the row above to `Verified` outright.
+
+The **Draft.js** row in the editors table stays `Untested` regardless. The engine
+attribution for X is best-effort, as the heading of this section says, so what
+was verified is a site, not the engine we guess it runs. Promoting an engine on
+that basis is exactly the drift the tier rule exists to stop.
 
 The same visit turned up a second one behind it, and it is the same mistake in a
 different place: applying a correction rewrote the sentence, the rewritten
