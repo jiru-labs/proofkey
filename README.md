@@ -106,7 +106,9 @@ One honest caveat: `chrome.storage.sync` means Chrome syncs your settings — in
 
 ### On cost
 
-Live checking spends your key. ProofKey is built to keep that small: it checks about a second after you stop typing rather than on every keystroke, sends only sentences whose text changed, never sends the sentence your cursor is inside, and caches results per sentence. Inline checking is off by default and is enabled per site.
+Live checking spends your key. ProofKey is built to keep that small: it checks about a second after you stop typing rather than on every keystroke, sends only sentences whose text changed, holds back the sentence your cursor is inside until you have stopped at the end of it for about three seconds, and caches results per sentence. Inline checking is off by default and is enabled per site.
+
+That hold-back used to be permanent, which quietly meant a one-sentence message — a tweet, a chat line — was never checked at all, and the badge showed a green tick for text nothing had looked at. The tick now means a verdict on text that was actually sent; grey means not checked yet.
 
 Which model you pick matters more than any of that — the cost spread across current Gemini models is about 20×, and the fastest one measured is also nearly the cheapest. Across providers the spread is wider still: the same live check costs $0.02 per 1,000 on the cheapest model measured through OpenRouter, $0.14 on Gemini and $1.50 on Grok, and takes 0.3s against 1s against 1.6–22s — while OpenCode Go's coding models are flat-rate but run 4s to 100s, past ProofKey's own request timeout at the slow end. [MODELS.md](MODELS.md) has the arithmetic, worked out from ProofKey's real prompt sizes, plus measured quality and latency for forty model configurations. Free tiers are deliberately not measured on any provider, and models whose thinking cannot be turned off are excluded from live checking where that measurably costs you latency, money or a usable reply — by measured harm, not by mechanism, so the fastest model on the page stays recommended despite thinking. `npm run cost` recalculates it; `npm run eval` measures a model you are considering.
 

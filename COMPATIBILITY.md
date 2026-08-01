@@ -43,7 +43,7 @@ editors; engines are what the code branches on (`src/content/target.ts`).
 
 | Editor engine | How ProofKey handles it | Status | Evidence |
 |---|---|---|---|
-| `<textarea>` | Mirror overlay for underlines, `execCommand` to write | `Tested` | `test:render` — `plain`, `odd` fields: overlay typography, box alignment, underline containment, card, apply |
+| `<textarea>` | Mirror overlay for underlines, `execCommand` to write | `Tested` | `test:render` — `plain`, `odd` fields: overlay typography, box alignment, underline containment, card, apply. `chat` field: a lone unterminated sentence is checked rather than reported clean, and all three of its corrections apply in turn to reach the same text a single pass would produce |
 | `<input type=text>` | Same, single-line | `Tested` | `test:render` — `single` field |
 | Plain `contenteditable` | CSS Custom Highlight API for underlines, word-level diff to write | `Tested` | `test:render` — `rich` field, incl. bold surviving both a single apply and a whole-field rewrite |
 | `contenteditable` that re-renders on every input | Same, edits bounded and awaited | `Tested` | `test:render` — `rerender` field |
@@ -77,12 +77,33 @@ here, that alone is worth a report.
 | Notion | ProseMirror-like | `Untested` | — |
 | Discord | Slate | `Untested` | — |
 | LinkedIn | Quill | `Untested` | — |
-| X / Twitter | Draft.js / custom | `Untested` | — |
+| X / Twitter | Draft.js / custom | `Verified` (quick actions only) | `Ctrl+Shift+K` run by the maintainer 2026-08-02. Live checking on the same visit did nothing — a universal bug, not an X one; see below |
 | Reddit | Lexical | `Untested` | — |
 | GitHub (comments, issues) | `<textarea>`, CodeMirror in places | `Untested` | — |
 | Google Docs | canvas | `Not supported` | See above |
 
-WhatsApp Web is the only site any human has run this on.
+WhatsApp Web and X are the only sites any human has run this on.
+
+The X visit is worth reading as a method note. Live checking reported "no issues
+found" on a tweet with four errors in it, and the tempting reading was that
+Draft.js broke something. It had not: the composer held one unterminated
+sentence, that sentence was the caret's, and the caret's sentence was never
+sent — so the check had made no request and was showing a green tick for the
+absence of findings. Any site would have done the same. The harness could not
+express the case at all, because every field in it carried at least two
+sentences *by design*, with a comment saying so; the assumption that hid the bug
+had been written into the thing meant to catch it. It now has a `chat` field,
+and the row above stays split until live checking is re-run on X itself.
+
+The same visit turned up a second one behind it, and it is the same mistake in a
+different place: applying a correction rewrote the sentence, the rewritten
+sentence hashed differently, and the apply path recorded that new hash as
+**clean** so it would not be re-sent — discarding every other finding already
+made in it. Fix one word of three and the badge went green over the other two.
+Both bugs were a cache entry standing in for a verdict nobody had reached. The
+tick is now only written when every sentence in the field is actually cached,
+and `test:render` applies all three `chat` corrections in sequence, because a
+single apply cannot see the difference.
 
 ## Providers
 

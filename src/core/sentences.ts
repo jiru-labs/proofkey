@@ -2,8 +2,10 @@
  * Sentence segmentation, used to keep live checking cheap.
  *
  * Only sentences whose text changed are ever sent, and the one the caret sits
- * in is skipped until the user moves on — checking a half-typed sentence
- * produces nonsense suggestions and spends tokens to do it.
+ * in is held back until the user stops — checking a half-typed sentence
+ * produces nonsense suggestions and spends tokens to do it. See the settle pass
+ * in `src/content/live.ts` for why "held back" is not "skipped": a message of
+ * one unterminated sentence is nothing but the caret's sentence.
  *
  * `Intl.Segmenter` does the work where available: it handles scripts without
  * spaces and punctuation conventions that a regex would get wrong, which

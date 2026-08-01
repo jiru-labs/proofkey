@@ -36,11 +36,14 @@
   </head>
   <body>
     <!--
-      Every field needs at least two sentences, because the sentence holding the
-      caret is deliberately never checked. The caret is placed at the end below,
-      where a typist's would be, so the earlier sentences are the ones tested.
-      Sentences start with a capital so ICU actually splits them — a lowercase
-      word after a full stop does not end a sentence under ICU rules.
+      Most fields here carry at least two sentences, because the sentence
+      holding the caret is only checked by the settle pass. The caret is placed
+      at the end below, where a typist's would be. Sentences start with a
+      capital so ICU actually splits them — a lowercase word after a full stop
+      does not end a sentence under ICU rules.
+
+      The `chat` field below is the deliberate exception, and it is the case
+      this harness used to be unable to express at all.
     -->
     <h2>textarea — default typography</h2>
     <textarea id="plain">
@@ -54,6 +57,20 @@ The quarterly report show that revenue have increased. Their is more work to do.
 
     <h2>single-line input</h2>
     <input id="single" type="text" value="The meating is thursday. Please dont be late." />
+
+    <!--
+      One unterminated sentence with the caret at the end of it — a tweet or a
+      chat message, which is what most of this extension's traffic actually is.
+      Text verbatim from the bug report on x.com.
+
+      There is no second sentence to fall back on, so this field checks nothing
+      at all until the settle pass runs. Before that existed the badge went
+      straight to a green tick, which is why the report said live checking
+      "shows that all is fine": it had sent no request and was reporting the
+      absence of findings as a finding.
+    -->
+    <h2>textarea — one unterminated sentence (chat/tweet composer)</h2>
+    <textarea id="chat">this is a test, and ai want to see if mi extencion is working corectly </textarea>
 
     <!--
       Reproduces a WhatsApp/Lexical-style composer: the editor rebuilds its own
@@ -103,6 +120,13 @@ The quarterly report show that revenue have increased. Their is more work to do.
         [/\bmeating\b/g, 'meeting'],
         [/\bthursday\b/g, 'Thursday'],
         [/\bdont\b/g, "don't"],
+        // The x.com chat case. Note what is *not* here: "this" keeps its
+        // lowercase start, because the live-check prompt treats that as a
+        // messaging convention rather than an error. The stub has to model
+        // that or the test would assert a correction the real path never makes.
+        [/\bai want\b/g, 'I want'],
+        [/\bmi extencion\b/g, 'my extension'],
+        [/\bcorectly\b/g, 'correctly'],
         // Spanish fixes for the re-render case, from the bug report.
         [/\bvendia\b/g, 'vendía'],
         [/\bhabia\b/g, 'había'],
