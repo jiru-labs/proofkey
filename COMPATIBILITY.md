@@ -111,6 +111,23 @@ tick is now only written when every sentence in the field is actually cached,
 and `test:render` applies all three `chat` corrections in sequence, because a
 single apply cannot see the difference.
 
+A third, reported from **both X and WhatsApp** on 2026-08-02, completes the
+pattern: applying a correction was also recorded as a **dismissal**. Dismissals
+are keyed by sentence content and the cache never forgets, so a finding the user
+had already accepted was suppressed for that exact sentence for the rest of the
+session. Put the original text back — paste it, undo it, retype it — and the
+findings came back from cache already silenced, with no request sent to
+contradict them. On a sentence carrying one error that is a green tick over text
+nobody corrected; with several, only the first was lost, which is quieter and
+worse. Applying is no longer recorded as a dismissal at all: a corrected
+sentence hashes differently, so the entry the finding came from no longer
+matches anything in the field, and where it does still match — the same sentence
+written twice — the other copy really does still have the error in it.
+`test:render` now corrects a field down to a tick, pastes the original back and
+asserts the count returns, on a `<textarea>` and on a rich-text field both,
+since the two report sites compose in a contenteditable and the textarea is what
+shows the fault was in the session bookkeeping rather than in either editor.
+
 ## Providers
 
 Thirty-four presets, but only **two transports** — so this is not thirty-four

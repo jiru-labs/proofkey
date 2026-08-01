@@ -35,6 +35,79 @@ function check(name, ok, detail = '') {
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`);
 }
 
+/**
+ * How many underlines are showing, whichever surface drew them: a mirror
+ * overlay for `<input>` and `<textarea>`, CSS custom highlights for rich text.
+ */
+const underlineCount = (state) => (state.marks.length ? state.marks.length : state.highlightCounts);
+
+/** Viewport rect of the first underline, from whichever surface holds it. */
+async function firstUnderline(page, state) {
+  if (state.marks.length) return state.marks[0].rect;
+  return page.evaluate(() => {
+    const highlight = ['proofkey-grammar', 'proofkey-spelling', 'proofkey-style']
+      .map((name) => CSS.highlights.get(name))
+      .find((set) => set && set.size);
+    const range = highlight ? [...highlight][0] : null;
+    if (!range) return null;
+    const r = range.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  });
+}
+
+/**
+ * Works through a field the way a user does: click the first underline, press
+ * Apply, repeat until none are left. Returns how many were there to start with,
+ * how many actually went through, and the final probe.
+ */
+async function applyEachInTurn(page, probeArgs, limit = 8) {
+  let rounds = 0;
+  let state = await page.evaluate(probe, probeArgs);
+  const started = underlineCount(state);
+
+  while (underlineCount(state) > 0 && rounds < limit) {
+    const rect = await firstUnderline(page, state);
+    if (!rect) break;
+    await page.mouse.click(rect.x + rect.w / 2, rect.y + rect.h / 2);
+    await page.waitForTimeout(200);
+
+    const applyAt = await page.evaluate(() => {
+      const shadow = document.getElementById('proofkey-root').shadowRoot;
+      const card = shadow.querySelector('.pk-card');
+      if (!card || card.hidden) return null;
+      const button = shadow.querySelector('.pk-btn--primary').getBoundingClientRect();
+      return { x: button.x + button.width / 2, y: button.y + button.height / 2 };
+    });
+    if (!applyAt) break;
+
+    await page.mouse.click(applyAt.x, applyAt.y);
+    await page.waitForTimeout(300);
+    rounds++;
+    state = await page.evaluate(probe, probeArgs);
+  }
+
+  return { started, rounds, state };
+}
+
+/** Replaces a field's whole contents and leaves the caret at the end, as a paste does. */
+const paste = ([id, text]) => {
+  const field = document.getElementById(id);
+  field.focus();
+  if (field instanceof HTMLTextAreaElement || field instanceof HTMLInputElement) {
+    field.value = text;
+    field.setSelectionRange(text.length, text.length);
+  } else {
+    field.replaceChildren(document.createTextNode(text));
+    const range = document.createRange();
+    range.selectNodeContents(field);
+    range.collapse(false);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste' }));
+};
+
 /** Everything the page can tell us about what ProofKey drew. */
 const probe = ([id, props]) => {
   {
@@ -234,29 +307,7 @@ async function run() {
       window.__pkCorrect(document.getElementById('chat').value),
     );
 
-    let rounds = 0;
-    let state = await page.evaluate(probe, ['chat', MIRRORED]);
-    const started = state.marks.length;
-
-    while (state.marks.length > 0 && rounds < 8) {
-      const rect = state.marks[0].rect;
-      await page.mouse.click(rect.x + rect.w / 2, rect.y + rect.h / 2);
-      await page.waitForTimeout(200);
-
-      const applyAt = await page.evaluate(() => {
-        const shadow = document.getElementById('proofkey-root').shadowRoot;
-        const card = shadow.querySelector('.pk-card');
-        if (!card || card.hidden) return null;
-        const button = shadow.querySelector('.pk-btn--primary').getBoundingClientRect();
-        return { x: button.x + button.width / 2, y: button.y + button.height / 2 };
-      });
-      if (!applyAt) break;
-
-      await page.mouse.click(applyAt.x, applyAt.y);
-      await page.waitForTimeout(300);
-      rounds++;
-      state = await page.evaluate(probe, ['chat', MIRRORED]);
-    }
+    const { started, rounds, state } = await applyEachInTurn(page, ['chat', MIRRORED]);
 
     check('every suggestion could be applied in turn', rounds === started,
       `${started} found, ${rounds} applied, ${state.marks.length} left`);
@@ -271,6 +322,52 @@ async function run() {
       `badge reads ${JSON.stringify(state.badge?.text ?? '(hidden)')} over ${JSON.stringify(state.fieldText.trim())}`);
 
     await page.screenshot({ path: `${SHOTS}chat-applied.png` });
+  }
+
+  // Correcting a sentence must not blacklist it. Reported from x.com and
+  // WhatsApp: work through a message suggestion by suggestion, then put the
+  // original text back — paste it, undo, retype it — and the findings do not
+  // come back. The badge sits on a green tick over text nobody corrected.
+  //
+  // Both fields are here because the two report sites differ in kind: x.com and
+  // WhatsApp compose in a contenteditable, and a textarea is the simpler case
+  // that proves the fault is in the session bookkeeping rather than in either
+  // editor. The single-issue field is the one that reaches a full green tick —
+  // with several findings only the first is lost, which is quieter and worse.
+  for (const [field, seed] of [
+    ['chat', null],
+    ['rich', 'the meating is at noon and we all need to be there '],
+  ]) {
+    console.log(`\n${field} — the old text pasted back is checked again:`);
+    await page.goto(`${BASE}?field=${field}`, { waitUntil: 'load' });
+    await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    if (seed) {
+      await page.evaluate(paste, [field, seed]);
+      await page.waitForTimeout(1400);
+    }
+
+    const original = await page.evaluate(
+      (id) => document.getElementById(id).value ?? document.getElementById(id).innerText,
+      field,
+    );
+
+    const { started, rounds, state } = await applyEachInTurn(page, [field, MIRRORED]);
+    check('field was corrected before the paste', started > 0 && rounds === started,
+      `${started} found, ${rounds} applied, badge reads ${JSON.stringify(state.badge?.text ?? '(hidden)')}`);
+
+    await page.evaluate(paste, [field, original]);
+    await page.waitForTimeout(1600);
+
+    const after = await page.evaluate(probe, [field, MIRRORED]);
+    check('the original text is underlined again', underlineCount(after) === started,
+      `${started} before, ${underlineCount(after)} after the paste`);
+    check('badge counts them instead of reporting clean',
+      after.badge?.text === String(started),
+      `badge reads ${JSON.stringify(after.badge?.text ?? '(hidden)')} over ${JSON.stringify(after.fieldText.trim().slice(0, 60))}`);
+
+    await page.screenshot({ path: `${SHOTS}${field}-pasted-back.png` });
   }
 
   // The Ctrl+Shift+K path: one rewrite of the whole field. Distinct from

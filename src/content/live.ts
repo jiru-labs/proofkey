@@ -362,7 +362,18 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     );
     if (!applied) return;
 
-    active.dismissed.add(suggestion.id);
+    // Applying is deliberately not recorded as a dismissal. `dismissed` is keyed
+    // by sentence content and the cache never forgets, so marking the applied
+    // finding dismissed retired it for that exact text for the rest of the
+    // session. Bring the original back — paste it, undo, retype it — and the
+    // findings returned from cache already suppressed, with no request sent to
+    // contradict them. On a sentence carrying a single error that is a green
+    // tick over text nobody corrected, which is what x.com and WhatsApp saw.
+    //
+    // Nothing is needed in its place. A corrected sentence hashes differently,
+    // so the entry the finding came from no longer matches anything in the
+    // field; and where it does still match — the same sentence written twice —
+    // the other copy really does still have the error in it.
 
     // The corrected sentence hashes differently now, so the next pass would pay
     // to check it again. Carrying the findings across to the new hash avoids
