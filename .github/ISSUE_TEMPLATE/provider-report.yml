@@ -1,0 +1,88 @@
+name: Provider report
+description: Tell us whether a provider preset actually works with a real key
+title: "[provider] "
+labels: ["compatibility", "provider-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ProofKey ships 34 presets. The wire format of both transports is covered
+        by automated tests — but against a **stub**, and a stub agrees with
+        whatever you send it. Only one preset (Google Gemini) has been confirmed
+        against the real thing with a real key.
+
+        If you have a key, confirming yours takes about a minute: settings page →
+        paste key → **Fetch models** → one quick action on any page.
+
+        See [COMPATIBILITY.md](https://github.com/jiru-labs/proofkey/blob/main/COMPATIBILITY.md) for the current state.
+
+  - type: input
+    id: provider
+    attributes:
+      label: Provider
+      description: The preset name as it appears in the dropdown, or "Custom".
+      placeholder: Cerebras
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      placeholder: llama-3.3-70b
+    validations:
+      required: true
+
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport
+      options:
+        - chat_completions
+        - anthropic_messages
+        - Not sure
+      default: 2
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: worked
+    attributes:
+      label: What worked
+      options:
+        - label: The preset's base URL was correct as shipped — I changed nothing
+        - label: Fetch models listed my models
+        - label: A quick action returned usable text
+        - label: Non-English text came back in the right language, untranslated
+        - label: Long text came back complete, not truncated
+
+  - type: textarea
+    id: changes
+    attributes:
+      label: Anything you had to change to make it work
+      description: >
+        Auth style, extra headers, extra body fields, query parameters, a
+        different base URL. This is the most actionable part of the report — if
+        you had to change something, the preset is wrong and we can fix it for
+        everyone.
+      placeholder: |
+        Base URL in the preset ended in /v1 but this gateway wants /openai/v1.
+        Also needed an extra header: X-Account-Id.
+
+  - type: textarea
+    id: errors
+    attributes:
+      label: Errors
+      description: >
+        The message ProofKey showed, plus anything in the service worker console
+        (chrome://extensions → ProofKey → "service worker"). Redact your key.
+      render: text
+
+  - type: input
+    id: version
+    attributes:
+      label: ProofKey version
+      description: The commit you built from — `git rev-parse --short HEAD`.
+      placeholder: 863d241
+    validations:
+      required: true

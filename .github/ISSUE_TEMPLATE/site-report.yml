@@ -1,0 +1,108 @@
+name: Site report
+description: Tell us whether ProofKey works on a site — working or broken, both are useful
+title: "[site] "
+labels: ["compatibility", "site-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you — this is the most useful thing anyone can send.
+
+        WhatsApp Web is currently the **only** site a human has run ProofKey on,
+        so a report saying "it just works on X" is as valuable as a bug.
+
+        See [COMPATIBILITY.md](https://github.com/jiru-labs/proofkey/blob/main/COMPATIBILITY.md) for what is already known.
+
+  - type: input
+    id: site
+    attributes:
+      label: Site
+      description: Name or URL. The page, not the whole domain, if it matters.
+      placeholder: Slack — a channel message box
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Editor engine, if you know it
+      description: >
+        Only if you happen to know — "Not sure" is a perfectly good answer and
+        the default. This is what actually predicts behaviour, so it helps a lot
+        when it is known.
+      options:
+        - Not sure
+        - textarea or input
+        - Plain contenteditable
+        - Lexical
+        - Quill
+        - ProseMirror
+        - Slate
+        - Draft.js
+        - Something else (say below)
+      default: 0
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: worked
+    attributes:
+      label: What worked
+      description: Tick what you actually saw. Leaving one unticked tells us as much as ticking it.
+      options:
+        - label: Underlines appeared as I typed
+        - label: Clicking an underline opened the suggestion card
+        - label: Applying a suggestion changed the text correctly
+        - label: The quick action (Ctrl+Shift+K / right-click) ran
+        - label: The whole-field rewrite came back intact — nothing scrambled, nothing lost
+        - label: Existing formatting (bold, links, lists) survived
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened
+      description: >
+        If something broke, what did it look like? For scrambled or lost text,
+        paste the before and after — where the two diverge is the useful part.
+      placeholder: |
+        Typed a long paragraph, hit Ctrl+Shift+K. First two sentences came back fine,
+        then it repeated a chunk from the middle.
+
+        before: ...
+        after:  ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Console errors
+      description: >
+        F12 → Console, filter to errors, on the page itself. Optional, but it
+        often turns a guess into a fix.
+      render: text
+
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and model you were using
+      placeholder: Google Gemini, gemini-2.5-flash
+
+  - type: input
+    id: version
+    attributes:
+      label: ProofKey version
+      description: >
+        The commit you built from — `git rev-parse --short HEAD`. Not on the Web
+        Store yet, so the version number alone does not pin it down.
+      placeholder: 863d241
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS
+      placeholder: Chrome 141, macOS 15
+    validations:
+      required: true
