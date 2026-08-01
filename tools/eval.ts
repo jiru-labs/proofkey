@@ -5,6 +5,7 @@
  *     node --experimental-strip-types tools/eval.ts
  *     node --experimental-strip-types tools/eval.ts --models gemini-2.5-flash-lite --runs 5
  *     node --experimental-strip-types tools/eval.ts --base https://api.groq.com/openai/v1 --models llama-3.3-70b
+ *     node --experimental-strip-types tools/eval.ts --base https://api.x.ai/v1 --models grok-4.3 --reasoning off
  *
  * This sends the **real** composed prompt from `src/core/prompts.ts` and parses
  * the reply with the **real** `parseCheckReply`, so what it measures is
@@ -27,9 +28,9 @@
  *      answer is printed for a human to read. Do not report a score without
  *      reading them.
  *
- * It also prints the provider's own token counts, reasoning tokens included
- * where the provider reports them, which is the honest check on the estimates
- * in `tools/cost.ts`.
+ * It also prints the provider's own token counts — and its own cost figure where
+ * it states one — which is the honest check on the estimates in
+ * `tools/cost.ts`.
  *
  * This spends real money. It is `runs x models` small requests — cents at most.
  */
@@ -141,6 +142,29 @@ const EMPTY_PROFILE: WritingProfile = {
 const DEFAULT_BASE = 'https://generativelanguage.googleapis.com/v1beta/openai';
 const DEFAULT_MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash'];
 
+/**
+ * Thinking is billed as output, and output is the term that dominates
+ * ProofKey's bill, so turning it off where possible is worth doing.
+ *
+ * It is a flag rather than a constant because `reasoning_effort` is **not**
+ * safely ignorable. Gemini endpoints that do not know the field drop it
+ * silently; xAI answers HTTP 400 instead — `does not support parameter
+ * reasoningEffort` on every Grok model except grok-4.3, and a separate refusal
+ * of the value `none` on grok-4.5. A harness that hardcoded it could not test
+ * those models at all.
+ *
+ * `--reasoning off` omits the field; any other value is sent verbatim.
+ */
+const DEFAULT_REASONING = 'none';
+
+/**
+ * Generous, because on most providers thinking is spent out of this same
+ * budget. A reasoning model given a tight cap thinks until it runs out and
+ * returns nothing, which the harness would otherwise score as an inability to
+ * hold the reply format. The reply itself needs about 200 tokens.
+ */
+const DEFAULT_MAX_TOKENS = 8192;
+
 function arg(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
   return index === -1 ? undefined : process.argv[index + 1];
@@ -160,9 +184,23 @@ interface Run {
   outputs: (string | null)[];
   /** Raw reply, kept only when the contract broke, for diagnosis. */
   rawReply?: string;
+  /**
+   * Kept for the same reason. A thinking model spends `max_tokens` on thinking
+   * before it writes anything, so a truncated reply and a model that cannot
+   * hold the format look identical in the output — `length` tells them apart.
+   */
+  finishReason?: string;
 }
 
-async function once(base: string, key: string, model: string): Promise<Run> {
+interface Options {
+  base: string;
+  key: string;
+  model: string;
+  reasoning: string;
+  maxTokens: number;
+}
+
+async function once({ base, key, model, reasoning, maxTokens }: Options): Promise<Run> {
   const inputs = FIXTURES.map((f) => f.input);
   const body = {
     model,
@@ -170,11 +208,9 @@ async function once(base: string, key: string, model: string): Promise<Run> {
       { role: 'system', content: composeCheckPrompt(EMPTY_PROFILE, inputs.length) },
       { role: 'user', content: formatCheckPayload(inputs) },
     ],
-    max_tokens: 2048,
+    max_tokens: maxTokens,
     stream: false,
-    // Gemini 2.5 bills thinking as output and does not need it to proofread.
-    // Models that reject the field ignore it; see MODELS.md.
-    reasoning_effort: 'none',
+    ...(reasoning === 'off' ? {} : { reasoning_effort: reasoning }),
   };
 
   const started = Date.now();
@@ -191,12 +227,20 @@ async function once(base: string, key: string, model: string): Promise<Run> {
 
   const payload = await response.json();
   const reply = payload?.choices?.[0]?.message?.content ?? '';
+  const finishReason = payload?.choices?.[0]?.finish_reason;
   const usage = (payload?.usage ?? {}) as Record<string, unknown>;
   const parsed = parseCheckReply(reply, inputs.length);
 
   return parsed
     ? { ms, usage, contractBroken: false, outputs: parsed }
-    : { ms, usage, contractBroken: true, outputs: FIXTURES.map(() => null), rawReply: reply };
+    : {
+        ms,
+        usage,
+        contractBroken: true,
+        outputs: FIXTURES.map(() => null),
+        rawReply: reply,
+        finishReason,
+      };
 }
 
 interface Summary {
@@ -252,6 +296,24 @@ function reasoningTokens(usage: Record<string, unknown>): number | undefined {
   return typeof value === 'number' ? value : undefined;
 }
 
+/**
+ * What the provider says the request cost, where it says anything at all. Most
+ * do not; xAI returns `usage.cost_in_usd_ticks`.
+ *
+ * A tick is 1e-10 USD. That is not documented, but it is forced by arithmetic:
+ * ticks come out exactly equal to the sum of each token class times its price
+ * from `GET /v1/models`, and those prices reproduce the published dollar
+ * figures at 1e-4 USD per million tokens per unit.
+ *
+ * Worth printing because every number in `tools/cost.ts` is *calculated*. This
+ * is the one place a provider states the answer, so where both exist they
+ * should agree, and a gap is a bug in the estimator.
+ */
+function reportedCostUsd(usage: Record<string, unknown>): number | undefined {
+  const ticks = usage['cost_in_usd_ticks'];
+  return typeof ticks === 'number' ? ticks * 1e-10 : undefined;
+}
+
 async function main(): Promise<void> {
   const key = process.env['PROOFKEY_EVAL_KEY'] ?? process.env['GEMINI_API_KEY'];
   if (!key) {
@@ -262,10 +324,17 @@ async function main(): Promise<void> {
   const base = arg('base') ?? DEFAULT_BASE;
   const models = (arg('models') ?? DEFAULT_MODELS.join(',')).split(',').map((m) => m.trim());
   const runs = Number(arg('runs') ?? 3);
+  const reasoning = arg('reasoning') ?? DEFAULT_REASONING;
+  const maxTokens = Number(arg('max-tokens') ?? DEFAULT_MAX_TOKENS);
   const clean = FIXTURES.filter(isClean).length;
 
   console.log(`\n${FIXTURES.length} fixtures (${clean} already correct, ${FIXTURES.length - clean} with errors)`);
-  console.log(`${models.length} model(s) x ${runs} run(s) against ${base}\n`);
+  console.log(`${models.length} model(s) x ${runs} run(s) against ${base}`);
+  console.log(
+    reasoning === 'off'
+      ? 'reasoning_effort: not sent\n'
+      : `reasoning_effort: ${reasoning} (--reasoning off to omit it)\n`,
+  );
 
   const summaries: Summary[] = [];
   for (const model of models) {
@@ -273,7 +342,7 @@ async function main(): Promise<void> {
     const collected: Run[] = [];
     for (let i = 0; i < runs; i++) {
       try {
-        const run = await once(base, key, model);
+        const run = await once({ base, key, model, reasoning, maxTokens });
         collected.push(run);
         process.stdout.write(run.contractBroken ? 'x' : '.');
       } catch (error) {
@@ -286,16 +355,30 @@ async function main(): Promise<void> {
   }
 
   console.log('\nRESULTS\n');
-  const columns = ['Model', 'Correct', 'Spread', 'False alarms', 'Contract', 'Latency', 'Tokens in/out', 'Reasoning'];
-  const width = 24;
-  console.log(columns.map((c) => c.padEnd(width)).join(''));
+  // Per-column widths: model ids run long and the numeric columns do not.
+  const columns: [string, number][] = [
+    ['Model', 30],
+    ['Correct', 10],
+    ['Spread', 9],
+    ['False alarms', 14],
+    ['Contract', 14],
+    ['Latency', 10],
+    ['Tokens in/out', 16],
+    ['Reasoning', 14],
+    ['Cost/1k reqs', 13],
+  ];
+  const row = (cells: string[]) =>
+    cells.map((c, i) => c.padEnd(columns[i]![1])).join('');
+  console.log(row(columns.map(([label]) => label)));
 
   for (const s of summaries) {
     const held = s.runs.filter((r) => !r.contractBroken).length;
     const usage = s.runs[0]?.usage ?? {};
-    const reasoning = reasoningTokens(usage);
+    const thinking = reasoningTokens(usage);
+    // Averaged over runs: thinking makes cost vary between identical requests.
+    const costs = s.runs.map((r) => reportedCostUsd(r.usage)).filter((c) => c !== undefined);
     console.log(
-      [
+      row([
         s.model,
         `${mean(s.perRun).toFixed(1)}/${FIXTURES.length}`,
         s.perRun.length > 1 ? `${Math.min(...s.perRun)}–${Math.max(...s.perRun)}` : 'n/a',
@@ -303,10 +386,15 @@ async function main(): Promise<void> {
         held === s.runs.length ? 'held' : `BROKE ${s.runs.length - held}/${s.runs.length}`,
         `${Math.round(mean(s.runs.map((r) => r.ms)))}ms`,
         `${usage['prompt_tokens'] ?? '?'}/${usage['completion_tokens'] ?? '?'}`,
-        reasoning === undefined ? 'not reported' : String(reasoning),
-      ].map((c) => String(c).padEnd(width)).join(''),
+        thinking === undefined ? 'not reported' : String(thinking),
+        costs.length ? `$${(mean(costs as number[]) * 1000).toFixed(2)}` : 'not reported',
+      ]),
     );
   }
+  console.log(
+    '\nCost is the provider\'s own figure for these 14-fixture requests, scaled to 1,000 of them.',
+  );
+  console.log('It is not comparable to tools/cost.ts, which sizes a real 8-sentence live check.');
 
   const anyUnstable = summaries.some((s) => s.unstable.length);
   if (anyUnstable) {
@@ -336,8 +424,13 @@ async function main(): Promise<void> {
 
   const broken = summaries.flatMap((s) => s.runs.filter((r) => r.contractBroken).map((r) => [s.model, r] as const));
   if (broken.length) {
-    console.log('CONTRACT FAILURES — raw reply, truncated:\n');
-    for (const [model, run] of broken) console.log(`${model}: ${(run.rawReply ?? '').slice(0, 300)}\n`);
+    console.log('CONTRACT FAILURES — finish_reason then raw reply, truncated:\n');
+    for (const [model, run] of broken) {
+      // finish_reason "length" means it ran out of budget, not that it cannot
+      // hold the format. Re-run those with a larger --max-tokens before judging.
+      console.log(`${model} [finish_reason: ${run.finishReason ?? 'unreported'}]`);
+      console.log(`${(run.rawReply ?? '').slice(0, 300)}\n`);
+    }
   }
 
   console.log("Token counts are the provider's own — compare them with tools/cost.ts.");

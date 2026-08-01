@@ -99,15 +99,22 @@ agrees with whatever you send it. That is the gap this table exists to close.
 |---|---|---|---|---|
 | Google Gemini | `gemini-2.5-flash` (preset default) | `chat_completions` | `Verified` | The maintainer's daily driver — real corrections through the extension against a real key, not a stub |
 | Google Gemini | `gemini-2.5-flash-lite`, `gemini-3.1-flash-lite` | `chat_completions` | `Verified` | `npm run eval`, 2026-08-01 — both reachable on the preset's base URL and both held the live-check contract over 3 runs. See [MODELS.md](MODELS.md) |
+| xAI (Grok) | `grok-4.20-0309-non-reasoning` (preset default), `grok-4.3`, `grok-4.5`, `grok-build-0.1` | `chat_completions` | `Verified` | `npm run eval`, 2026-08-01 — all four reachable on the preset's base URL, all held the live-check contract over 3 runs, none produced a false alarm. `GET /v1/models` also works, so **Fetch models** will populate. See [MODELS.md](MODELS.md) |
 
-The second row is narrower than it looks: `npm run eval` calls the endpoint
+The last two rows are narrower than they look: `npm run eval` calls the endpoint
 directly rather than through the extension, so it confirms the base URL, the key
 and the model IDs, not ProofKey's own transport. That is covered separately by
 `test:ext` above.
 
+One xAI caveat that is a property of the provider rather than of ProofKey: every
+Grok model except `grok-4.3` rejects `reasoning_effort` with HTTP 400 rather
+than ignoring it, so that field must not be set in **Extra body fields** on an
+xAI connection. Live-check latency also runs 1.6s–22s depending on the model,
+against roughly 1s on Gemini.
+
 ### Everything else
 
-The other 33 presets in `src/core/presets.ts` are `Untested` end-to-end: the
+The other 32 presets in `src/core/presets.ts` are `Untested` end-to-end: the
 base URLs come from Hermes Agent's registry rather than from anyone here having
 called them with a key. Three use `anthropic_messages` — Anthropic, MiniMax and
 MiniMax (China) — and the rest use `chat_completions`.
@@ -118,8 +125,8 @@ complete report.
 
 Which *model* to run on a working provider is a separate question, with its own
 page: [MODELS.md](MODELS.md) has the cost arithmetic, and measured results from
-`npm run eval` for three Gemini models. Adding a row there is the same one-minute
-job as adding one here.
+`npm run eval` for three Gemini models and five Grok configurations. Adding a row
+there is the same one-minute job as adding one here.
 
 ## Reporting what you find
 
