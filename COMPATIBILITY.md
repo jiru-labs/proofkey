@@ -100,8 +100,10 @@ agrees with whatever you send it. That is the gap this table exists to close.
 | Google Gemini | `gemini-2.5-flash` (preset default) | `chat_completions` | `Verified` | The maintainer's daily driver — real corrections through the extension against a real key, not a stub |
 | Google Gemini | `gemini-2.5-flash-lite`, `gemini-3.1-flash-lite` | `chat_completions` | `Verified` | `npm run eval`, 2026-08-01 — both reachable on the preset's base URL and both held the live-check contract over 3 runs. See [MODELS.md](MODELS.md) |
 | xAI (Grok) | `grok-4.20-0309-non-reasoning` (preset default), `grok-4.3`, `grok-4.5`, `grok-build-0.1` | `chat_completions` | `Verified` | `npm run eval`, 2026-08-01 — all four reachable on the preset's base URL, all held the live-check contract over 3 runs, none produced a false alarm. `GET /v1/models` also works, so **Fetch models** will populate. See [MODELS.md](MODELS.md) |
+| OpenRouter | `openai/gpt-4.1-mini` (preset default), `gpt-4.1-nano`, `gpt-oss-20b`, `anthropic/claude-haiku-4.5`, `google/gemini-2.5-flash-lite`, `meta-llama/llama-3.3-70b-instruct`, `deepseek/deepseek-v4-flash`, `qwen/qwen3.7-flash`, `mistralai/mistral-nemo`, `mistralai/mistral-small-3.2-24b-instruct` | `chat_completions` | `Verified` | `npm run eval`, 2026-08-01 — all ten reachable on the preset's base URL, all held the live-check contract over 3 runs. `GET /v1/models` returns 336 models, so **Fetch models** will populate. The preset's `X-Title` header is accepted. See [MODELS.md](MODELS.md) |
+| OpenRouter | `google/gemma-4-31b-it:free`, `openai/gpt-oss-20b:free` | `chat_completions` | `Broken` | `npm run eval`, 2026-08-01 — `gemma-4-31b-it:free` answered HTTP 429 *"temporarily rate-limited upstream"* on every request across two attempts; `gpt-oss-20b:free` broke the live-check contract on 1 run in 3, spending all 8,192 tokens thinking without writing a reply |
 
-The last two rows are narrower than they look: `npm run eval` calls the endpoint
+These rows are narrower than they look: `npm run eval` calls the endpoint
 directly rather than through the extension, so it confirms the base URL, the key
 and the model IDs, not ProofKey's own transport. That is covered separately by
 `test:ext` above.
@@ -112,9 +114,23 @@ than ignoring it, so that field must not be set in **Extra body fields** on an
 xAI connection. Live-check latency also runs 1.6s–22s depending on the model,
 against roughly 1s on Gemini.
 
+Two OpenRouter caveats, also properties of the provider:
+
+- `reasoning_effort` is accepted by every model listed above **except**
+  `openai/gpt-oss-20b`, which answers HTTP 400 *"Reasoning is mandatory for this
+  endpoint and cannot be disabled"*. Setting it in **Extra body fields** is worth
+  doing anyway — it cut the measured bill 10.8× on `qwen/qwen3.7-flash` — but it
+  is a per-model decision, not a per-connection one.
+- A model id does not identify one endpoint. Routing picks between as many as 22
+  upstreams for a single id, and what you are charged follows the upstream, not
+  the catalogue: three of ten models measured were billed 22% cheaper to 25%
+  dearer than their listed price. `google/gemini-2.5-flash-lite` reached this way
+  was also **bimodal** on quality — 14/14 on about 85% of requests and 9–10/14 on
+  the rest, on byte-identical input. See [MODELS.md](MODELS.md).
+
 ### Everything else
 
-The other 32 presets in `src/core/presets.ts` are `Untested` end-to-end: the
+The other 31 presets in `src/core/presets.ts` are `Untested` end-to-end: the
 base URLs come from Hermes Agent's registry rather than from anyone here having
 called them with a key. Three use `anthropic_messages` — Anthropic, MiniMax and
 MiniMax (China) — and the rest use `chat_completions`.
@@ -125,8 +141,9 @@ complete report.
 
 Which *model* to run on a working provider is a separate question, with its own
 page: [MODELS.md](MODELS.md) has the cost arithmetic, and measured results from
-`npm run eval` for three Gemini models and five Grok configurations. Adding a row
-there is the same one-minute job as adding one here.
+`npm run eval` for twenty-one model configurations — three Gemini, five Grok, and
+thirteen reached through OpenRouter. Adding a row there is the same one-minute
+job as adding one here.
 
 ## Reporting what you find
 
