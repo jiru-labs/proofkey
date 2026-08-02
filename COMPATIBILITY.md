@@ -166,6 +166,20 @@ the paste landed **before** asserting anything about the badge — a paste that
 silently fails leaves the field genuinely clean, and every check after it passes
 for the wrong reason.
 
+A sixth, found while tracing the fifth, and it is the first one over again with
+a different gate. The settle pass that rescues a one-sentence message required
+the caret to be at the end of everything written — the reasoning being that
+anyone who had clicked back into the middle was mid-edit and should be left
+alone. That reading has no exit: the ordinary check skips the caret's sentence
+by design, and for a tweet or a chat line that *is* the whole message, so
+clicking into the middle of one — or pasting one and clicking anywhere in it —
+meant nothing was ever sent. Measured: no request at all, and a grey badge
+reading "not checked yet" still there five seconds later. Honest, and useless.
+The gate is now the pause rather than the caret's position, which is what it was
+trying to ask about in the first place: any keystroke cancels a pending settle,
+so the timer already means typing has stopped, and that is just as true of a
+paused mid-text edit.
+
 ## Providers
 
 Thirty-four presets, but only **two transports** — so this is not thirty-four
