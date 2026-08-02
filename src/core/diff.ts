@@ -118,9 +118,36 @@ export function diffWords(before: string, after: string): Change[] | null {
 }
 
 /**
- * Joins changes separated by a single space. Rewriting "was" and "went" as one
- * span reads as one correction and applies as one undo step, which is what a
+ * Whether a change is one word rewritten as one recognisably similar word — a
+ * typo, an accent, a capital, an inflection. The word survives the edit; only
+ * its spelling changed.
+ */
+function isWordFix(change: Change, before: string): boolean {
+  const original = before.slice(change.start, change.end).trim();
+  const replacement = change.replacement.trim();
+  if (!original || !replacement) return false;
+  if (/\s/.test(original) || /\s/.test(replacement)) return false;
+
+  const { category, severity } = classifyChange(change, before);
+  return severity === 'spelling' || category === 'Word form';
+}
+
+/**
+ * Joins changes separated by a single space. Rewriting "was there" as "went
+ * there" reads as one correction and applies as one undo step, which is what a
  * user expects from a phrase-level fix.
+ *
+ * Two misspelled words in a row are not that. "mi extencion" offered as a
+ * single "my extension" was reported from x.com, and it is wrong twice over:
+ * you cannot take one typo and leave the other, and the merged span has no
+ * single-word category left, so two spelling mistakes were labelled and
+ * coloured as `Grammar`. Where both halves are the same word respelled, they
+ * stay two corrections — because that is what they are.
+ *
+ * The test is deliberately about the halves rather than about their number. A
+ * pair where one side becomes a *different* word is a restructure, and the
+ * boundary between "one fix" and "two" there is genuinely the model's to draw,
+ * so those still merge.
  */
 function mergeAdjacent(changes: Change[], before: string): Change[] {
   const merged: Change[] = [];
@@ -129,7 +156,8 @@ function mergeAdjacent(changes: Change[], before: string): Change[] {
     const previous = merged[merged.length - 1];
     if (previous) {
       const between = before.slice(previous.end, change.start);
-      if (between.length > 0 && between.trim() === '' && !between.includes('\n')) {
+      const separate = isWordFix(previous, before) && isWordFix(change, before);
+      if (between.length > 0 && between.trim() === '' && !between.includes('\n') && !separate) {
         previous.replacement += between + change.replacement;
         previous.end = change.end;
         continue;
