@@ -18,9 +18,10 @@ import { applyToTarget, flatten, offsetOfPoint } from './target';
  * Held back, not dropped. Taken literally, that third rule meant a message of
  * one unterminated sentence — a tweet, a chat line, most of what this extension
  * is typed into — was never checked at all, and the badge reported the silence
- * as a clean result. The settle pass below is the correction: once the caret
- * has sat at the end of the field for longer than the ordinary debounce, the
- * sentence is no longer half-typed in any sense that matters, and it is sent.
+ * as a clean result. The settle pass below is the correction: once typing has
+ * stopped for longer than the ordinary debounce, the sentence is no longer
+ * half-typed in any sense that matters, and it is sent — wherever in it the
+ * caret happens to be sitting.
  *
  * Results are cached by sentence content, so going back to fix paragraph four
  * never re-sends paragraphs one through three.
@@ -198,8 +199,21 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
   }
 
   /**
-   * Arms the settle pass, but only when there is something for it to do: the
-   * caret sitting at the end of a long-enough sentence nobody has checked yet.
+   * Arms the settle pass, but only when there is something for it to do: a
+   * long-enough sentence under the caret that nobody has checked yet.
+   *
+   * The gate is the pause, not where the caret happens to be. It used to also
+   * require the caret at the end of everything written, on the reasoning that
+   * anyone who had clicked back into the middle was mid-edit and should be left
+   * alone. That reading has no exit: a one-sentence message is the caret's
+   * sentence, the ordinary check skips it by design, and the settle pass refused
+   * it too — so clicking into the middle of a tweet, or pasting one and clicking
+   * anywhere in it, meant nothing was ever sent, and the badge sat grey saying
+   * "not checked yet" until the caret happened to end up at the end again.
+   *
+   * Nothing is lost by dropping it. Any keystroke cancels a pending settle, so
+   * the timer already means "typing has stopped" — which is the thing that was
+   * actually being asked about, and it is true of a paused mid-text edit too.
    *
    * Self-terminating by construction. The settle pass caches that sentence, and
    * only the ordinary check arms a settle — so a settle never arms another, and
@@ -211,7 +225,6 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
 
     const text = fieldText(active.field);
     const caret = caretOffset(active.field);
-    if (!caretAtEnd(text, caret)) return;
 
     const sentences = segment(text);
     const sentence = sentences[sentenceAt(sentences, caret)];
@@ -240,16 +253,6 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     return offsetOfPoint(flatten(field.node), selection.focusNode, selection.focusOffset) ?? -1;
   }
 
-  /**
-   * Whether the caret is at the end of everything written, trailing whitespace
-   * aside. This is the gate on the settle pass, and it is what separates "typed
-   * a message and stopped" from "clicked back into the middle to fix a word" —
-   * the second really is mid-edit and keeps the original hands-off treatment.
-   */
-  function caretAtEnd(text: string, caret: number): boolean {
-    return caret >= 0 && text.slice(caret).trim().length === 0;
-  }
-
   async function check(includeCaret: boolean): Promise<void> {
     if (!session || session.inFlight) return;
     const active = session;
@@ -264,7 +267,9 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
 
     const sentences = segment(text);
     const caret = caretOffset(active.field);
-    const skipIndex = includeCaret && caretAtEnd(text, caret) ? -1 : sentenceAt(sentences, caret);
+    // A settle pass is the one that has waited for typing to stop, so it is the
+    // one allowed to send the sentence the caret is in.
+    const skipIndex = includeCaret ? -1 : sentenceAt(sentences, caret);
 
     const pending = sentences.filter(
       (sentence, index) =>

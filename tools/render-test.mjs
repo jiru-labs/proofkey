@@ -388,6 +388,36 @@ async function run() {
     await page.screenshot({ path: `${SHOTS}${field}-pasted-back.png` });
   }
 
+  // The caret does not have to be at the end for a message to be finished. Click
+  // back into the middle to fix a word, or paste and then click somewhere, and a
+  // one-sentence message is the caret's sentence — skipped by the ordinary check
+  // by design, and refused by the settle pass because the caret is not at the
+  // end. Nothing was ever sent. The badge said so, greyly and honestly, forever.
+  {
+    console.log('\nchat — caret parked in the middle of the message:');
+    await page.goto(`${BASE}?field=chat`, { waitUntil: 'load' });
+    await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    await page.evaluate(() => {
+      const field = document.getElementById('chat');
+      field.focus();
+      field.value = 'i has been writing this mesage and dont want to be late';
+      field.setSelectionRange(12, 12); // mid-message, where a click would leave it
+      field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste' }));
+    });
+    await page.waitForTimeout(2500);
+
+    const state = await page.evaluate(probe, ['chat', MIRRORED]);
+    check('it is checked anyway once typing stops', state.marks.length > 0,
+      `${state.marks.length} underline(s), badge reads ${JSON.stringify(state.badge?.text ?? '(hidden)')}`);
+    check('and the badge reports the count, not "not checked yet"',
+      state.badge?.text === String(state.marks.length),
+      `badge reads ${JSON.stringify(state.badge?.text ?? '(hidden)')}`);
+
+    await page.screenshot({ path: `${SHOTS}chat-caret-mid.png` });
+  }
+
   // The same thing again on the real Lexical editor, driven the way a user
   // drives it: select all, Ctrl+V. Every other case in this file pastes by
   // assigning to the DOM, which fires `input` — and `input` was the only signal
