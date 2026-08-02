@@ -53,6 +53,10 @@ interface Session {
   settleTimer: number;
   inFlight: boolean;
   dirtyWhileChecking: boolean;
+  /** Watches rich-text fields for edits that emit no `input` event. */
+  observer: MutationObserver | null;
+  /** Last text seen, so a re-render that changes nothing cannot re-arm the debounce. */
+  lastText: string;
 }
 
 export interface LiveController {
@@ -109,7 +113,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
 
   function attach(field: FieldRef): void {
     detach();
-    session = {
+    const active: Session = {
       field,
       highlighter: createHighlighter(field, shadow),
       cache: new Map(),
@@ -119,8 +123,38 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
       settleTimer: 0,
       inFlight: false,
       dirtyWhileChecking: false,
+      observer: null,
+      lastText: fieldText(field),
     };
+    session = active;
     field.node.addEventListener('input', onInput);
+
+    // `input` is not enough on its own. A framework editor that handles a
+    // command itself calls preventDefault and reconciles the DOM in its own
+    // code, and a programmatic DOM change emits no `input` event at all.
+    // Measured on the real Lexical editor (WhatsApp, X): typing fires one
+    // `input` per keystroke, but select-all-and-paste fires none, and undo
+    // fires none. Both still mutate the DOM. Listening only for `input` meant
+    // the whole message could be replaced under a green tick and nothing would
+    // look again — the badge was not wrong so much as answering an older
+    // question.
+    //
+    // Text-compared rather than mutation-counted, because composers mutate
+    // themselves constantly — placeholders, carets, decorations — and a bare
+    // re-schedule per mutation would hold the debounce open forever and never
+    // check anything.
+    if (field.kind === 'contenteditable') {
+      const observer = new MutationObserver(() => {
+        if (session !== active) return;
+        const text = fieldText(active.field);
+        if (text === active.lastText) return;
+        active.lastText = text;
+        schedule();
+      });
+      observer.observe(field.node, { childList: true, characterData: true, subtree: true });
+      active.observer = observer;
+    }
+
     schedule();
   }
 
@@ -128,6 +162,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     if (!session) return;
     clearTimeout(session.timer);
     clearTimeout(session.settleTimer);
+    session.observer?.disconnect();
     session.field.node.removeEventListener('input', onInput);
     session.highlighter.destroy();
     session = null;
@@ -146,6 +181,9 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
 
   const onInput = () => {
     if (!session) return;
+    // Keeps the observer's baseline current, so an edit that fires `input` is
+    // not then re-reported as a mutation the observer has never seen.
+    session.lastText = fieldText(session.field);
     if (session.inFlight) session.dirtyWhileChecking = true;
     schedule();
   };

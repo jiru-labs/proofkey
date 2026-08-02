@@ -47,7 +47,7 @@ editors; engines are what the code branches on (`src/content/target.ts`).
 | `<input type=text>` | Same, single-line | `Tested` | `test:render` — `single` field |
 | Plain `contenteditable` | CSS Custom Highlight API for underlines, word-level diff to write | `Tested` | `test:render` — `rich` field, incl. bold surviving both a single apply and a whole-field rewrite |
 | `contenteditable` that re-renders on every input | Same, edits bounded and awaited | `Tested` | `test:render` — `rerender` field |
-| **Lexical** (WhatsApp, Reddit) | `execCommand` through the browser's editing path; never a DOM mutation | `Tested` + `Verified` | `test:render` — `lexical` field, a real embedded Lexical instance (35a8351). Verified against WhatsApp Web 2026-08-01 (e2ae3b1) |
+| **Lexical** (WhatsApp, Reddit) | `execCommand` through the browser's editing path; never a DOM mutation | `Tested` + `Verified` | `test:render` — `lexical` field, a real embedded Lexical instance (35a8351): whole-field rewrite, and live checking driven by a real clipboard paste. Verified against WhatsApp Web 2026-08-01 (e2ae3b1) |
 | **Quill** (Slack, LinkedIn) | Same path as Lexical | `Untested` | — |
 | **ProseMirror** (Notion-like, many CMSes) | Same path as Lexical | `Untested` | — |
 | **Slate** (Discord) | Same path as Lexical | `Untested` | — |
@@ -141,6 +141,30 @@ and re-anchors one that merely moved. The same guard covers `Ctrl+Shift+K`,
 where the gap is much wider — the whole model round-trip — and typing through it
 would otherwise have landed the rewrite over text the model never saw; that case
 now says so and leaves the result on the clipboard.
+
+A fifth, and the one that answers the report those four came out of: **replace
+the whole message and live checking does not notice**. `input` was the only
+signal the live layer had. Measured on the embedded Lexical editor — typing
+fires one `input` per keystroke, select-all-and-paste fires **none**, and undo
+fires **none**. Lexical calls `preventDefault` on both and reconciles the DOM in
+its own code, and a programmatic DOM change emits no `input` event, so the only
+trace either leaves is a mutation. The badge was not reporting a wrong verdict
+so much as answering an older question: the whole message could be swapped out
+under a green tick and nothing would look again. Rich-text fields now carry a
+`MutationObserver` alongside the `input` listener, comparing text rather than
+counting mutations — composers mutate themselves constantly for placeholders and
+carets, and re-arming the debounce on every mutation would mean never checking
+at all.
+
+That one is also a note on how it was nearly missed twice. The first attempt to
+reproduce it used Playwright's `insertText`, which Lexical ignores; the second
+used a synthetic `ClipboardEvent`, which Lexical also ignores. Both left the
+field holding correct text, so the green tick was *honest* both times and the
+run read as "cannot reproduce". Only a real clipboard paste through
+`Ctrl+A`/`Ctrl+V` reaches the editor. `test:render` now does that, and asserts
+the paste landed **before** asserting anything about the badge — a paste that
+silently fails leaves the field genuinely clean, and every check after it passes
+for the wrong reason.
 
 ## Providers
 

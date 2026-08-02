@@ -186,7 +186,12 @@ async function run() {
 
   await mkdir(SHOTS, { recursive: true });
   const browser = await chromium.launch({ headless: !process.argv.includes('--headed') });
-  const page = await browser.newPage({ viewport: { width: 700, height: 820 } });
+  // Clipboard access so one case can paste for real. A synthetic ClipboardEvent
+  // is not enough: Lexical ignores an untrusted one, and a test that cannot
+  // paste quietly proves nothing about pasting.
+  const context = await browser.newContext({ viewport: { width: 700, height: 820 } });
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const page = await context.newPage();
 
   page.on('console', (message) => {
     if (message.type() === 'error') console.log(`    [page error] ${message.text()}`);
@@ -381,6 +386,54 @@ async function run() {
       `badge reads ${JSON.stringify(after.badge?.text ?? '(hidden)')} over ${JSON.stringify(after.fieldText.trim().slice(0, 60))}`);
 
     await page.screenshot({ path: `${SHOTS}${field}-pasted-back.png` });
+  }
+
+  // The same thing again on the real Lexical editor, driven the way a user
+  // drives it: select all, Ctrl+V. Every other case in this file pastes by
+  // assigning to the DOM, which fires `input` — and `input` was the only signal
+  // the live layer had. Lexical fires none for a paste or an undo: it handles
+  // the command itself and reconciles, leaving a DOM mutation and nothing else.
+  // So the whole message could be swapped under a green tick with nothing
+  // looking again, which is what X and WhatsApp reported.
+  {
+    console.log('\nlexical — text replaced by a real paste is checked again:');
+    await page.goto(`${BASE}?field=lexical`, { waitUntil: 'load' });
+    await page.waitForTimeout(500);
+    await page.click('#lexical');
+    await page.waitForTimeout(1800);
+
+    const read = () => page.evaluate(() => window.__pkLexicalText());
+    const original = await read();
+
+    const { started, rounds, state } = await applyEachInTurn(page, ['lexical', MIRRORED], 12);
+    check('the editor was corrected before the paste', started > 0 && rounds === started,
+      `${started} found, ${rounds} applied, badge reads ${JSON.stringify(state.badge?.text ?? '(hidden)')}`);
+    check('and reads clean afterwards', state.badge?.text === '✓',
+      `badge reads ${JSON.stringify(state.badge?.text ?? '(hidden)')}`);
+
+    await page.evaluate((text) => navigator.clipboard.writeText(text), original);
+    await page.click('#lexical');
+    await page.keyboard.press('Control+A');
+    await page.keyboard.press('Control+V');
+    await page.waitForTimeout(2000);
+
+    // Asserted separately and first. A paste that silently fails to land leaves
+    // the field genuinely clean, and every check after this one would pass for
+    // the wrong reason — which is exactly how this bug was nearly missed.
+    const restored = await read();
+    check('the paste actually landed', restored.trim() === original.trim(),
+      restored.trim() === original.trim()
+        ? 'field holds the uncorrected text again'
+        : `field reads ${JSON.stringify(restored.slice(0, 60))}`);
+
+    const after = await page.evaluate(probe, ['lexical', MIRRORED]);
+    check('the pasted text is underlined again', after.highlightCounts === started,
+      `${started} before, ${after.highlightCounts} after`);
+    check('badge counts them instead of holding its old tick',
+      after.badge?.text === String(started),
+      `badge reads ${JSON.stringify(after.badge?.text ?? '(hidden)')}`);
+
+    await page.screenshot({ path: `${SHOTS}lexical-pasted-back.png` });
   }
 
   // An open card describes text that can move out from under it — a paste, an
