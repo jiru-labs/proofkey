@@ -71,7 +71,8 @@ on.
 ## Contact
 
 Questions, or a privacy problem to report:
-[open an issue](https://github.com/jiru-labs/proofkey/issues).
+[open an issue](https://github.com/jiru-labs/proofkey/issues), or email
+`help@jirulabs.com` if you would rather not do it in public.
 
 The extension is open source and MIT licensed. If you would rather verify this
 policy than trust it, the code is at
