@@ -6,7 +6,7 @@ No backend, no account, no telemetry. Your text goes from your browser straight 
 
 > **Status: in development.** The provider layer, settings model, inline assistant and options UI are in place. Not yet on the Chrome Web Store.
 >
-> **What is actually known to work is a much shorter list than what is built.** One site (WhatsApp Web) and four providers (Google Gemini, xAI, OpenRouter, OpenCode Go) have been confirmed against real keys; the rest is covered by automated tests, or by nothing. [COMPATIBILITY.md](COMPATIBILITY.md) says exactly which is which — and [reports](CONTRIBUTING.md) are the fastest way to grow that list.
+> **What is actually known to work is a much shorter list than what is built.** Two sites (WhatsApp Web, X) and four providers (Google Gemini, xAI, OpenRouter, OpenCode Go) have been confirmed by hand against real keys; the rest is covered by automated tests, or by nothing. [COMPATIBILITY.md](COMPATIBILITY.md) says exactly which is which — and [reports](CONTRIBUTING.md) are the fastest way to grow that list.
 
 ---
 
@@ -171,4 +171,9 @@ openaiCompatible('acme', 'Acme AI', 'https://api.acme.com/v1'),
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Fork it, ship it, sell it; the code is yours to use.
+
+The MIT grant covers the code. `ProofKey` and the ProofKey logo are trademarks of
+Jiru Labs, and a fork needs its own name — that is the only thing being kept
+back, and it is what stops a copy of this extension being uploaded under this
+name with a key logger in it.

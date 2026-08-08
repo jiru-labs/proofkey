@@ -10,3 +10,7 @@ dist/
 tools/lexical-editor.js
 .test-ext/
 .test-profile/
+
+store-shots/
+.shots-ext/
+.shots-profile/

@@ -7,6 +7,27 @@ most rows say `Untested`, and one person cannot fix that.
 Code contributions are welcome too. What follows is the workflow that this
 codebase has been kept honest by.
 
+## Licensing your contribution
+
+By opening a pull request you agree that:
+
+- you wrote the contribution, or have the right to submit it; and
+- you license it to Jiru Labs under the [MIT License](LICENSE), the same terms
+  the rest of the project carries; and
+- you grant Jiru Labs the right to distribute it under other terms as well,
+  should the project ever be offered under a second license alongside MIT.
+
+The third point is the unusual one, so here is the reason. ProofKey is MIT and
+is meant to stay that way — a tool that holds your API key has to be auditable,
+and a licence that lets you fork it is part of that promise. The clause exists
+so that a paid tier, if one is ever built for teams, does not require tracking
+down every past contributor for permission. It does not take your copyright,
+does not make your contribution any less MIT, and does not stop you doing
+anything at all with your own code.
+
+`ProofKey` and the ProofKey logo are trademarks of Jiru Labs and are not
+licensed by MIT. Fork the code freely; give the fork its own name.
+
 ## Running it
 
 ```bash

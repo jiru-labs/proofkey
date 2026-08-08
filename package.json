@@ -27,6 +27,7 @@
     "test:render": "vite build --config vite.harness.config.ts && node tools/render-test.mjs",
     "serve": "python3 -m http.server 8777 --bind 127.0.0.1",
     "test:ext": "node tools/extension-test.mjs",
+    "shots": "node tools/store-shots.mjs",
     "verify": "npm run typecheck && npm test && npm run build && npm run test:render && npm run test:ext"
   },
   "devDependencies": {
