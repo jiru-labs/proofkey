@@ -228,6 +228,26 @@ async function optionsShots() {
   await rm(PROFILE, { recursive: true, force: true });
 }
 
+/**
+ * The promo tiles, at the two sizes the store defines. Exact pixels, so no
+ * device scale factor here — a 2x tile is the wrong size, not a sharper one.
+ */
+async function tileShots(browser) {
+  const tiles = [
+    { size: 'small', width: 440, height: 280, name: '05-promo-tile-440x280.png' },
+    { size: 'marquee', width: 1400, height: 560, name: '06-marquee-1400x560.png' },
+  ];
+
+  for (const tile of tiles) {
+    const page = await browser.newPage({ viewport: { width: tile.width, height: tile.height } });
+    await page.goto(`file://${ROOT}tools/store-tile.html?size=${tile.size}`);
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: `${OUT}/${tile.name}` });
+    console.log(`  ${tile.name}  ${tile.width}x${tile.height}`);
+    await page.close();
+  }
+}
+
 async function run() {
   await rm(OUT, { recursive: true, force: true });
   await mkdir(OUT, { recursive: true });
@@ -237,6 +257,7 @@ async function run() {
   const browser = await chromium.launch({ channel: 'chromium', headless: true });
   try {
     await inlineShots(browser);
+    await tileShots(browser);
   } finally {
     await browser.close();
   }

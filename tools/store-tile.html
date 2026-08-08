@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ProofKey promo tile</title>
+    <!--
+      The Chrome Web Store promo tiles, at ?size=small (440x280) and
+      ?size=marquee (1400x560).
+
+      The check mark is inlined as SVG rather than loaded from `public/icons/`,
+      so this renders from a file:// URL with no server and no build step. It is
+      the same shape and the same indigo as the extension icon; if the icon is
+      ever redrawn, redraw it here too or the listing stops matching the product.
+
+      Store rules on these: no screenshots, no browser chrome, no long sentences.
+      A mark, a name, and one line.
+    -->
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+
+      html, body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      }
+
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #4f46e5 0%, #6366f1 55%, #4338ca 100%);
+        color: #fff;
+      }
+
+      /* A soft light source behind the mark, so the flat indigo has some depth. */
+      body::before {
+        content: '';
+        position: absolute;
+        width: 120%;
+        height: 200%;
+        background: radial-gradient(circle at 30% 30%, rgb(255 255 255 / 18%), transparent 55%);
+        pointer-events: none;
+      }
+
+      .tile {
+        display: flex;
+        align-items: center;
+        position: relative;
+        gap: var(--gap);
+      }
+
+      .mark {
+        flex: none;
+        width: var(--mark);
+        height: var(--mark);
+        border-radius: calc(var(--mark) * 0.24);
+        background: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 calc(var(--mark) * 0.06) calc(var(--mark) * 0.16) rgb(23 20 80 / 28%);
+      }
+      .mark svg { width: 62%; height: 62%; }
+
+      .name {
+        font-size: var(--name);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1.05;
+      }
+
+      .line {
+        margin-top: calc(var(--name) * 0.18);
+        font-size: var(--line);
+        font-weight: 500;
+        color: rgb(255 255 255 / 88%);
+        letter-spacing: -0.005em;
+      }
+
+      /* 440x280 — the tile shown in search results. Stacked, because side by
+         side at this width leaves the tagline too small to read. */
+      body.small { --mark: 92px; --gap: 0; --name: 46px; --line: 19px; flex-direction: column; }
+      body.small .tile { flex-direction: column; text-align: center; }
+      body.small .mark { margin-bottom: 22px; }
+
+      /* 1400x560 — the marquee, used if the listing is ever featured. */
+      body.marquee { --mark: 200px; --gap: 64px; --name: 104px; --line: 38px; }
+    </style>
+  </head>
+  <body>
+    <div class="tile">
+      <div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M4 12.5 9.5 18 20 6.5"
+            stroke="#4f46e5"
+            stroke-width="3.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </div>
+      <div>
+        <div class="name">ProofKey</div>
+        <div class="line">Your key. Your provider. No backend.</div>
+      </div>
+    </div>
+
+    <script>
+      const size = new URLSearchParams(location.search).get('size') || 'small';
+      document.body.classList.add(size);
+    </script>
+  </body>
+</html>
