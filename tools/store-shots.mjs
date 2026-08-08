@@ -257,6 +257,13 @@ async function run() {
 
   console.log('Store assets (screenshots 1280x800, tiles at their own sizes):\n');
 
+  // The listing wants its own 128x128 icon uploaded, separately from the one the
+  // manifest declares — the store does not read it out of the package. Copied
+  // here rather than left as a manual step, so a rerun produces every file the
+  // submission form asks for and nothing has to be remembered.
+  await cp(`${ROOT}public/icons/icon128.png`, `${OUT}/00-store-icon-128.png`);
+  console.log('  00-store-icon-128.png   store icon, 128x128');
+
   const browser = await chromium.launch({ channel: 'chromium', headless: true });
   try {
     await inlineShots(browser);
