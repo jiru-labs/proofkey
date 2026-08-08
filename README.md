@@ -18,6 +18,7 @@ Grammarly and LanguageTool are excellent, and both route your writing through th
 
 - **Quick actions** on any selected text, from the right-click menu or `Ctrl+Shift+K`: fix grammar, improve writing, make professional, make friendly, simplify, summarize, expand, convert to bullet points.
 - **Editable prompts.** Every built-in action is a prompt you can rewrite, and you can add your own.
+- **A key per action.** Any action, including one you wrote, can be given its own shortcut in the options page — press the combination, and it is recorded. These are handled inside the page rather than by Chrome's shortcut system, which is limited to four keys fixed at build time and can only be changed from `chrome://extensions/shortcuts`. The trade is that ProofKey has to be loaded in a page to see a keypress there, so these keys run on the sites you list and nowhere else. `Ctrl+Shift+K` and the right-click menu keep working everywhere, with no site permission.
 - **Live checking is quieter than the quick actions, on purpose.** It fires on a pause you did not ask for, so it treats messaging conventions as valid: no full stop added to a line that lacks one, no capitalising a lowercase sentence start, no expanding slang. `Ctrl+Shift+K` you pressed deliberately, so it completes the correction, capitals included.
 - **36 provider presets** over two transports, plus a free-form Custom option for any OpenAI-compatible endpoint. Prefilled is not the same as confirmed — four have been used against a real key so far, see [COMPATIBILITY.md](COMPATIBILITY.md).
 - **Fallback chain.** Put a local model first and a cloud key second; ProofKey moves down the list when one fails, and tells you which one failed.
@@ -119,9 +120,11 @@ Which model you pick matters more than any of that — the cost spread across cu
 | `storage` | Save your settings and connections |
 | `contextMenus` | The right-click menu |
 | `activeTab` + `scripting` | Inject the assistant into the tab you're using, on demand |
-| `optional_host_permissions` | Requested per origin — for your API endpoint, and for sites where you enable inline checking |
+| `optional_host_permissions` | Requested per origin — for your API endpoint, for sites where you enable inline checking, and for sites where you enable per-action shortcuts |
 
 There is no static `content_scripts` block, so ProofKey does not run on pages you have not turned it on for.
+
+Per-action shortcuts are the one feature that needs ProofKey loaded in a page before you act, rather than after — a key pressed in a page it is not in cannot reach it. So for each origin you list under **Shortcuts run on**, and only those, it asks for access and registers its content script there. Revoking that access from `chrome://extensions` unregisters it; ProofKey re-checks on every permission change rather than assuming the grant it was given still holds.
 
 ## Development
 
@@ -144,8 +147,9 @@ src/
 │  ├─ prompts.ts     built-in action prompts
 │  ├─ browser.ts     extension-API capability detection
 │  ├─ storage.ts     settings load/save and merging
+│  ├─ shortcuts.ts   chord parsing, matching and labelling
 │  └─ providers/     two transports: chat_completions, anthropic_messages
-├─ background/       service worker: menus, shortcut, injection
+├─ background/       service worker: menus, shortcuts, injection
 ├─ content/          inline assistant
 └─ options/          settings page
 ```

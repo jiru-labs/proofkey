@@ -7,6 +7,8 @@
  * into the other's half.
  */
 
+import type { ShortcutBinding } from './shortcuts';
+
 /** Content script → service worker. */
 export type ContentRequest =
   | { type: 'proofkey:run'; actionId: string; text: string }
@@ -43,6 +45,12 @@ export interface ContentState {
   /** Actions to show, already filtered to the enabled ones. */
   actions: { id: string; label: string }[];
   defaultActionId: string;
+  /**
+   * Chords to listen for on this page. Empty unless the origin is one the user
+   * turned shortcuts on for, so a page that was never opted in never has its
+   * keystrokes inspected.
+   */
+  shortcuts: ShortcutBinding[];
   /** Whether live checking is switched on for this origin. */
   liveEnabled: boolean;
   debounceMs: number;

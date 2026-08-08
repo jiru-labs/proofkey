@@ -1,4 +1,5 @@
 import { askWorker, type ContentState, type RunResult, type WorkerRequest } from '../core/messages';
+import { createShortcuts } from './keys';
 import { createLive, type LiveController } from './live';
 import { applyToTarget, readTarget, targetIsCurrent, type EditTarget } from './target';
 import { toast } from './toast';
@@ -51,19 +52,37 @@ chrome.runtime.onMessage.addListener((message: WorkerRequest, _sender, sendRespo
   }
 });
 
-// ------------------------------------------------------------- live layer
+// ------------------------------------------------------ live layer and keys
 
 let live: LiveController | null = null;
 
-async function startLive(): Promise<void> {
+const shortcuts = createShortcuts((actionId) => void invoke(actionId));
+
+/**
+ * Pulls the current settings and applies them to both in-page layers.
+ *
+ * The live controller is built once, on the first pull, because rebuilding it
+ * would drop the sentence cache and re-check text that has already been paid
+ * for. Bindings are cheap by comparison and are replaced wholesale each time.
+ */
+async function refreshState(): Promise<void> {
   const state = await askWorker<ContentState>({ type: 'proofkey:get-state' });
   if (!state.ok) return;
-  live = createLive(ui(), state.value);
+
+  shortcuts.setBindings(state.value.shortcuts);
+  if (!live) live = createLive(ui(), state.value);
   live.setEnabled(state.value.liveEnabled);
 }
 
+// Edits in the options page reach open tabs without a reload. Without this a
+// shortcut the user just bound would do nothing until every tab was refreshed,
+// which reads as the feature being broken.
+chrome.storage.onChanged.addListener((_changes, area) => {
+  if (area === 'sync') void refreshState();
+});
+
 async function toggleLive(): Promise<void> {
-  if (!live) await startLive();
+  if (!live) await refreshState();
   if (!live) return;
 
   const next = !live.isEnabled();
@@ -82,7 +101,7 @@ async function toggleLive(): Promise<void> {
   });
 }
 
-void startLive();
+void refreshState();
 
 // ------------------------------------------------------------------ action
 

@@ -1,4 +1,9 @@
-import { injectFiles, isInjectableUrl } from '../core/browser';
+import {
+  hasDynamicContentScripts,
+  injectFiles,
+  isInjectableUrl,
+  originMatchPattern,
+} from '../core/browser';
 import type {
   CheckResult,
   ContentRequest,
@@ -21,25 +26,39 @@ import {
   loadSettings,
   resolveActions,
   saveSettings,
+  shortcutBindings,
 } from '../core/storage';
 
 const MENU_ROOT = 'proofkey:root';
 const MENU_ACTION_PREFIX = 'proofkey:action:';
 const MENU_SETTINGS = 'proofkey:settings';
 const CONTENT_SCRIPT = 'content.js';
+const SHORTCUT_SCRIPT_ID = 'proofkey-shortcuts';
 
 // ---------------------------------------------------------------- lifecycle
 
 chrome.runtime.onInstalled.addListener((details) => {
   void rebuildContextMenus();
+  void syncShortcutOrigins();
   // Nothing works until a provider exists, so send first-time users straight there.
   if (details.reason === 'install') void chrome.runtime.openOptionsPage();
 });
 
+chrome.runtime.onStartup.addListener(() => {
+  void syncShortcutOrigins();
+});
+
 // Menu labels come from the user's actions, so they have to follow edits.
 chrome.storage.onChanged.addListener((_changes, area) => {
-  if (area === 'sync') void rebuildContextMenus();
+  if (area !== 'sync') return;
+  void rebuildContextMenus();
+  void syncShortcutOrigins();
 });
+
+// Host access can be revoked from chrome://extensions without ProofKey being
+// asked. Re-syncing here keeps the registration from outliving the permission.
+chrome.permissions.onRemoved.addListener(() => void syncShortcutOrigins());
+chrome.permissions.onAdded.addListener(() => void syncShortcutOrigins());
 
 async function rebuildContextMenus(): Promise<void> {
   await chrome.contextMenus.removeAll();
@@ -118,6 +137,56 @@ async function invokeInTab(tab: chrome.tabs.Tab | undefined, actionId: string): 
     return;
   }
   await sendToTab(tab!.id!, { type: 'proofkey:invoke', actionId });
+}
+
+// ------------------------------------------------------- shortcut origins
+
+/**
+ * Registers the content script on the origins the user turned shortcuts on for.
+ *
+ * A key pressed on a page ProofKey is not in cannot reach it, and ProofKey is
+ * not in any page by default — that is the whole point of shipping no static
+ * `content_scripts` block. So per-action shortcuts need this, and only this:
+ * the registration covers exactly the opted-in origins, and only those the
+ * browser confirms access to, so a revoked permission takes the registration
+ * with it rather than leaving a listener the user thinks they removed.
+ */
+async function syncShortcutOrigins(): Promise<void> {
+  if (!hasDynamicContentScripts()) return;
+
+  try {
+    const settings = await loadSettings();
+    const wanted = [...new Set(settings.shortcutOrigins.map(originMatchPattern).filter(isPattern))];
+
+    const granted: string[] = [];
+    for (const pattern of wanted) {
+      if (await chrome.permissions.contains({ origins: [pattern] })) granted.push(pattern);
+    }
+
+    const registered = await chrome.scripting.getRegisteredContentScripts();
+    const existing = registered.find((script) => script.id === SHORTCUT_SCRIPT_ID);
+
+    if (granted.length === 0) {
+      if (existing) await chrome.scripting.unregisterContentScripts({ ids: [SHORTCUT_SCRIPT_ID] });
+      return;
+    }
+
+    const script: chrome.scripting.RegisteredContentScript = {
+      id: SHORTCUT_SCRIPT_ID,
+      matches: granted,
+      js: [CONTENT_SCRIPT],
+      runAt: 'document_idle',
+    };
+
+    if (existing) await chrome.scripting.updateContentScripts([script]);
+    else await chrome.scripting.registerContentScripts([script]);
+  } catch (error) {
+    console.warn('[ProofKey] could not sync shortcut origins', error);
+  }
+}
+
+function isPattern(value: string | null): value is string {
+  return value !== null;
 }
 
 // -------------------------------------------------------------- injection
@@ -327,6 +396,10 @@ async function buildContentState(sender: chrome.runtime.MessageSender): Promise<
       .filter((action) => action.enabled)
       .map((action) => ({ id: action.id, label: action.label })),
     defaultActionId: settings.defaultActionId,
+    // Gated on the origin, not just on the registration: the content script is
+    // also injected on demand by the menu and the toolbar button, and a page
+    // reached that way must not start listening for keys because of it.
+    shortcuts: origin && settings.shortcutOrigins.includes(origin) ? shortcutBindings(settings) : [],
     liveEnabled:
       !!origin &&
       settings.liveCheck.enabledOrigins.includes(origin) &&

@@ -204,6 +204,127 @@ async function run() {
     'liveCheck.connectionId is the biggest lever on cost; it has to be reachable from the UI',
   );
 
+  // Per-action shortcuts, against the real storage the options page writes to.
+  // The recorder can look right and still store nothing: a built-in's chord
+  // goes into `builtInOverrides`, not onto the action, and that is invisible
+  // from the UI until the page is reloaded.
+  {
+    console.log('\nshortcuts:');
+    check(
+      'the origins where shortcuts run are configurable',
+      (await page.locator('text=Shortcuts run on').count()) > 0,
+      'without an origin the content script is never registered and no key can fire',
+    );
+
+    await page.locator('details.action').first().evaluate((node) => (node.open = true));
+    const recorder = page.locator('[data-shortcut-for="fix-grammar"]');
+    check('the first action has a recorder', (await recorder.count()) > 0);
+
+    await recorder.click();
+    check('clicking it arms the recorder', (await recorder.textContent()) === 'Press a key…');
+
+    // Refused first: the reply has to say why, not silently store it.
+    await page.keyboard.press('Control+KeyV');
+    await page.waitForTimeout(150);
+    const refusal = await page.locator('.shortcut .field__hint--error').first().textContent();
+    check(
+      'a chord that would break paste is refused',
+      (await recorder.textContent()) === 'Press a key…' && !!refusal?.includes('paste'),
+      refusal ?? 'no reason given',
+    );
+
+    await page.keyboard.press('Alt+KeyG');
+    await page.waitForTimeout(200);
+    check(
+      'a usable chord is accepted and shown',
+      (await page.locator('[data-shortcut-for="fix-grammar"]').textContent()) === 'Alt+G',
+    );
+
+    // No origin is listed at this point, so the key cannot fire anywhere. The
+    // confirmation on its own reads as "done", which is how you end up pressing
+    // a key that was never going to work.
+    check(
+      'a key bound with no site listed says so',
+      (await page.locator('.shortcut-origins .notice--warn').count()) > 0 &&
+        (await page.locator('text=this key cannot run anywhere yet').count()) > 0,
+      'otherwise the only symptom is a key that does nothing',
+    );
+
+    await page.locator('button', { hasText: 'Save' }).last().click();
+    await page.waitForTimeout(600);
+
+    const stored = await page.evaluate(async () => {
+      const all = await chrome.storage.sync.get('proofkey:settings');
+      return all['proofkey:settings'] ?? null;
+    });
+    check(
+      'the chord survives a save, in canonical form',
+      stored?.builtInOverrides?.['fix-grammar']?.shortcut === 'Alt+KeyG',
+      JSON.stringify(stored?.builtInOverrides?.['fix-grammar'] ?? null),
+    );
+
+    // Removal has to clear the key rather than leave a stale one behind.
+    await page.locator('details.action').first().evaluate((node) => (node.open = true));
+    await page.locator('.shortcut button', { hasText: 'Remove' }).first().click();
+    await page.waitForTimeout(200);
+    await page.locator('button', { hasText: 'Save' }).last().click();
+    await page.waitForTimeout(600);
+
+    const afterRemoval = await page.evaluate(async () => {
+      const all = await chrome.storage.sync.get('proofkey:settings');
+      const settings = all['proofkey:settings'];
+      return settings ? { overrides: settings.builtInOverrides ?? {} } : null;
+    });
+    check(
+      'removing it clears the stored chord',
+      afterRemoval !== null && afterRemoval.overrides['fix-grammar']?.shortcut === undefined,
+      JSON.stringify(afterRemoval?.overrides ?? null),
+    );
+    check(
+      'and does not leave an empty override behind',
+      afterRemoval !== null && !('fix-grammar' in afterRemoval.overrides),
+      'storage.sync has a per-item quota; empty objects are not worth any of it',
+    );
+
+    // The registration itself, in the real service worker. Everything above can
+    // pass with this broken, and the result would be a key that works only
+    // after the user has right-clicked the page once — which is precisely the
+    // failure the whole origin mechanism exists to prevent.
+    const origin = `http://localhost:${PORT}`;
+    const setOrigins = (origins) =>
+      page.evaluate(async (list) => {
+        const all = await chrome.storage.sync.get('proofkey:settings');
+        const settings = all['proofkey:settings'] ?? {};
+        settings.shortcutOrigins = list;
+        await chrome.storage.sync.set({ 'proofkey:settings': settings });
+      }, origins);
+    const registeredIds = () =>
+      page.evaluate(() => chrome.scripting.getRegisteredContentScripts());
+
+    await setOrigins([origin]);
+    await page.waitForTimeout(900);
+    const registered = await registeredIds();
+    const script = registered.find((entry) => entry.id === 'proofkey-shortcuts');
+    check(
+      'listing an origin registers the content script there',
+      !!script && script.matches.includes(`${origin}/*`),
+      script ? script.matches.join(', ') : 'nothing registered',
+    );
+    check(
+      'and it registers the same bundle the menu injects',
+      !!script && script.js.includes('content.js'),
+      script?.js?.join(', ') ?? 'no files',
+    );
+
+    await setOrigins([]);
+    await page.waitForTimeout(900);
+    check(
+      'removing the origin unregisters it again',
+      !(await registeredIds()).some((entry) => entry.id === 'proofkey-shortcuts'),
+      'a listener the user thinks they removed must not survive',
+    );
+  }
+
   for (const transport of ['chat_completions', 'anthropic_messages']) {
     console.log(`\n${transport}:`);
     seen.length = 0;

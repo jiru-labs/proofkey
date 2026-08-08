@@ -21,7 +21,7 @@
     "build": "vite build && vite build --config vite.content.config.ts",
     "dev": "npm run build -- --watch",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types tools/diff-check.ts",
+    "test": "node --experimental-strip-types tools/diff-check.ts && node --experimental-strip-types tools/shortcut-check.ts",
     "cost": "node --experimental-strip-types tools/cost.ts",
     "eval": "node --experimental-strip-types tools/eval.ts",
     "test:render": "vite build --config vite.harness.config.ts && node tools/render-test.mjs",

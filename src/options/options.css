@@ -331,6 +331,45 @@ body {
   margin-bottom: 12px;
 }
 
+/* ------------------------------------------------------------- shortcuts */
+
+.shortcut {
+  margin: 10px 0 4px;
+}
+
+/* Monospace and a fixed minimum so the row does not jump between "Set a key…",
+   the modifiers held mid-recording, and the final chord. */
+.shortcut__key {
+  min-width: 148px;
+  justify-content: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+.shortcut__key--empty {
+  color: var(--muted);
+  font-family: inherit;
+}
+
+.shortcut__key--recording {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.badge--key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 500;
+  background: var(--border);
+  color: var(--fg);
+}
+
+.shortcut-origins {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
 /* ---------------------------------------------------------------- footer */
 
 .footer {
