@@ -129,7 +129,7 @@ const SHOWCASE = {
 };
 
 async function inlineShots(browser) {
-  const page = await browser.newPage({ viewport: SIZE, deviceScaleFactor: 2 });
+  const page = await browser.newPage({ viewport: SIZE, deviceScaleFactor: 1 });
   await page.goto(DEMO, { waitUntil: 'networkidle' });
 
   await page.evaluate(paste, ['body', DRAFT]);
@@ -182,7 +182,10 @@ async function optionsShots() {
     channel: 'chromium',
     headless: true,
     viewport: SIZE,
-    deviceScaleFactor: 2,
+    // Exactly 1: the store accepts 1280x800 or 640x400 and nothing else, so a 2x
+// capture is the wrong size rather than a sharper one — the same reason the
+// promo tiles take no scale factor either.
+deviceScaleFactor: 1,
     args: [`--disable-extensions-except=${TEST_EXT}`, `--load-extension=${TEST_EXT}`],
   });
 
@@ -252,7 +255,7 @@ async function run() {
   await rm(OUT, { recursive: true, force: true });
   await mkdir(OUT, { recursive: true });
 
-  console.log('Store screenshots (1280x800, 2x):\n');
+  console.log('Store assets (screenshots 1280x800, tiles at their own sizes):\n');
 
   const browser = await chromium.launch({ channel: 'chromium', headless: true });
   try {
