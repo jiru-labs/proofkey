@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ProofKey</title>
+    <!--
+      A neutral composer for Chrome Web Store screenshots.
+
+      Deliberately not a copy of any real product's interface: store listings may
+      not imitate another service's branding, and a generic compose window makes
+      the point just as well. The stub below is the one from `harness.html` cut
+      down to what a screenshot needs, so the shots come from the real built
+      `dist/content.js` rather than a mockup — the underlines and the card are
+      the shipping code drawing them.
+
+          npm run shots
+    -->
+    <style>
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font: 15px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: #eef1f6;
+        color: #1a1d23;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 40px;
+      }
+
+      .composer {
+        width: 720px;
+        background: #fff;
+        border-radius: 14px;
+        box-shadow: 0 12px 40px rgb(15 23 42 / 12%), 0 2px 6px rgb(15 23 42 / 6%);
+        overflow: hidden;
+      }
+
+      .composer__bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 20px;
+        border-bottom: 1px solid #e6e9ef;
+        font-weight: 600;
+        font-size: 14px;
+        color: #4b5565;
+      }
+
+      .dot { width: 11px; height: 11px; border-radius: 50%; }
+      .dot--r { background: #ff5f57; }
+      .dot--y { background: #febc2e; }
+      .dot--g { background: #28c840; }
+      .composer__title { margin-left: 10px; }
+
+      .composer__field {
+        display: flex;
+        gap: 12px;
+        padding: 12px 20px;
+        border-bottom: 1px solid #f0f2f6;
+        font-size: 14px;
+        color: #667085;
+      }
+      .composer__field b { color: #1a1d23; font-weight: 500; }
+
+      #body {
+        padding: 22px 20px 100px;
+        font-size: 15.5px;
+        line-height: 1.75;
+        outline: none;
+        min-height: 260px;
+      }
+
+      .composer__actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 20px;
+        border-top: 1px solid #e6e9ef;
+        background: #fafbfc;
+      }
+
+      .send {
+        background: #4f46e5;
+        color: #fff;
+        border: 0;
+        border-radius: 8px;
+        padding: 9px 20px;
+        font: inherit;
+        font-weight: 600;
+        font-size: 14px;
+      }
+      .muted { color: #98a2b3; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <div class="composer">
+      <div class="composer__bar">
+        <span class="dot dot--r"></span>
+        <span class="dot dot--y"></span>
+        <span class="dot dot--g"></span>
+        <span class="composer__title">New message</span>
+      </div>
+      <div class="composer__field">To: <b>sarah@example.com</b></div>
+      <div class="composer__field">Subject: <b>Project plan — a few notes</b></div>
+
+      <div id="body" contenteditable="true" spellcheck="false">Hi Sarah, Thanks for sending the projet plan over. Their is alot to go through and i has a few notes wich we should of raised earlier. The meating is thursday and i dont want to be late.</div>
+
+      <div class="composer__actions">
+        <button class="send" type="button">Send</button>
+        <span class="muted">Draft saved</span>
+      </div>
+    </div>
+
+    <script>
+      // The canned corrections, from `harness.html`. No provider and no key are
+      // involved: the content script's segmentation, diffing, offset mapping and
+      // rendering all run for real against these.
+      const FIXES = [
+        [/\bi has\b/g, 'I have'],
+        [/\bprojet\b/g, 'project'],
+        [/\bTheir is\b/g, 'There is'],
+        [/\balot\b/g, 'a lot'],
+        [/\bwich\b/g, 'which'],
+        [/\bwe should of\b/g, 'we should have'],
+        [/\bmeating\b/g, 'meeting'],
+        [/\bthursday\b/g, 'Thursday'],
+        [/\bdont\b/g, "don't"],
+      ];
+
+      const correct = (sentence) =>
+        FIXES.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), sentence);
+
+      const workerListeners = [];
+
+      window.__pkInvoke = (actionId) => {
+        for (const listener of workerListeners) {
+          listener({ type: 'proofkey:invoke', actionId }, {}, () => {});
+        }
+      };
+
+      window.__pkState = {
+        actions: [{ id: 'fix-grammar', label: 'Fix grammar' }],
+        defaultActionId: 'fix-grammar',
+        shortcuts: [{ actionId: 'fix-grammar', chord: 'Alt+Shift+KeyG' }],
+        liveEnabled: true,
+        debounceMs: 80,
+        minChars: 8,
+        maxSentencesPerRequest: 8,
+        dictionary: [],
+        configured: true,
+      };
+
+      window.chrome = {
+        runtime: {
+          sendMessage: async (message) => {
+            switch (message.type) {
+              case 'proofkey:run':
+                return {
+                  ok: true,
+                  value: { text: correct(message.text), servedBy: 'demo', fallbackErrors: [] },
+                };
+              case 'proofkey:get-state':
+                return { ok: true, value: window.__pkState };
+              case 'proofkey:check':
+                return { ok: true, value: { corrections: message.sentences.map(correct) } };
+              case 'proofkey:explain':
+                return {
+                  ok: true,
+                  value: {
+                    text: 'A plural subject takes a plural verb.',
+                    servedBy: 'demo',
+                    fallbackErrors: [],
+                  },
+                };
+              default:
+                return { ok: true, value: null };
+            }
+          },
+          onMessage: { addListener: (listener) => workerListeners.push(listener) },
+        },
+        storage: { onChanged: { addListener: () => {} } },
+      };
+    </script>
+
+    <script src="/dist/content.js"></script>
+  </body>
+</html>
