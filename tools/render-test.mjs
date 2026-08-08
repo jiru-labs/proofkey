@@ -632,6 +632,61 @@ async function run() {
     await page.screenshot({ path: `${SHOTS}${field}-invoke.png` });
   }
 
+  // The per-action shortcut. Everything above drives the rewrite by handing the
+  // content script a message; this presses the key, which is the half that can
+  // fail on its own — a chord that is stored but never matched is invisible,
+  // because a shortcut that does nothing looks exactly like a broken action.
+  {
+    console.log('\nper-action shortcut:');
+    await page.goto(`${BASE}?field=plain`, { waitUntil: 'load' });
+    await page.waitForTimeout(400);
+
+    const readPlain = () => page.evaluate(() => document.getElementById('plain').value);
+    const original = await readPlain();
+    const expected = await page.evaluate((text) => window.__pkCorrect(text), original);
+
+    await page.focus('#plain');
+
+    // The control first: a chord nothing is bound to must leave the text alone.
+    // Without it, a shortcut path that rewrites on *any* keypress would pass the
+    // check below and look correct.
+    await page.keyboard.press('Alt+KeyH');
+    await page.waitForTimeout(500);
+    check('an unbound chord changes nothing', (await readPlain()) === original);
+
+    await page.keyboard.press('Alt+KeyG');
+    await page.waitForTimeout(700);
+    const afterBound = await readPlain();
+    check(
+      'the bound chord runs its action',
+      afterBound.replace(/\s+/g, ' ').trim() === expected.replace(/\s+/g, ' ').trim(),
+      afterBound === original ? 'the field was not touched' : JSON.stringify(afterBound.slice(0, 60)),
+    );
+
+    // Rebinding in the options page has to reach tabs that are already open.
+    // Before the storage listener existed this needed a reload, which reads as
+    // the feature being broken.
+    await page.goto(`${BASE}?field=plain`, { waitUntil: 'load' });
+    await page.waitForTimeout(400);
+    await page.evaluate(() => {
+      window.__pkState = { ...window.__pkState, shortcuts: [{ actionId: 'fix-grammar', chord: 'Alt+KeyH' }] };
+      window.__pkFireStorageChange();
+    });
+    await page.waitForTimeout(300);
+    await page.focus('#plain');
+
+    await page.keyboard.press('Alt+KeyG');
+    await page.waitForTimeout(500);
+    check('the old chord stops working', (await readPlain()) === original);
+
+    await page.keyboard.press('Alt+KeyH');
+    await page.waitForTimeout(700);
+    check(
+      'the new one works without a reload',
+      (await readPlain()).replace(/\s+/g, ' ').trim() === expected.replace(/\s+/g, ' ').trim(),
+    );
+  }
+
   await browser.close();
   console.log(failures === 0 ? '\nAll render checks passed.' : `\n${failures} check(s) FAILED`);
   process.exit(failures === 0 ? 0 : 1);

@@ -110,6 +110,12 @@ export interface WritingAction {
   /** False for actions the user created themselves. */
   builtIn: boolean;
   enabled: boolean;
+  /**
+   * Canonical chord string from `shortcuts.ts`, e.g. `Alt+KeyG`. Undefined when
+   * the action has no key bound. Handled in the page rather than by
+   * `chrome.commands`; see the comment at the top of that module for why.
+   */
+  shortcut?: string;
 }
 
 /** A user-authored action. Built-ins live in `prompts.ts`, not in storage. */
@@ -118,6 +124,7 @@ export interface CustomAction {
   label: string;
   systemPrompt: string;
   enabled: boolean;
+  shortcut?: string;
 }
 
 /**
@@ -128,6 +135,7 @@ export interface BuiltInOverride {
   enabled?: boolean;
   label?: string;
   systemPrompt?: string;
+  shortcut?: string;
 }
 
 /**
@@ -186,10 +194,22 @@ export interface Settings {
   fallbackConnectionIds: string[];
   customActions: CustomAction[];
   builtInOverrides: Record<string, BuiltInOverride>;
-  /** Action run by the keyboard shortcut and the inline card's main button. */
+  /** Action run by the browser-level shortcut and the inline card's main button. */
   defaultActionId: string;
   profile: WritingProfile;
   liveCheck: LiveCheckSettings;
+  /**
+   * Origins where the per-action shortcuts are live, e.g. `https://github.com`.
+   *
+   * Separate from `liveCheck.enabledOrigins` on purpose: shortcuts are free and
+   * fire only when pressed, while live checking spends the key on a pause the
+   * user did not ask for. Wanting one is no reason to be opted into the other.
+   *
+   * ProofKey holds host permission for each of these and registers its content
+   * script there, which is the only way a key pressed on a freshly loaded page
+   * can reach it.
+   */
+  shortcutOrigins: string[];
 }
 
 /**

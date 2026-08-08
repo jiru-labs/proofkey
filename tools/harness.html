@@ -142,6 +142,7 @@ The quarterly report show that revenue have increased. Their is more work to do.
 
       window.__pkCorrect = correct;
       const workerListeners = [];
+      const storageListeners = [];
 
       // Lets the test fire the Ctrl+Shift+K path, which rewrites the whole
       // field in one go — a different code path from applying a single card.
@@ -149,6 +150,24 @@ The quarterly report show that revenue have increased. Their is more work to do.
         for (const listener of workerListeners) {
           listener({ type: 'proofkey:invoke', actionId }, {}, () => {});
         }
+      };
+
+      // What `proofkey:get-state` answers. Mutable so a test can rebind a key
+      // and then fire a storage change, the way the options page does.
+      window.__pkState = {
+        actions: [{ id: 'fix-grammar', label: 'Fix grammar' }],
+        defaultActionId: 'fix-grammar',
+        shortcuts: [{ actionId: 'fix-grammar', chord: 'Alt+KeyG' }],
+        liveEnabled: true,
+        debounceMs: 120,
+        minChars: 8,
+        maxSentencesPerRequest: 8,
+        dictionary: [],
+        configured: true,
+      };
+
+      window.__pkFireStorageChange = () => {
+        for (const listener of storageListeners) listener({}, 'sync');
       };
 
       window.chrome = {
@@ -161,19 +180,7 @@ The quarterly report show that revenue have increased. Their is more work to do.
                   value: { text: correct(message.text), servedBy: 'harness', fallbackErrors: [] },
                 };
               case 'proofkey:get-state':
-                return {
-                  ok: true,
-                  value: {
-                    actions: [{ id: 'fix-grammar', label: 'Fix grammar' }],
-                    defaultActionId: 'fix-grammar',
-                    liveEnabled: true,
-                    debounceMs: 120,
-                    minChars: 8,
-                    maxSentencesPerRequest: 8,
-                    dictionary: [],
-                    configured: true,
-                  },
-                };
+                return { ok: true, value: window.__pkState };
               case 'proofkey:check':
                 return { ok: true, value: { corrections: message.sentences.map(correct) } };
               case 'proofkey:explain':
@@ -184,6 +191,11 @@ The quarterly report show that revenue have increased. Their is more work to do.
           },
           onMessage: {
             addListener: (listener) => workerListeners.push(listener),
+          },
+        },
+        storage: {
+          onChanged: {
+            addListener: (listener) => storageListeners.push(listener),
           },
         },
       };

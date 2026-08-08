@@ -1,5 +1,6 @@
 import { getPreset, PRESETS } from './presets';
 import { BUILT_IN_ACTIONS, DEFAULT_ACTION_ID, emptyProfile } from './prompts';
+import { parseChord, type ShortcutBinding } from './shortcuts';
 import type { Connection, PresetId, Settings, WritingAction } from './types';
 
 export const SCHEMA_VERSION = 1;
@@ -51,6 +52,7 @@ export function defaultSettings(): Settings {
       maxSentencesPerRequest: 8,
       dictionary: [],
     },
+    shortcutOrigins: [],
   };
 }
 
@@ -111,6 +113,71 @@ export function resolveActions(settings: Settings): WritingAction[] {
 
 export function findAction(settings: Settings, actionId: string): WritingAction | undefined {
   return resolveActions(settings).find((action) => action.id === actionId);
+}
+
+/**
+ * Bindings the content script should listen for: enabled actions with a chord
+ * that still parses.
+ *
+ * A chord kept by a disabled action is not a binding — the action is not in the
+ * menu either — but it is still stored, so switching the action back on
+ * restores the key the user chose rather than silently losing it.
+ */
+export function shortcutBindings(settings: Settings): ShortcutBinding[] {
+  const bindings: ShortcutBinding[] = [];
+  const claimed = new Set<string>();
+
+  for (const action of resolveActions(settings)) {
+    if (!action.enabled || !action.shortcut) continue;
+    if (!parseChord(action.shortcut)) continue;
+    // First one wins, matching the order the options page lists conflicts in.
+    if (claimed.has(action.shortcut)) continue;
+    claimed.add(action.shortcut);
+    bindings.push({ actionId: action.id, chord: action.shortcut });
+  }
+
+  return bindings;
+}
+
+/**
+ * Actions sharing a chord, keyed by chord. Only the first of each group would
+ * ever fire, so the options page has to say so rather than let the later ones
+ * look bound.
+ */
+export function shortcutConflicts(settings: Settings): Map<string, string[]> {
+  const byChord = new Map<string, string[]>();
+
+  for (const action of resolveActions(settings)) {
+    if (!action.enabled || !action.shortcut) continue;
+    const existing = byChord.get(action.shortcut);
+    if (existing) existing.push(action.id);
+    else byChord.set(action.shortcut, [action.id]);
+  }
+
+  for (const [chord, ids] of byChord) {
+    if (ids.length < 2) byChord.delete(chord);
+  }
+  return byChord;
+}
+
+/** Writes or clears one action's chord, in whichever of the two places it lives. */
+export function setActionShortcut(settings: Settings, id: string, chord: string | null): void {
+  const custom = settings.customActions.find((action) => action.id === id);
+  if (custom) {
+    if (chord) custom.shortcut = chord;
+    else delete custom.shortcut;
+    return;
+  }
+
+  const override = { ...settings.builtInOverrides[id] };
+  if (chord) override.shortcut = chord;
+  else delete override.shortcut;
+
+  // An override holding nothing is not the same as no override, but it should
+  // be: settings live in `chrome.storage.sync`, which has a per-item quota that
+  // long prompts already push against. Empty objects are not worth any of it.
+  if (Object.keys(override).length > 0) settings.builtInOverrides[id] = override;
+  else delete settings.builtInOverrides[id];
 }
 
 /** Preset rows split into the two option-page groups. */

@@ -25,9 +25,13 @@ npm run verify         # in another: everything below, in order. Run this before
 
 | Command | What it covers | Needs |
 |---|---|---|
-| `npm test` | The word diff, in Node. Invariant: applying the changes to the original reproduces the rewrite exactly | nothing |
-| `npm run test:render` | The real built `dist/content.js` against `tools/harness.html`: underline rendering, overlay alignment, the card, apply, whole-field rewrite | `npm run serve` on 8777, Playwright |
-| `npm run test:ext` | The **actual** extension loaded in Chromium — real service worker, real provider code — pointed at a stub that records requests, so the wire format is asserted rather than assumed | Playwright with `channel: 'chromium'` |
+| `npm test` | The word diff, in Node. Invariant: applying the changes to the original reproduces the rewrite exactly. Then the shortcut chords: a chord survives a round trip through storage, matches only the event it was recorded from, and the unusable ones are refused | nothing |
+| `npm run test:render` | The real built `dist/content.js` against `tools/harness.html`: underline rendering, overlay alignment, the card, apply, whole-field rewrite, and a bound key actually pressed | `npm run serve` on 8777, Playwright |
+| `npm run test:ext` | The **actual** extension loaded in Chromium — real service worker, real provider code — pointed at a stub that records requests, so the wire format is asserted rather than assumed. Also that a recorded shortcut reaches `chrome.storage` and that removing it clears it | Playwright with `channel: 'chromium'` |
+
+`test:render` loads `dist/content.js` as the browser would, so it tests the last
+build, not the working tree — `npm run build` first, or the change under test is
+not the one being measured. `npm run verify` orders it that way.
 
 `test:render` takes `--headed` if you want to watch it. Screenshots land in
 `.test-shots/`.

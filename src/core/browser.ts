@@ -63,6 +63,46 @@ export async function injectFiles(tabId: number, files: string[]): Promise<void>
   throw new Error('This browser exposes no script injection API.');
 }
 
+/**
+ * What someone types into an origin list, turned into an origin — or null if
+ * there is no reading of it that works.
+ *
+ * `github.com`, `https://github.com/` and a full page URL pasted from the
+ * address bar all mean the same site, and all three are what people actually
+ * type. Rejecting the first two would be correct and useless: the origin would
+ * be dropped, no permission would be asked for, no script would be registered,
+ * and the only symptom would be a key that does nothing.
+ */
+export function normalizeOrigin(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const url = new URL(withScheme);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    if (!url.hostname.includes('.') && url.hostname !== 'localhost') return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `https://github.com` → `https://github.com/*`, the match-pattern form both
+ * `permissions.request` and `registerContentScripts` expect. Null for anything
+ * that is not an http(s) origin, including a URL with a path on it.
+ */
+export function originMatchPattern(origin: string): string | null {
+  try {
+    const url = new URL(origin.trim());
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return `${url.origin}/*`;
+  } catch {
+    return null;
+  }
+}
+
 /** Injectable pages exclude the Web Store and browser-internal schemes. */
 export function isInjectableUrl(url: string | undefined): boolean {
   if (!url) return false;
