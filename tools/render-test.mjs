@@ -590,6 +590,16 @@ async function run() {
         ? window.__pkLexicalText()
         : document.getElementById(id).textContent;
 
+    const readField = (id) =>
+      page.evaluate(
+        (i) =>
+          i === 'lexical' && window.__pkLexicalText
+            ? window.__pkLexicalText()
+            : document.getElementById(i).textContent,
+        id,
+      );
+
+    const before = await readField(field);
     const expected = await page.evaluate(
       (id) => {
         const readField = (i) =>
@@ -630,6 +640,74 @@ async function run() {
     }
 
     await page.screenshot({ path: `${SHOTS}${field}-invoke.png` });
+
+    // One shortcut, one undo. Each `execCommand` is its own undo transaction, so
+    // a rewrite issued as one command per changed word took a press of Ctrl+Z
+    // per word to take back — three here, five on a field that fell through to
+    // the atomic replacement partway. Counting presses is the only way to see
+    // it: the text after N presses is correct either way, so every assertion
+    // above passed throughout.
+    //
+    // `rerender` is excluded rather than skipped quietly: it rebuilds its text
+    // nodes on every input event, which destroys the browser's undo stack
+    // outright. No number of presses restores it, before or after this fix, and
+    // there is nothing the extension can preserve once the page has done that.
+    if (field !== 'rerender') {
+      const normalize = (text) => text.replace(/\s+/g, ' ').replace(/\u00a0/g, ' ').trim();
+      await page.keyboard.press('Control+z');
+      await page.waitForTimeout(300);
+      const undone = await readField(field);
+      check(
+        'one Ctrl+Z restores the original',
+        normalize(undone) === normalize(before),
+        normalize(undone) === normalize(before) ? '' : `got ${JSON.stringify(normalize(undone).slice(0, 60))}`,
+      );
+    }
+  }
+
+  // The reported case, on the real Lexical instance: a short plain message with
+  // a few word-level fixes, which is what a WhatsApp message is.
+  //
+  // The seeded Lexical text above does not cover this. It has more corrections
+  // than the surgical path will attempt, so it goes straight to the atomic
+  // replacement and costs one press either way — the bug was invisible there.
+  // This message takes the surgical path, and took three presses before those
+  // edits were collapsed into one.
+  {
+    console.log('\nlexical — a short message undoes in one press:');
+    const TEXT = 'we should of finish the projet on thursday';
+
+    await page.goto(`${BASE}?field=lexical`, { waitUntil: 'load' });
+    await page.waitForTimeout(500);
+
+    // A real paste: Lexical ignores an untrusted synthetic ClipboardEvent.
+    await page.evaluate((text) => navigator.clipboard.writeText(text), TEXT);
+    await page.click('#lexical');
+    await page.keyboard.press('Control+A');
+    await page.keyboard.press('Control+V');
+    await page.waitForTimeout(1500);
+
+    const read = () => page.evaluate(() => window.__pkLexicalText());
+    const normalize = (text) => text.replace(/\s+/g, ' ').replace(/\u00a0/g, ' ').trim();
+    const before = await read();
+
+    // Asserted first: a paste that did not land leaves the seeded text in place,
+    // and everything below would then measure the wrong field.
+    check('the message is in the editor', normalize(before) === TEXT,
+      normalize(before) === TEXT ? '' : `field reads ${JSON.stringify(normalize(before).slice(0, 60))}`);
+
+    await page.evaluate(() => window.__pkInvoke('fix-grammar'));
+    await page.waitForTimeout(1000);
+
+    const rewritten = await read();
+    check('it is rewritten', normalize(rewritten) !== normalize(before),
+      JSON.stringify(normalize(rewritten)));
+
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(300);
+    const undone = await read();
+    check('one Ctrl+Z restores the original', normalize(undone) === normalize(before),
+      normalize(undone) === normalize(before) ? '' : `got ${JSON.stringify(normalize(undone))}`);
   }
 
   // The per-action shortcut. Everything above drives the rewrite by handing the

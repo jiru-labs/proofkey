@@ -17,7 +17,11 @@ import { diffWords, type Change } from '../core/diff';
  * 3. In rich text, replace only what changed. Selecting a whole block and
  *    inserting a flat string deletes every tag inside it — bold, links, list
  *    structure. Diffing the rewrite against the original and rewriting just the
- *    changed words leaves the surrounding markup untouched.
+ *    changed span leaves the surrounding markup untouched.
+ *
+ * 4. One action, one undo. Every `execCommand` is its own undo transaction, so
+ *    an edit issued as N commands costs N presses of Ctrl+Z to take back. The
+ *    user pressed one shortcut and expects one undo to restore what they wrote.
  */
 
 type TextInput = HTMLInputElement | HTMLTextAreaElement;
@@ -282,16 +286,28 @@ function applyToInput(node: TextInput, start: number, end: number, text: string)
 }
 
 /**
- * Applies the rewrite as a series of small edits so formatting outside the
- * changed words survives — but never trusts that it worked.
+ * Applies the rewrite to the smallest region that changed, so formatting outside
+ * it survives — but never trusts that it worked.
+ *
+ * Where it costs nothing, that region is one edit rather than one per changed
+ * word, because every `execCommand` is a separate undo transaction. Four changed
+ * words meant four presses of Ctrl+Z to take back a single shortcut, and five
+ * when the surgical attempt was abandoned partway and the atomic replacement
+ * landed on top of the edits already made. Reported from WhatsApp Web, where a
+ * plain-text message is the whole field and collapsing is always free.
+ *
+ * It is only free when the span holds no markup of its own — replacing a range
+ * containing a `<strong>` with a flat string deletes it. Where it does, the edits
+ * stay separate and the extra presses come back with them. Costing the user their
+ * bold to save a keystroke is the wrong way round.
  *
  * Framework-managed editors keep their own selection and document model. Lexical
  * (WhatsApp Web) and its relatives may apply an edit at the caret they remember
- * rather than the range we set, so corrections land in the wrong place and
- * nothing is deleted — the text turns to noise. Because that cannot be detected
- * up front, every edit is verified against the text it should have produced, and
- * the moment reality diverges the surgical path is abandoned for one atomic
- * replacement whose result is checked too.
+ * rather than the range we set, so text lands in the wrong place and nothing is
+ * deleted — the text turns to noise. Because that cannot be detected up front,
+ * every edit is verified against the text it should have produced, and the moment
+ * reality diverges the surgical path is abandoned for one atomic replacement
+ * whose result is checked too.
  *
  * The trade is deliberate: on a cooperative editor formatting is preserved, and
  * on a hostile one formatting is lost but the text is right. Wrong text is never
@@ -309,15 +325,22 @@ async function applyToContentEditable(
 
   const before = flatten(node).text;
   const original = before.slice(start, end);
-  if (original === replacement) return true;
+  if (sameText(original, replacement)) return true;
 
   const changes = diffWords(original, replacement);
 
-  // Each surgical edit is a chance for an editor to place text somewhere we did
-  // not ask for. A handful is worth the formatting it preserves; fifteen is not,
-  // and a rewrite that large has usually restructured the text anyway.
-  if (changes && changes.length > 0 && changes.length <= MAX_SURGICAL_EDITS) {
-    if (await applyChanges(node, selection, start, original, replacement, changes)) return true;
+  if (changes && changes.length > 0) {
+    const span = changedSpan(changes, original, replacement);
+    const flat = flatten(node);
+
+    if (span && spanIsFlat(flat, start + span.start, start + span.end)) {
+      if (await applyOneEdit(node, selection, start, original, replacement, span)) return true;
+    } else if (changes.length <= MAX_SURGICAL_EDITS) {
+      // Each surgical edit is a chance for an editor to place text somewhere we
+      // did not ask for. A handful is worth the formatting it preserves; fifteen
+      // is not, and a rewrite that large has usually restructured the text anyway.
+      if (await applyChanges(node, selection, start, original, replacement, changes)) return true;
+    }
   }
 
   // Recomputed from the original text, so it is correct no matter how far the
@@ -326,6 +349,104 @@ async function applyToContentEditable(
 }
 
 const MAX_SURGICAL_EDITS = 4;
+
+/**
+ * Text equality as the user sees it, which is not codepoint equality.
+ *
+ * Browsers substitute U+00A0 for a space when an edit would otherwise leave one
+ * collapsing at an element boundary: replacing "show" in
+ * `<strong>report</strong> show` yields `report&nbsp;shows`. Nothing about the
+ * rendered text changed, but an exact comparison reads it as corruption and
+ * throws away a perfectly good edit. That is what sent the whole-field rewrite
+ * down to `replaceEverything`, which then took the bold with it — the check
+ * meant to protect the text was destroying the formatting instead.
+ */
+function sameText(a: string, b: string): boolean {
+  return a.replace(/\u00a0/g, ' ') === b.replace(/\u00a0/g, ' ');
+}
+
+interface EditSpan {
+  /** Offsets into the original text of the target range. */
+  start: number;
+  end: number;
+  /** What that span becomes. Empty means the span is deleted outright. */
+  text: string;
+}
+
+/**
+ * The one contiguous edit that turns `original` into `replacement`: from the
+ * start of the first change to the end of the last.
+ *
+ * Word-aligned, because the bounds come from `diffWords` rather than from a raw
+ * character prefix/suffix scan. A character-tight span would be smaller but
+ * could open mid-word, and half a word replaced mid-token is exactly where
+ * framework editors misplace text.
+ */
+function changedSpan(changes: Change[], original: string, replacement: string): EditSpan | null {
+  const first = changes[0]!;
+  const last = changes[changes.length - 1]!;
+
+  const suffixLength = original.length - last.end;
+  const textEnd = replacement.length - suffixLength;
+  if (textEnd < first.start) return null;
+
+  return { start: first.start, end: last.end, text: replacement.slice(first.start, textEnd) };
+}
+
+/**
+ * Whether replacing [from, to) with a flat string would cost any markup.
+ *
+ * True when every text node the span touches shares one parent, so there is no
+ * element boundary inside it to lose. Conservative on purpose: two text nodes
+ * under different parents may well carry identical formatting, but proving that
+ * is guesswork and being wrong costs the user their bold. Guessing wrong the
+ * other way only costs a second press of Ctrl+Z.
+ */
+function spanIsFlat(flat: FlatText, from: number, to: number): boolean {
+  const covered = flat.chunks.filter((chunk) => chunk.end > from && chunk.start < to);
+  if (covered.length === 0) return false;
+
+  const parent = covered[0]!.node.parentElement;
+  return parent !== null && covered.every((chunk) => chunk.node.parentElement === parent);
+}
+
+/** Returns false the moment the document stops matching what we expect. */
+async function applyOneEdit(
+  node: HTMLElement,
+  selection: Selection,
+  start: number,
+  original: string,
+  replacement: string,
+  span: EditSpan,
+): Promise<boolean> {
+  const flat = flatten(node);
+  const from = start + span.start;
+  const to = start + span.end;
+
+  if (!sameText(flat.text.slice(from, to), original.slice(span.start, span.end))) return false;
+
+  const range = rangeFor(flat, from, to);
+  if (!range) return false;
+
+  selection.removeAllRanges();
+  selection.addRange(range);
+
+  // Same reason `replaceEverything` waits: an editor that keeps its own
+  // selection hears about this one through an asynchronously dispatched
+  // `selectionchange`, and inserting before it arrives writes at the caret the
+  // editor still believes in.
+  await settle();
+
+  const applied = span.text
+    ? document.execCommand('insertText', false, span.text)
+    : document.execCommand('delete');
+  if (!applied) return false;
+
+  // Without this the check below reads pre-edit DOM and passes vacuously.
+  await settle();
+
+  return sameText(flatten(node).text.slice(start, start + replacement.length), replacement);
+}
 
 /** Returns false the moment the document stops matching what we expect. */
 async function applyChanges(
@@ -345,7 +466,7 @@ async function applyChanges(
     const from = start + change.start + delta;
     const to = start + change.end + delta;
 
-    if (flat.text.slice(from, to) !== original.slice(change.start, change.end)) return false;
+    if (!sameText(flat.text.slice(from, to), original.slice(change.start, change.end))) return false;
 
     const range = rangeFor(flat, from, to);
     if (!range) return false;
@@ -364,7 +485,7 @@ async function applyChanges(
     delta += change.replacement.length - (change.end - change.start);
   }
 
-  return flatten(node).text.slice(start, start + replacement.length) === replacement;
+  return sameText(flatten(node).text.slice(start, start + replacement.length), replacement);
 }
 
 /**
