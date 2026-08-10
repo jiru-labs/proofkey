@@ -110,7 +110,11 @@ const SHOWCASE = {
     'make-professional': { shortcut: 'Alt+Shift+KeyK' },
     summarize: { shortcut: 'Alt+Shift+KeyJ' },
   },
-  shortcutOrigins: ['https://mail.google.com', 'https://github.com', 'https://www.notion.so'],
+  // The two sites COMPATIBILITY.md marks Verified, plus one neutral third. The
+  // store's spam FAQ does allow brand lists in a screenshot — this is not the rule
+  // that got v0.1.0 rejected. It changed anyway: the shot now shows the same two
+  // sites the description calls confirmed, instead of three we have never tested.
+  shortcutOrigins: ['https://web.whatsapp.com', 'https://x.com', 'https://github.com'],
   defaultActionId: 'fix-grammar',
   profile: {
     styleGuide: 'We write e-mail, not email. Avoid superlatives.',
