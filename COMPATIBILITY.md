@@ -96,6 +96,26 @@ had been written into the thing meant to catch it. It now has a `chat` field,
 and live checking was re-run on X after the fix and confirmed working, which is
 what moved the row above to `Verified` outright.
 
+A third, found on WhatsApp Web 2026-08-13, is not a ProofKey bug at all and is
+recorded because it is indistinguishable from one. `Ctrl+Shift+K` did nothing to
+the text and appended six backticks to it, which reads exactly like the assistant
+mangling the field. It was not: Chrome hands out `suggested_key`
+first-come-first-served, another extension already held the combination, and
+ProofKey's command was therefore left **unbound with no error reported
+anywhere** — including on a clean install from the Web Store, where the user has
+never touched a shortcut setting. The keypress then reached the page, and
+WhatsApp acted on it, inserting an empty monospace block. The right-click menu
+corrected the same text correctly on the same visit, which is what separated the
+two explanations.
+
+The options page now says so: when `chrome.commands.getAll()` reports no binding
+for the default action, the Actions section carries a warning naming
+`chrome://extensions/shortcuts` as the only place it can be fixed. The
+information was already being fetched — it was used to avoid collisions when
+recording a per-action chord, and unbound commands were dropped on the floor.
+Verified in a real browser both ways: no warning when the command is bound, the
+warning present when it is not.
+
 The **Draft.js** row in the editors table stays `Untested` regardless. The engine
 attribution for X is best-effort, as the heading of this section says, so what
 was verified is a site, not the engine we guess it runs. Promoting an engine on
@@ -209,6 +229,12 @@ agrees with whatever you send it. That is the gap this table exists to close.
 | OpenCode Go | `mimo-v2-pro`, `mimo-v2-omni`, `hy3-preview` | `chat_completions` | `Broken` | `npm run eval`, 2026-08-01 — `mimo-v2-pro` and `mimo-v2-omni` answered HTTP 500 on all 10 runs; `hy3-preview` answered HTTP 400 *"not supported on the lite model list"*. All three are advertised by `GET /v1/models` |
 | OpenCode Go | `minimax-m2.5`, `kimi-k2.5`, `glm-5`, `qwen3.5-plus` | `chat_completions` | `Verified` | `npm run eval`, 2026-08-01 — all four answered and held the contract over 10 runs, but none is in the plan's documented 17. `GET /v1/models` advertises **24**, so **Fetch models** lists models the subscription does not document covering; they may stop working without notice |
 | OpenCode Zen | any | `chat_completions` | `Untested` | 2026-08-01 — `GET /v1/models` returns 60 models and the base URL is confirmed, but every paid model answered `CreditsError` on a key with no balance, and the free ones are out of scope by the rule below. Nothing was measured |
+| llama.cpp (self-hosted) | `Qwen3-30B-A3B-Instruct-2507-abliterated` Q4_K_M, served by `llama-server` b9966 | `chat_completions` | `Verified` | `npm run eval` ×2 and a quick action through the real service worker, 2026-08-13, on a Ryzen 7840U / Radeon 780M laptop with no discrete GPU. Held the numbered-line contract **10/10 at the server's default sampling and 10/10 at `--temperature 0`**, scoring 8.0/14 both ways with zero spread. A real 8-sentence live check takes 9.6s (8.2–14.9s), 6.3× inside the 60s request timeout; a warm one-sentence quick action takes 0.9s. First local model measured on either transport. See the caveats below |
+| llama.cpp (self-hosted) | `Qwen3-4B-Instruct-2507` Q4_K_M (stock) | `chat_completions` | `Verified` | `npm run eval`, 2026-08-13, 10 runs at `--temperature 0` on the same laptop. **11.0/14 with zero spread, 0.0 false alarms and the contract held 10/10** — better than the 30B above on every axis but one. Fully offloaded to the Radeon 780M via GTT, so the server holds **0.6 GB** of host RAM against the 30B's 22.4 GB, and a real 8-sentence live check takes 7.5s (7.4–7.9s) against 9.6s (8.2–14.9s). All three misses are English (`meating`, `projet`/`has`, and the same subject-verb agreement); every non-English and every already-correct fixture passed |
+| llama.cpp (self-hosted) | `gemma-3-12b-it` Q4_K_M | `chat_completions` | `Verified` | `npm run eval`, 2026-08-13, 10 runs at `--temperature 0`. **13.0/14 with zero spread, 0.0 false alarms, contract held 10/10** — the highest score measured on any provider on this page. Its one miss is the subject-verb agreement in `There are a lot of things`, which every local model missed. Dense and fully offloaded to the 780M, so host RAM is negligible. **But it is slow**: 31.9 tok/s prefill and 8.6 tok/s generation, giving a 25.7s live check against the 4B's 7.5s — accurate enough for quick actions, too slow to underline as you type |
+| llama.cpp (self-hosted) | `Huihui-Qwen3-4B-Instruct-2507-abliterated`, `Josiefied-Qwen3-4B-Instruct-2507-abliterated-v1`, both Q4_K_M | `chat_completions` | `Broken` | `npm run eval`, 2026-08-13 — **0.0/14, contract broke 10/10, on both.** They echo the input back uncorrected: no diacritics restored in Spanish or French, no typo fixed. Byte-identical replies from two independent abliterations of a base model that scores 11.0/14 unmodified, which makes the abliteration the cause rather than the size or the quant. At 10+ sentences they also emit `1 1.` for line 11, which `parseCheckReply` correctly rejects rather than mis-attribute |
+| llama.cpp (self-hosted) | CORS and host permission | — | `Verified` | 2026-08-13 — `llama-server` echoes `chrome-extension://<id>` into `Access-Control-Allow-Origin` with `Access-Control-Allow-Headers: *`, so unlike Ollama it needs no origin flag. `http://127.0.0.1:8080/*` is a valid match pattern — ports are accepted by `chrome.permissions.contains` in a real browser, so `originPattern` (`src/core/providers/index.ts:109`) grants correctly for a local server |
+| llama.cpp (self-hosted) | **Fetch models** | — | `Partly verified` | Observed 2026-08-13: `GET /v1/models` answers **200 without a key** while `POST /chat/completions` answers 401 `Invalid API Key`. On a server started with `--api-key-file` the list therefore populates and the connection looks configured while every request fails. **Test** is what catches it, and the preset ships `authStyle: 'none'` — labelled *"Not sent (local server)"* — which must be switched to Bearer before a typed key is sent at all (`src/core/providers/request.ts:59`) |
 | Any provider | free tiers and `:free` model variants | — | `Not tested` | Project rule, not an outcome: free endpoints are deliberately not measured or recommended. They are rate-limited, silently rerouted and withdrawn, so publishing a score would imply a durability the tier does not have |
 | OpenCode Go | `minimax-m3`, `deepseek-v4-pro`, `qwen3.6-plus` | `chat_completions` | `Not recommended` | Project rule, applied to a measurement: `minimax-m3` scores 0.0/14 by writing its reasoning into the reply; `deepseek-v4-pro` and `qwen3.6-plus` average 98s and 73s against a 60s timeout, so they fail rather than arrive late. Out of scope for every workload. See [MODELS.md](MODELS.md#forced-reasoning) |
 | xAI, Gemini, OpenCode Go | `grok-4.5`, `grok-build-0.1`, `grok-4.20-0309-reasoning`, `gemini-2.5-pro`, `gemini-3.5-flash`, `gemini-3.6-flash`, and OpenCode Go apart from `gpt-5.6-luna` / `glm-5.1` / `glm-5.2` | `chat_completions` | `Not recommended` | Project rule, applied to a measurement: thinking cannot be turned off and costs 14.7s–48s per check, against ~1s on a flash-lite. Excluded from **live checking only** — fine for quick actions, where you wait on purpose. Note the rule keys on measured harm, not on forced thinking: `gemini-3.1-flash-lite` also cannot be turned off, and stays recommended at 918ms. See [MODELS.md](MODELS.md#forced-reasoning) |
@@ -258,9 +284,64 @@ Three OpenCode caveats, all properties of the provider:
   (`src/core/providers/request.ts:79`), so they do not merely arrive late, they
   fail. A third, `qwen3.7-plus`, averages 58s and so straddles it.
 
+Four llama.cpp caveats. The first is a property of ProofKey's preset, the rest
+of the models rather than of the server:
+
+- **The self-hosted preset assumes an open server.** It ships `authStyle: 'none'`
+  and `baseUrl: http://localhost:8000/v1`, which is vLLM's default, not
+  llama.cpp's 8080. A `llama-server` started with `--api-key-file` needs both
+  changed plus the key pasted, and the failure mode is the asymmetry in the row
+  above: the model list populates without a key, so the connection looks right
+  until the first real request. Worse, it recurs: `applyPreset`
+  (`src/options/options.ts:456`) resets `authStyle` unconditionally on every
+  change of the provider dropdown, where `baseUrl`, `model` and `label` are only
+  overwritten when they still hold the old preset's value. So a corrected key
+  style silently reverts to *"Not sent"* if the preset is re-picked afterwards,
+  with the key still visible in its field. Reproduced through the real service
+  worker 2026-08-13: identical connection, key present in both, `authStyle:
+  'none'` answers *"Invalid API Key"* and `'bearer'` returns the correction.
+- **It over-applies formal punctuation, which is exactly what live checking is
+  built to avoid.** Scoring 8.0/14 undersells it: 12 of 14 fixtures came back
+  linguistically correct, and *four* of the six misses are a single behaviour —
+  a full stop appended to a line that did not have one, in English, Spanish,
+  French and German alike. The same tendency promoted a comma to a semicolon on
+  a real message (`gets lost, its doing` → `gets lost; it's doing`) and rewrote
+  `gonna push the fix tonight` as `I'm going to push the fix tonight.` Only two
+  misses are ordinary errors: a missed subject-verb agreement (`There is a lot of
+  things`) and that register rewrite. Since `Ctrl+Shift+K` is *meant* to complete
+  a correction and live checking is meant not to, this model suits the quick
+  actions better than the inline underlines.
+- **Sampling is not the cause, and `temperature 0` is still worth setting.** The
+  score, spread and false-alarm rate are identical at the server's default 0.8
+  and at 0, so the added full stops are the model, not the sampler. What
+  determinism buys is repeatability: at 0.8 the informal-register fixture came
+  back three different ways across ten runs, and at 0 it came back one way. Live
+  checking caches per sentence, so a stable answer is worth having.
+- **Abliteration costs more than it looks like on a small model, and the two
+  local failure modes are opposites.** The 30B survives it; the 4B does not, in
+  two independent abliterations, while the same 4B unmodified scores 11.0/14.
+  Between the two working local models the errors point in opposite directions:
+  the 30B *over*-corrects — added full stops, commas promoted to semicolons,
+  slang formalised, 1.0 false alarms — and the 4B *under*-corrects, missing
+  English typos but flagging nothing it should not. Since the live-check prompt
+  holds that an unnecessary change is worse than a missed error, the smaller
+  model is the better fit for inline checking here, which is not the ordering
+  size alone would predict.
+- **On an iGPU, accuracy and latency pull apart hard enough to want two
+  connections.** Generation is memory-bandwidth-bound on shared LPDDR5, so
+  latency tracks the weights streamed per token rather than the parameter
+  count: 23.7 tok/s for a 4B dense, 24.3 for a 30B MoE with only 3B active, and
+  8.6 for a 12B dense. Measured on the same machine, a real 8-sentence live
+  check takes 7.5s on `Qwen3-4B-Instruct-2507` (11.0/14) and 25.7s on
+  `gemma-3-12b-it` (13.0/14). Neither is the right answer alone, and ProofKey
+  already has the seam for both: pin live checking to its own connection
+  (`liveCheck.connectionId`) on the 4B and leave the quick actions on the 12B.
+  Together they occupy 9.2 GB of the 780M's 14.8 GB GTT budget, so both servers
+  run at once — verified 2026-08-13 with `llama-server` on ports 8080 and 8081.
+
 ### Everything else
 
-The other 33 presets in `src/core/presets.ts` are `Untested` end-to-end: the
+The other 32 presets in `src/core/presets.ts` are `Untested` end-to-end: the
 base URLs come from Hermes Agent's registry rather than from anyone here having
 called them with a key. Three use `anthropic_messages` — Anthropic, MiniMax and
 MiniMax (China) — and the rest use `chat_completions`.

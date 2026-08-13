@@ -12,7 +12,7 @@ No backend, no account, no telemetry. Your text goes from your browser straight 
 >
 > **New here?** [Start with Gemini](#no-api-key-yet-start-with-gemini): about two minutes from nothing to working underlines, and ordinary use usually costs nothing.
 >
-> **What is actually known to work is a much shorter list than what is built.** Two sites (WhatsApp Web, X) and four providers (Google Gemini, xAI, OpenRouter, OpenCode Go) have been confirmed by hand against real keys; the rest is covered by automated tests, or by nothing. [COMPATIBILITY.md](COMPATIBILITY.md) says exactly which is which — and [reports](CONTRIBUTING.md) are the fastest way to grow that list.
+> **What is actually known to work is a much shorter list than what is built.** Two sites (WhatsApp Web, X) and five providers (Google Gemini, xAI, OpenRouter, OpenCode Go, and a self-hosted llama.cpp) have been confirmed by hand against real keys; the rest is covered by automated tests, or by nothing. [COMPATIBILITY.md](COMPATIBILITY.md) says exactly which is which — and [reports](CONTRIBUTING.md) are the fastest way to grow that list.
 
 ---
 
@@ -24,7 +24,7 @@ Grammarly and LanguageTool are excellent, and both route your writing through th
 
 - **Quick actions** on any selected text, from the right-click menu or `Ctrl+Shift+K`: fix grammar, improve writing, make professional, make friendly, simplify, summarize, expand, convert to bullet points.
 - **Editable prompts.** Every built-in action is a prompt you can rewrite, and you can add your own.
-- **A key per action.** Any action, including one you wrote, can be given its own shortcut in the options page — press the combination, and it is recorded. These are handled inside the page rather than by Chrome's shortcut system, which is limited to four keys fixed at build time and can only be changed from `chrome://extensions/shortcuts`. The trade is that ProofKey has to be loaded in a page to see a keypress there, so these keys run on the sites you list and nowhere else. `Ctrl+Shift+K` and the right-click menu keep working everywhere, with no site permission.
+- **A key per action.** Any action, including one you wrote, can be given its own shortcut in the options page — press the combination, and it is recorded. These are handled inside the page rather than by Chrome's shortcut system, which is limited to four keys fixed at build time and can only be changed from `chrome://extensions/shortcuts`. The trade is that ProofKey has to be loaded in a page to see a keypress there, so these keys run on the sites you list and nowhere else. The right-click menu works everywhere with no site permission, and `Ctrl+Shift+K` does too — [when Chrome actually assigned it](#ctrlshiftk-does-nothing).
 - **Live checking is quieter than the quick actions, on purpose.** It fires on a pause you did not ask for, so it treats messaging conventions as valid: no full stop added to a line that lacks one, no capitalising a lowercase sentence start, no expanding slang. `Ctrl+Shift+K` you pressed deliberately, so it completes the correction, capitals included.
 - **36 provider presets** over two transports, plus a free-form Custom option for any OpenAI-compatible endpoint. Prefilled is not the same as confirmed — four have been used against a real key so far, see [COMPATIBILITY.md](COMPATIBILITY.md).
 - **Fallback chain.** Put a local model first and a cloud key second; ProofKey moves down the list when one fails, and tells you which one failed.
@@ -109,6 +109,14 @@ OLLAMA_ORIGINS="chrome-extension://*" ollama serve
 ### Anything not on the list
 
 Use **Custom**. Paste the base URL up to and including `/v1` — ProofKey appends `/chat/completions`. If the endpoint has quirks, the connection editor exposes escape hatches for them: extra headers, extra body fields, extra query parameters, and the auth style (`Bearer`, `x-api-key`, a custom header name, or a URL parameter). Between those, most gateways and proxies work without code changes.
+
+## `Ctrl+Shift+K` does nothing
+
+Check **`chrome://extensions/shortcuts`** first. The key is a *suggestion*, and Chrome hands those out first-come-first-served: if another extension already held the combination when ProofKey was installed, Chrome leaves ProofKey's slot empty and says nothing about it. Nothing is wrong with your settings, and a clean install from the Web Store is exactly the case where you would never think to look — the shortcut simply never existed. Assign one there; it cannot be set from ProofKey's own options page, which is a Chrome restriction.
+
+Until you do, the right-click menu runs every action, so nothing is unreachable.
+
+The symptom is worth knowing because it does not look like a missing shortcut. The keypress falls through to the page, and the page is free to act on it: on WhatsApp Web, `Ctrl+Shift+K` inserts an empty monospace block, so the text comes back unchanged with ```` `````` ```` appended and it reads as ProofKey having mangled the field. If the right-click menu corrects the same text correctly, the binding is the problem, not the model or the site. ProofKey's options page now warns when the command is unbound, under **Actions**.
 
 ## Does it work where you need it?
 
