@@ -1,6 +1,6 @@
 {
   "name": "proofkey",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "BYOK AI writing assistant for Chrome (MV3). Your key, your provider, no backend.",
@@ -28,6 +28,9 @@
     "serve": "python3 -m http.server 8777 --bind 127.0.0.1",
     "test:ext": "node tools/extension-test.mjs",
     "shots": "node tools/store-shots.mjs",
+    "token": "node --experimental-strip-types tools/get-refresh-token.ts",
+    "release": "node --experimental-strip-types tools/release.ts",
+    "status": "node --experimental-strip-types tools/cws-status.ts",
     "verify": "npm run typecheck && npm test && npm run build && npm run test:render && npm run test:ext"
   },
   "devDependencies": {
