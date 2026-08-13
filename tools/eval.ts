@@ -8,6 +8,7 @@
  *     node --experimental-strip-types tools/eval.ts --base https://api.x.ai/v1 --models grok-4.3 --reasoning off
  *     node --experimental-strip-types tools/eval.ts --base https://openrouter.ai/api/v1 --models qwen/qwen3.7-flash
  *     node --experimental-strip-types tools/eval.ts --base https://opencode.ai/zen/go/v1 --reasoning off --runs 10
+ *     node --experimental-strip-types tools/eval.ts --base http://127.0.0.1:8080/v1 --models qwen3-30b --temperature 0
  *
  * Free models are out of scope, on every provider. Do not add them to --models:
  * a free endpoint is rate-limited, silently rerouted and withdrawn, so a score
@@ -172,6 +173,19 @@ const DEFAULT_REASONING = 'none';
  */
 const DEFAULT_MAX_TOKENS = 8192;
 
+/**
+ * Unset by default, because that is what ProofKey does: `temperature` is only
+ * put on the wire when the user typed one into the connection, so the endpoint's
+ * own default is the configuration that ships.
+ *
+ * Worth passing on a self-hosted server, where that default is not the cloud's.
+ * llama.cpp serves 0.8 with top_p 0.95 unless told otherwise, which is a
+ * sampling regime for prose, not for proofreading — the same sentence comes
+ * back differently between runs. `--temperature 0` measures the connection a
+ * local user should actually save.
+ */
+const DEFAULT_TEMPERATURE = undefined;
+
 function arg(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
   return index === -1 ? undefined : process.argv[index + 1];
@@ -212,9 +226,17 @@ interface Options {
   model: string;
   reasoning: string;
   maxTokens: number;
+  temperature: number | undefined;
 }
 
-async function once({ base, key, model, reasoning, maxTokens }: Options): Promise<Run> {
+async function once({
+  base,
+  key,
+  model,
+  reasoning,
+  maxTokens,
+  temperature,
+}: Options): Promise<Run> {
   const inputs = FIXTURES.map((f) => f.input);
   const body = {
     model,
@@ -225,6 +247,8 @@ async function once({ base, key, model, reasoning, maxTokens }: Options): Promis
     max_tokens: maxTokens,
     stream: false,
     ...(reasoning === 'off' ? {} : { reasoning_effort: reasoning }),
+    // Omitted unless asked for, matching `chatCompletions.ts`.
+    ...(temperature === undefined ? {} : { temperature }),
   };
 
   const started = Date.now();
@@ -358,6 +382,12 @@ async function main(): Promise<void> {
   const runs = Number(arg('runs') ?? 3);
   const reasoning = arg('reasoning') ?? DEFAULT_REASONING;
   const maxTokens = Number(arg('max-tokens') ?? DEFAULT_MAX_TOKENS);
+  const temperatureArg = arg('temperature');
+  const temperature = temperatureArg === undefined ? DEFAULT_TEMPERATURE : Number(temperatureArg);
+  if (temperature !== undefined && !Number.isFinite(temperature)) {
+    console.error(`--temperature ${temperatureArg} is not a number.`);
+    process.exit(1);
+  }
   const clean = FIXTURES.filter(isClean).length;
 
   console.log(`\n${FIXTURES.length} fixtures (${clean} already correct, ${FIXTURES.length - clean} with errors)`);
@@ -365,7 +395,12 @@ async function main(): Promise<void> {
   console.log(
     reasoning === 'off'
       ? 'reasoning_effort: not sent\n'
-      : `reasoning_effort: ${reasoning} (--reasoning off to omit it)\n`,
+      : `reasoning_effort: ${reasoning} (--reasoning off to omit it)`,
+  );
+  console.log(
+    temperature === undefined
+      ? "temperature: not sent — the endpoint's own default applies\n"
+      : `temperature: ${temperature}\n`,
   );
 
   const summaries: Summary[] = [];
@@ -374,7 +409,7 @@ async function main(): Promise<void> {
     const collected: Run[] = [];
     for (let i = 0; i < runs; i++) {
       try {
-        const run = await once({ base, key, model, reasoning, maxTokens });
+        const run = await once({ base, key, model, reasoning, maxTokens, temperature });
         collected.push(run);
         process.stdout.write(run.contractBroken ? 'x' : '.');
       } catch (error) {
