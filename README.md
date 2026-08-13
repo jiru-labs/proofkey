@@ -1,10 +1,16 @@
 # ProofKey
 
+[![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-Install-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/loibjoemoahkajjnfioajcibcamhdafc)
+[![Version](https://img.shields.io/chrome-web-store/v/loibjoemoahkajjnfioajcibcamhdafc?label=version&color=4285F4)](https://chromewebstore.google.com/detail/loibjoemoahkajjnfioajcibcamhdafc)
+[![License](https://img.shields.io/github/license/jiru-labs/proofkey)](LICENSE)
+
 A Grammarly-style writing assistant for Chrome that talks to **your** LLM, using **your** API key.
 
 No backend, no account, no telemetry. Your text goes from your browser straight to the provider you picked, and nowhere else.
 
-> **Status: in development.** The provider layer, settings model, inline assistant and options UI are in place. Not yet on the Chrome Web Store.
+> **[Install from the Chrome Web Store](https://chromewebstore.google.com/detail/loibjoemoahkajjnfioajcibcamhdafc)** — or [build it from source](#install-from-source) if you would rather read the code first.
+>
+> **New here?** [Start with Gemini](#no-api-key-yet-start-with-gemini): about two minutes from nothing to working underlines, and ordinary use usually costs nothing.
 >
 > **What is actually known to work is a much shorter list than what is built.** Two sites (WhatsApp Web, X) and four providers (Google Gemini, xAI, OpenRouter, OpenCode Go) have been confirmed by hand against real keys; the rest is covered by automated tests, or by nothing. [COMPATIBILITY.md](COMPATIBILITY.md) says exactly which is which — and [reports](CONTRIBUTING.md) are the fastest way to grow that list.
 
@@ -25,9 +31,11 @@ Grammarly and LanguageTool are excellent, and both route your writing through th
 - **Any language the model knows.** The interface is English; the text doesn't have to be. The prompts are written to detect the language and work inside it — including text that mixes two languages, which rule-based checkers cannot handle at all.
 - **Doesn't flatten your voice.** Regional variety (en-GB/en-US, pt-BR/pt-PT, zh-Hans/zh-Hant) and politeness register (tú/usted, du/Sie, tu/vous, Japanese registers) are treated as choices to preserve, not errors to normalise.
 
-## Install (unpacked)
+## Install
 
-Chrome Web Store publication comes later. For now:
+**[Get it from the Chrome Web Store](https://chromewebstore.google.com/detail/loibjoemoahkajjnfioajcibcamhdafc)**, then click the ProofKey icon → **Settings** and set up a provider. If you have never used an LLM API before, [start here](#no-api-key-yet-start-with-gemini).
+
+### Install from source
 
 ```bash
 git clone https://github.com/jiru-labs/proofkey.git
@@ -48,6 +56,25 @@ Then:
 ## Configuring a provider
 
 Every provider needs the same three things: a **base URL**, an **API key**, and a **model**. Picking a preset fills in the base URL for you; **Fetch models** lists what your key can actually reach.
+
+### No API key yet? Start with Gemini
+
+"Bring your own key" is the whole point of ProofKey, but it does mean there is a step before anything works. If you have never done it, this is the shortest path — about two minutes, and for ordinary use Google's free allowance usually covers it.
+
+1. Open **[Google AI Studio](https://aistudio.google.com/apikey)** and sign in with any Google account.
+2. Click **Create API key**, and accept the terms if you are asked.
+3. Copy the key. It starts with `AIza`.
+4. In Chrome, click the **ProofKey** icon → **Settings**.
+5. Choose **Google Gemini** from the provider list — the base URL fills itself in.
+6. Paste your key into **API key**, click **Fetch models**, and pick `gemini-2.5-flash`.
+7. Save, then reload any tab you already had open.
+
+Two things are worth understanding before you paste anything sensitive:
+
+- **The free tier is the one tier where the provider may keep what you send.** Google's free-tier data handling differs from paid: text sent on a free key may be used to improve their products. ProofKey itself never sees your writing, and that does not change — but "no telemetry" is a promise about ProofKey, not about the provider you point it at. For anything confidential, use a paid key or a [local model](#local-models), where nothing leaves your machine. Google's [API terms](https://ai.google.dev/gemini-api/terms) are the authority on this, not us.
+- **If underlines quietly stop appearing, you have hit the free limit.** Live checking sends a request each time you pause typing, which a daily cap notices. It is pinned to one connection and does not fall through the fallback chain, so it goes silent rather than reporting an error. Switch live checking off in Settings and the quick actions (`Ctrl+Shift+K`, right-click menu) carry on working. Your current limits are shown in [AI Studio](https://aistudio.google.com/rate-limit); they vary by account, so this page quotes no numbers.
+
+Once that works, [MODELS.md](MODELS.md) covers what to move to and what it costs. We deliberately publish no quality scores for free tiers on any provider — [why](MODELS.md#the-free-tier).
 
 ### The ones most people want
 
