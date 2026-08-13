@@ -318,12 +318,22 @@ export function formatCheckPayload(sentences: string[]): string {
 export function parseCheckReply(reply: string, count: number): string[] | null {
   const found = new Map<number, string>();
 
-  for (const line of reply.split('\n')) {
-    const match = /^\s*(\d+)\s*[.)]\s?(.*)$/.exec(line);
+  // The line is trimmed before matching, and the correction after it. Both
+  // matter, and neither is cosmetic:
+  //
+  //   - A carriage return is not a line terminator `.` will match, and `$` will
+  //     not pass one either, so a CRLF reply matched *no* lines at all and the
+  //     whole check was reported as a broken contract.
+  //   - Trailing whitespace on the correction is compared against the trimmed
+  //     original in `live.ts` with `===`, so `"Looks fine.  "` for a sentence
+  //     the model left alone reads as a change and underlines correct text.
+  //     Models pad lines this way when they treat the reply as Markdown.
+  for (const raw of reply.split(/\r?\n/)) {
+    const match = /^(\d+)\s*[.)]\s?(.*)$/.exec(raw.trim());
     if (!match) continue;
     const index = Number(match[1]);
     if (index < 1 || index > count || found.has(index)) continue;
-    found.set(index, match[2] ?? '');
+    found.set(index, (match[2] ?? '').trim());
   }
 
   if (found.size !== count) return null;
