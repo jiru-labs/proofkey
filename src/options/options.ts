@@ -733,6 +733,23 @@ function renderActions(): HTMLElement {
   return section(
     'Actions',
     'Every action is just a prompt. Edit any of them, or add your own — they appear in the right-click menu, and each one can have its own key.',
+    // Chrome hands out `suggested_key` first-come-first-served: if another
+    // extension already held the combination when ProofKey was installed, this
+    // command is left unbound with no error anywhere. The key then reaches the
+    // page instead, where a site is free to act on it — on WhatsApp Web
+    // Ctrl+Shift+K inserts an empty monospace block, which reads as ProofKey
+    // mangling the text rather than as ProofKey never having run.
+    globalCommand
+      ? null
+      : el(
+          'p',
+          { class: 'notice notice--warn' },
+          document.createTextNode(
+            'No browser shortcut is assigned, so the default action can only be run from the right-click menu. Chrome leaves this unset when another extension already claimed the combination. Assign one at ',
+          ),
+          el('code', { text: 'chrome://extensions/shortcuts' }),
+          document.createTextNode(' — it cannot be set from this page.'),
+        ),
     list,
     el(
       'div',
