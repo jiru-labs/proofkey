@@ -288,6 +288,10 @@ body {
   color: var(--warn);
 }
 
+.notice__text {
+  margin: 0 0 8px;
+}
+
 .advanced {
   margin: 4px 0 16px;
   border-top: 1px solid var(--border);

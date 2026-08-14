@@ -742,13 +742,22 @@ function renderActions(): HTMLElement {
     globalCommand
       ? null
       : el(
-          'p',
+          'div',
           { class: 'notice notice--warn' },
-          document.createTextNode(
-            'No browser shortcut is assigned, so the default action can only be run from the right-click menu. Chrome leaves this unset when another extension already claimed the combination. Assign one at ',
+          el('p', {
+            class: 'notice__text',
+            text:
+              'No browser shortcut is assigned, so the default action can only be run from the right-click menu. ' +
+              'Chrome leaves this unset when another extension already claimed the combination, and does not let ' +
+              `an extension set it back — only you can, on the page below. ${IS_MAC ? '⌘⇧K' : 'Ctrl+Shift+K'} is the intended default.`,
+          }),
+          // The most an extension is permitted to do about its own command:
+          // open the page. `tabs.create` may open chrome:// URLs even though
+          // nothing else can touch them, and it needs no permission.
+          button(
+            'Open Chrome’s shortcut settings',
+            () => void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }),
           ),
-          el('code', { text: 'chrome://extensions/shortcuts' }),
-          document.createTextNode(' — it cannot be set from this page.'),
         ),
     list,
     el(

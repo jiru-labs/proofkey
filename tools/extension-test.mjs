@@ -442,6 +442,46 @@ async function run() {
   const datalistOptions = await page.locator('datalist option').count();
   check('datalist still populated for type-to-filter', datalistOptions === 4, `${datalistOptions}`);
 
+  // --------------------------------------------------------- unbound command
+  // In this fresh profile Chrome does assign Ctrl+Shift+K, so the lost-shortcut
+  // state has to be simulated: getAll is wrapped to report the real commands
+  // with their bindings blanked, which is exactly what it returns when another
+  // extension claimed the combination first. The page cannot rebind the key —
+  // Chrome forbids that to extensions — so the most it can do is open the one
+  // page where the user can, and that click is what gets asserted here.
+  console.log('\nunbound command:');
+  {
+    const unboundPage = await context.newPage();
+    await unboundPage.addInitScript(() => {
+      const real = chrome.commands.getAll.bind(chrome.commands);
+      chrome.commands.getAll = async () =>
+        (await real()).map((command) => ({ ...command, shortcut: '' }));
+    });
+    await unboundPage.goto(`chrome-extension://${extensionId}/options/index.html`);
+    await unboundPage.waitForTimeout(400);
+
+    const notice = unboundPage.locator('.notice--warn', {
+      hasText: 'No browser shortcut is assigned',
+    });
+    check('losing the shortcut is reported, not silent', (await notice.count()) > 0);
+
+    const openButton = notice.getByRole('button', { name: 'Open Chrome’s shortcut settings' });
+    check('the notice carries a button to fix it', (await openButton.count()) > 0);
+
+    const [shortcutsTab] = await Promise.all([
+      context.waitForEvent('page', { timeout: 5000 }).catch(() => null),
+      openButton.click(),
+    ]);
+    check(
+      'clicking it opens chrome://extensions/shortcuts',
+      !!shortcutsTab && shortcutsTab.url().startsWith('chrome://extensions/shortcuts'),
+      shortcutsTab ? shortcutsTab.url() : 'no tab opened',
+    );
+
+    if (shortcutsTab) await shortcutsTab.close();
+    await unboundPage.close();
+  }
+
   check('no uncaught worker errors', workerErrors.length === 0, workerErrors.join('; ') || 'clean');
 
   await context.close();
