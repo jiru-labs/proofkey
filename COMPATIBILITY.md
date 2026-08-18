@@ -248,8 +248,10 @@ and the model IDs, not ProofKey's own transport. That is covered separately by
 One xAI caveat that is a property of the provider rather than of ProofKey: every
 Grok model except `grok-4.3` rejects `reasoning_effort` with HTTP 400 rather
 than ignoring it, so that field must not be set in **Extra body fields** on an
-xAI connection. Live-check latency also runs 1.6s–22s depending on the model,
-against roughly 1s on Gemini.
+xAI connection. ProofKey's **Thinking** setting knows this — the preset sends the
+field on `grok-4.3` and on no other Grok, asserted by `tools/thinking-check.ts`
+— so the caveat applies only to setting it by hand. Live-check latency also runs
+1.6s–22s depending on the model, against roughly 1s on Gemini.
 
 Two OpenRouter caveats, also properties of the provider:
 

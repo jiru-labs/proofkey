@@ -27,7 +27,10 @@ general truth on one provider's evidence:
   HTTP 400 — *"Reasoning is mandatory for this endpoint and cannot be
   disabled"* — and OpenCode Go returns a third thing: a generic *"Upstream
   request failed"* that names neither the field nor the reason. Four providers,
-  four behaviours, and the newest one is the hardest to debug.
+  four behaviours, and the newest one is the hardest to debug. This is why the
+  **Thinking** setting sends a fragment the *preset* supplies rather than one
+  value everywhere, and sends nothing at all where no one has measured which of
+  the four behaviours applies.
 - Forced reasoning is **not** merely a latency concern — nor merely a cost one.
   On Grok it is billed, and on `grok-build-0.1` the thinking outweighs the reply
   20 to 1. On a flat-rate plan it is billed at zero and still disqualifying,
@@ -241,6 +244,18 @@ barely thinks on a task this mechanical, or the compatibility layer does not
 report reasoning separately — the harness reads
 `completion_tokens_details.reasoning_tokens` and found nothing to read.
 
+Read that comparison for what it is: it holds thinking against *no thinking on a
+different model*, because the one configuration it does not contain is
+`gemini-2.5-flash-lite` with thinking left on. Nobody has run that. To take it,
+`--reasoning off` omits the field — which is what a connection with **Thinking**
+set to *leave the endpoint's default* now does — against the harness default,
+which sends `none`:
+
+```bash
+npm run eval -- --models gemini-2.5-flash-lite --runs 5                  # thinking off
+npm run eval -- --models gemini-2.5-flash-lite --runs 5 --reasoning off  # thinking on
+```
+
 **This does not generalise, and Grok is the counter-example.** On the same
 14-sentence request, xAI reports reasoning separately and charges for it:
 
@@ -269,28 +284,30 @@ xAI it is both, and the billing half is the larger. Measure it per provider —
 
 ### Turning thinking off
 
-ProofKey merges **extra body fields** into the request root, so this needs no
-code change. In the connection editor, add:
+**Thinking is off by default**, from the connection editor's **Thinking**
+setting. That was not always true: until 0.1.3 the extension shipped thinking
+*on* and left you to type `{"reasoning_effort": "none"}` into extra body fields,
+which meant the default configuration cost more and ran slower than every number
+on this page.
 
-```json
-{ "reasoning_effort": "none" }
-```
+What made it a hand-typed field rather than a default was that the field is not
+portable — see the table below. The setting resolves that by asking the
+**preset**, not the user, how a given endpoint spells "do not think", and sending
+nothing where nobody has measured an answer. Today that is Gemini on every model,
+and xAI on `grok-4.3` alone. Everywhere else the setting is honest about doing
+nothing, and **Extra body fields** remains the escape hatch if you know your
+endpoint's dialect.
 
-**No preset ships this, deliberately** — you add it per connection. Presets only
-carry fields that are harmless if they end up somewhere unintended, and this one
-is not: only the provider dropdown rewrites a connection's extra body, so a
-connection repointed at another endpoint by editing its base URL keeps whatever
-it had. On xAI that is an HTTP 400, and 400 is not retryable, so the fallback
-chain stops instead of moving to the next connection.
+The fragment is derived at request time and **guarded on the base URL still
+matching the preset's**. That guard is the reason this cannot live in extra body
+fields: only the provider dropdown rewrites those, so anything stored there
+survives a base-URL edit and travels to the next endpoint — where, on xAI, it is
+an HTTP 400 on every request. A derived fragment simply stops being sent.
 
-So **the extension's out-of-the-box behaviour is thinking on**, while every
-number below was measured with it off. Expect a connection you have not
-configured to cost more and run slower than these tables.
-
-**This is not safe to leave set on a connection you point at another provider.**
-An earlier version of this page said it was, on the reasoning that an endpoint
-which does not know a field will drop it. Gemini does. xAI does not — it returns
-HTTP 400:
+**Do not set it by hand on a connection you point at another provider.** An
+earlier version of this page said that was safe, on the reasoning that an
+endpoint which does not know a field will drop it. Gemini does. xAI does not — it
+returns HTTP 400:
 
 | Model | `reasoning_effort: "none"` |
 |---|---|
@@ -352,7 +369,7 @@ visible", which is [weaker than it sounds](#caveats):
 |---|---|---|
 | **Live check** | `gemini-2.5-flash-lite` + `reasoning_effort: "none"` | 14/14 on every run, no false alarms, and the cheapest model on the page at $0.14 per 1,000 checks. Both the best and the cheapest, which is not how this usually goes. |
 | **If latency matters more** | `gemini-3.1-flash-lite` | 250ms faster (918ms vs 1173ms), 13/14 and equally stable, at 3× the price. For as-you-type underlines that trade is worth considering. |
-| **Quick actions** | `gemini-2.5-flash` + `reasoning_effort: "none"` | The preset's default *model* — the `reasoning_effort` half you add yourself, and no preset sets it. Volume is low enough that price barely matters. Note this is **not** what the eval measures — see the caveat below. |
+| **Quick actions** | `gemini-2.5-flash` + `reasoning_effort: "none"` | The preset's default model, and the preset now sends the `reasoning_effort` half too. Volume is low enough that price barely matters. Note this is **not** what the eval measures — see the caveat below. |
 | **Avoid for live check** | 3.5-flash, 3.6-flash, 2.5-pro | 4–20× the cost on a task a flash-lite model does perfectly. |
 
 **Caveat on the quick-actions row.** `npm run eval` exercises the live-check
@@ -373,9 +390,11 @@ seconds.
 | **Quick actions** | `grok-4.3` | 14/14, and the 8s wait is fine when you pressed a button on purpose. Leave thinking on — it is what buys the last two points. |
 | **Avoid for live check** | `grok-4.5`, `grok-build-0.1` | 15s and 22s. `grok-build-0.1` also spends 3,428 thinking tokens on the eval's 14-sentence request, making the cheapest per-token model the second most expensive to run. |
 
-Do **not** put `{"reasoning_effort": "none"}` on an xAI connection unless the
-model is `grok-4.3`. Every other Grok model rejects the field with HTTP 400 and
-the request fails outright.
+Do **not** put `{"reasoning_effort": "none"}` into extra body fields on an xAI
+connection. Every Grok except `grok-4.3` rejects the field with HTTP 400 and the
+request fails outright — which is why the preset sends it on that one id and
+nowhere else, and why the **Thinking** setting says so rather than silently doing
+nothing. Leave it to the preset.
 
 Against Gemini, honestly: Grok costs about 10× more for live checking
 ($1.50 versus $0.14 per 1,000) and is slower, at one fixture *worse*. If live
@@ -397,8 +416,11 @@ score one fixture better.
 | **Avoid for live check** | `mistralai/mistral-small-3.2-24b-instruct`, `meta-llama/llama-3.3-70b-instruct` | 8.7/14 and 10.7/14, both with false alarms — and llama flattened `usted` to `tú` and translated the mixed ES/EN fixture into Spanish. |
 | **Not tested** | the `:free` variants | Free tiers are out of scope on this page, for every provider — [see below](#the-free-tier). |
 
-Two OpenRouter-specific things to set up. Put `{"reasoning_effort": "none"}` in
-**Extra body fields** — it is accepted by every model measured here except
+Two OpenRouter-specific things to set up. The **Thinking** setting does nothing
+here — an aggregator's behaviour is a property of the upstream, not of
+OpenRouter, so no fragment is declared for it — so put `{"reasoning_effort":
+"none"}` in **Extra body fields** yourself. It is accepted by every model
+measured here except
 `openai/gpt-oss-20b`, which rejects it with HTTP 400, and it cut the bill 10.8× on
 `qwen3.7-flash` and 3.2× on `deepseek-v4-flash` with no loss of accuracy on
 either. And if a specific price matters to you, pin the upstream: routing picks
@@ -513,6 +535,11 @@ No preset defaults to an excluded model, and that is checked rather than assumed
 xAI defaults to `grok-4.20-0309-non-reasoning`, OpenCode Go to `gpt-5.6-luna`,
 Gemini to `gemini-2.5-flash`. `npm run eval` measures none of them by default
 either.
+
+Nor does any preset leave thinking on where it can be turned off: the
+**Thinking** setting defaults to off and the preset supplies the dialect, so the
+shipped configuration is now the measured one. `tools/thinking-check.ts` asserts
+which endpoints get the field and which must never see it.
 
 Excluded models are **not deleted from the tables above.** Those measurements are
 the reason for excluding them, and removing them would leave the rule asserted

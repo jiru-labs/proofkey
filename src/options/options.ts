@@ -1,5 +1,5 @@
 import { normalizeOrigin, originMatchPattern } from '../core/browser';
-import { getPreset, normalizeBaseUrl, PRESETS } from '../core/presets';
+import { getPreset, normalizeBaseUrl, PRESETS, thinkingNote } from '../core/presets';
 import { BUILT_IN_ACTIONS } from '../core/prompts';
 import { listModels, originPattern, runCompletion, validateConnection } from '../core/providers';
 import {
@@ -331,6 +331,25 @@ function renderConnectionBody(connection: Connection, problem: string | null): H
             }),
           )
         : null,
+      field(
+        'Thinking',
+        select(
+          [
+            { value: 'off', label: 'Turn it off where the provider allows it' },
+            { value: 'default', label: "Leave the endpoint's own default" },
+          ],
+          connection.thinking,
+          {
+            on: {
+              change: (e) => {
+                connection.thinking = (e.target as HTMLSelectElement).value as Connection['thinking'];
+                render();
+              },
+            },
+          },
+        ),
+        thinkingNote(connection),
+      ),
       field(
         'Extra headers',
         jsonEditor(connection.extraHeaders, (value) => {

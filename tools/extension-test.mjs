@@ -379,6 +379,12 @@ async function run() {
     }
 
     check(
+      'no reasoning_effort on a provider with no measured switch',
+      !('reasoning_effort' in request.body),
+      'sending a field this endpoint has not been checked against fails every request',
+    );
+
+    check(
       'style-guide rules would ride on the system prompt',
       String(request.body.system ?? request.body.messages?.[0]?.content ?? '').includes(
         'Output only the resulting text',
@@ -386,6 +392,51 @@ async function run() {
       'output contract present',
     );
   }
+
+  // --------------------------------------------------------------- thinking
+  // Thinking is off by default, and the fragment that turns it off is derived
+  // from the preset at request time rather than stored in extraBody — so that
+  // it cannot outlive the endpoint it was measured against. This connection
+  // carries presetId `gemini` while pointing at the stub, which is exactly the
+  // shape of a connection someone repointed by editing its base URL. On xAI
+  // that field is HTTP 400 on every request.
+  console.log('\nthinking:');
+  seen.length = 0;
+
+  await page.evaluate(
+    (settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }),
+    { ...geminiSettings(), connections: [{ ...geminiSettings().connections[0], model: 'stub-model' }] },
+  );
+
+  const thinkingReply = await page.evaluate(() =>
+    chrome.runtime.sendMessage({
+      type: 'proofkey:run',
+      actionId: 'fix-grammar',
+      text: 'Their is alot of things to do.',
+    }),
+  );
+  check('worker returns a result', thinkingReply?.ok === true, thinkingReply?.error ?? '');
+  check(
+    'a Gemini connection pointed elsewhere sends no reasoning_effort',
+    seen[0] && !('reasoning_effort' in seen[0].body),
+    'the preset is Gemini but the base URL is not, so the measured switch must not travel',
+  );
+
+  // The setting is only worth having if it is visible and says what it did.
+  await page.reload();
+  const thinkingHint = await page
+    .locator('.field')
+    // Matched on the label, not on text anywhere in the field: the Gemini
+    // preset's own hint mentions thinking too, and matched first.
+    .filter({ has: page.locator('label.field__label', { hasText: /^Thinking$/ }) })
+    .locator('.field__hint')
+    .first()
+    .textContent();
+  check(
+    'the options page explains why nothing was sent',
+    (thinkingHint ?? '').includes('no longer matches'),
+    thinkingHint ?? 'no hint rendered',
+  );
 
   // ------------------------------------------------------------ model picker
   // Regression test for a real report: the Gemini dropdown appeared to hold a

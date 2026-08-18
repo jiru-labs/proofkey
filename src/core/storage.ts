@@ -30,6 +30,7 @@ export function connectionFromPreset(presetId: PresetId, label?: string): Connec
     extraBody: { ...(preset.extraBody ?? {}) },
     extraQuery: { ...(preset.extraQuery ?? {}) },
     maxOutputTokens: 2048,
+    thinking: 'off',
   };
 }
 
@@ -69,9 +70,26 @@ export async function loadSettings(): Promise<Settings> {
     ...raw,
     profile: { ...defaults.profile, ...(raw.profile ?? {}) },
     liveCheck: { ...defaults.liveCheck, ...(raw.liveCheck ?? {}) },
-    connections: raw.connections?.length ? raw.connections : defaults.connections,
+    connections: raw.connections?.length
+      ? raw.connections.map(migrateConnection)
+      : defaults.connections,
     activeConnectionId: raw.activeConnectionId ?? defaults.activeConnectionId,
   };
+}
+
+/**
+ * Fills in per-connection fields added after this object was written. The merge
+ * in `loadSettings` is shallow and only reaches the top level, so this is where
+ * a connection stored by an older version picks up a new field's default.
+ *
+ * `thinking` defaults to `off` for connections that predate it, which changes
+ * what they send. That is intended: it is the setting they would have wanted,
+ * and anyone who deliberately set `reasoning_effort` by hand keeps it, because
+ * `extraBody` is merged after this and wins.
+ */
+function migrateConnection(stored: Connection): Connection {
+  const partial = stored as Partial<Connection>;
+  return { ...stored, thinking: partial.thinking ?? 'off' };
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {

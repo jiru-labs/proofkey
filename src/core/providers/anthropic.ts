@@ -1,3 +1,4 @@
+import { disableThinkingBody } from '../presets';
 import type { Connection } from '../types';
 import {
   buildHeaders,
@@ -36,6 +37,10 @@ export async function complete(
     max_tokens: connection.maxOutputTokens,
     system: request.systemPrompt,
     messages: [{ role: 'user', content: request.userText }],
+    // No Anthropic preset declares a fragment — nobody has measured this
+    // transport's dialect — so today this contributes nothing. Wired anyway, so
+    // the day it is measured it is one line in `presets.ts` and no code change.
+    ...disableThinkingBody(connection),
     ...connection.extraBody,
   };
 

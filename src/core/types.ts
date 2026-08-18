@@ -100,6 +100,18 @@ export interface Connection {
    */
   temperature?: number;
   maxOutputTokens: number;
+  /**
+   * `off` sends the preset's measured disable-thinking fragment; `default`
+   * sends nothing and leaves the endpoint's own behaviour alone.
+   *
+   * Defaults to `off`, because proofreading is not a task thinking helps with:
+   * a model that cannot disable it returns 194 completion tokens where one with
+   * it disabled returns 196 — the same answer, at 4.2s to 48s instead of ~1s,
+   * and on xAI at 1,199 to 3,428 billed reasoning tokens on top. Only the live
+   * check has been measured; the quick actions are assumed, not proven. See
+   * MODELS.md.
+   */
+  thinking: 'off' | 'default';
 }
 
 /** A prompt the user can invoke from the context menu or the inline card. */
