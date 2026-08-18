@@ -1,6 +1,17 @@
 import type { Connection } from '../types';
 
-/** Raised for any provider failure, so the fallback chain can inspect it. */
+/**
+ * Raised for any provider failure.
+ *
+ * Nothing branches on `status` — it is carried for diagnosis. This class used
+ * to expose a `retryable` getter gating 408/429/5xx, which no caller ever read,
+ * and gating on it would have been wrong: `runCompletion` tries the next
+ * connection on *every* failure, deliberately. A mistyped key on the primary
+ * answers 401, and covering that is precisely what a fallback connection is
+ * for — one provider's rejection says nothing about the next one's, which is a
+ * different question from whether re-sending to the *same* endpoint is
+ * worthwhile. Nowhere in ProofKey re-sends to the same endpoint.
+ */
 export class ProviderError extends Error {
   readonly status: number | undefined;
   readonly connectionLabel: string;
@@ -10,12 +21,6 @@ export class ProviderError extends Error {
     this.name = 'ProviderError';
     this.connectionLabel = connectionLabel;
     this.status = status;
-  }
-
-  /** Worth trying the next connection in the chain. */
-  get retryable(): boolean {
-    if (this.status === undefined) return true; // network / CORS / timeout
-    return this.status === 408 || this.status === 429 || this.status >= 500;
   }
 }
 

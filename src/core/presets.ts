@@ -132,8 +132,11 @@ export const PRESETS: readonly Preset[] = [
       // are inert if they leak — OpenRouter's X-Title, Azure's api-version.
       // This one is fatal if it leaks: a connection repointed at xAI by base
       // URL alone keeps its extra body (only the provider dropdown rewrites
-      // it), xAI answers 400, and 400 is not retryable, so the fallback chain
-      // stops rather than moving on. Users who want it add it per connection.
+      // it), and xAI answers 400 to every request that carries the field. The
+      // chain does move on — a fallback covers for it and the toast names the
+      // connection that failed — so the cost is a doomed request on every
+      // action rather than a dead feature, until someone finds the stale
+      // field. Users who want it add it per connection.
       stripIdPrefix: 'models/',
       hint: 'Gemini\'s OpenAI-compatible endpoint. Thinking is on by default and billed as output: add {"reasoning_effort": "none"} to extra body fields to turn it off on 2.5-flash and 2.5-flash-lite. Gemini 3.x and 2.5-pro ignore the field and think anyway; see MODELS.md.',
       docsUrl: 'https://aistudio.google.com/apikey',
