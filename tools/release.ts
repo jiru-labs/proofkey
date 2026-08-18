@@ -110,15 +110,22 @@ for (const file of [MANIFEST, PACKAGE]) {
   writeFileSync(file, next)
 }
 
+// Leave the tree as we found it, so a failed release is not a half-bumped
+// repo. Every exit after the bump goes through here: a rejected upload used to
+// leave the manifest reading a version that had shipped nowhere, which is the
+// state this whole dance exists to avoid.
+const rollBack = (why: string): never => {
+  for (const [file, raw] of originals) writeFileSync(file, raw)
+  stopServer()
+  console.error(`\n${why} — rolled the version back to ${current}.`)
+  process.exit(1)
+}
+
 step('Running the full verify suite')
 try {
   run('npm', ['run', 'verify'])
 } catch {
-  // Leave the tree as we found it, so a failed release is not a half-bumped repo.
-  for (const [file, raw] of originals) writeFileSync(file, raw)
-  stopServer()
-  console.error(`\nverify failed — rolled the version back to ${current}. Nothing was sent.`)
-  process.exit(1)
+  rollBack('verify failed, and nothing was sent')
 }
 stopServer()
 
@@ -173,7 +180,11 @@ const upload = (await uploadResponse.json()) as {
 }
 if (upload.uploadState !== 'SUCCESS') {
   console.error('Upload rejected:', JSON.stringify(upload, null, 2))
-  process.exit(1)
+  // The store refuses a package while one is already in review — the error code
+  // is ITEM_NOT_UPDATABLE. Unlike a listing edit, a package does not fold into
+  // the pending submission: wait for the public listing to show the version in
+  // review, then run this again.
+  rollBack('the store refused the upload')
 }
 console.log(`uploadState: ${upload.uploadState}`)
 
@@ -190,6 +201,9 @@ const publishResponse = await fetch(
 const publish = (await publishResponse.json()) as { status?: string[]; statusDetail?: string[] }
 if (!publishResponse.ok) {
   console.error('Publish rejected:', JSON.stringify(publish, null, 2))
+  // The package is uploaded but unsubmitted at this point, which is exactly the
+  // --draft state, so the version stays bumped and only the submit is retried.
+  console.error(`\nThe ${version} package is uploaded as a draft. Submit it from the dashboard.`)
   process.exit(1)
 }
 console.log((publish.statusDetail ?? publish.status ?? []).join('\n'))
