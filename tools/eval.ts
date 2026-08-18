@@ -260,7 +260,11 @@ async function once({
   const ms = Date.now() - started;
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status} — ${(await response.text()).slice(0, 300)}`);
+    // `retry-after` is the only part of a 429 that says when to come back, and
+    // most providers send it. Losing it turns a wait into a guess.
+    const retryAfter = response.headers.get('retry-after');
+    const suffix = retryAfter ? ` (retry-after: ${retryAfter})` : '';
+    throw new Error(`HTTP ${response.status}${suffix} — ${(await response.text()).slice(0, 300)}`);
   }
 
   const payload = await response.json();
@@ -285,7 +289,12 @@ async function once({
 
 interface Summary {
   model: string;
+  /** Runs that came back. Fewer than `attempted` when requests failed. */
   runs: Run[];
+  /** Runs asked for, so a mean is never quoted without its denominator. */
+  attempted: number;
+  /** Distinct failure messages and how often each one came back. */
+  failures: Map<string, number>;
   /** Correct count for each run. */
   perRun: number[];
   /** Fixture indices that were correct in some runs and wrong in others. */
@@ -295,7 +304,12 @@ interface Summary {
   wrong: Map<number, Set<string>>;
 }
 
-function summarise(model: string, runs: Run[]): Summary {
+function summarise(
+  model: string,
+  runs: Run[],
+  attempted: number,
+  failures: Map<string, number>,
+): Summary {
   const perRun: number[] = [];
   const wrong = new Map<number, Set<string>>();
   const matchCount = FIXTURES.map(() => 0);
@@ -324,7 +338,16 @@ function summarise(model: string, runs: Run[]): Summary {
     .filter(({ count }) => count > 0 && count < held)
     .map(({ index }) => index);
 
-  return { model, runs, perRun, unstable, falseAlarms: falseAlarms / Math.max(held, 1), wrong };
+  return {
+    model,
+    runs,
+    attempted,
+    failures,
+    perRun,
+    unstable,
+    falseAlarms: falseAlarms / Math.max(held, 1),
+    wrong,
+  };
 }
 
 const mean = (xs: number[]): number => xs.reduce((a, b) => a + b, 0) / Math.max(xs.length, 1);
@@ -407,6 +430,9 @@ async function main(): Promise<void> {
   for (const model of models) {
     process.stdout.write(`  ${model} `);
     const collected: Run[] = [];
+    // Counted rather than listed: a rate-limited key returns the same sentence
+    // on every run, and printing it five times buries everything else.
+    const failures = new Map<string, number>();
     for (let i = 0; i < runs; i++) {
       try {
         const run = await once({ base, key, model, reasoning, maxTokens, temperature });
@@ -414,10 +440,13 @@ async function main(): Promise<void> {
         process.stdout.write(run.contractBroken ? 'x' : '.');
       } catch (error) {
         process.stdout.write('!');
-        if (i === 0) console.log(`\n    ${(error as Error).message}`);
+        const message = (error as Error).message;
+        failures.set(message, (failures.get(message) ?? 0) + 1);
       }
     }
-    if (collected.length) summaries.push(summarise(model, collected));
+    // Pushed even with nothing collected: a model that failed every run must
+    // still appear below. Omitting the row reads as "not asked for".
+    summaries.push(summarise(model, collected, runs, failures));
     console.log('');
   }
 
@@ -425,6 +454,7 @@ async function main(): Promise<void> {
   // Per-column widths: model ids run long and the numeric columns do not.
   const columns: [string, number][] = [
     ['Model', 30],
+    ['Runs', 8],
     ['Correct', 10],
     ['Spread', 9],
     ['False alarms', 14],
@@ -439,6 +469,12 @@ async function main(): Promise<void> {
   console.log(row(columns.map(([label]) => label)));
 
   for (const s of summaries) {
+    if (s.runs.length === 0) {
+      // Every column below would be an average over nothing. A zero here would
+      // read as a score of zero, which is a different claim entirely.
+      console.log(row([s.model, `0/${s.attempted}`, ...columns.slice(2).map(() => '—')]));
+      continue;
+    }
     const held = s.runs.filter((r) => !r.contractBroken).length;
     const usage = s.runs[0]?.usage ?? {};
     const thinking = reasoningTokens(usage);
@@ -447,6 +483,7 @@ async function main(): Promise<void> {
     console.log(
       row([
         s.model,
+        `${s.runs.length}/${s.attempted}`,
         `${mean(s.perRun).toFixed(1)}/${FIXTURES.length}`,
         s.perRun.length > 1 ? `${Math.min(...s.perRun)}–${Math.max(...s.perRun)}` : 'n/a',
         s.falseAlarms.toFixed(1),
@@ -462,6 +499,28 @@ async function main(): Promise<void> {
     '\nCost is the provider\'s own figure for these 14-fixture requests, scaled to 1,000 of them.',
   );
   console.log('It is not comparable to tools/cost.ts, which sizes a real 8-sentence live check.');
+
+  // A mean over three runs that silently became one is the same trap as
+  // quoting a three-run result: the figure looks as solid as a full one.
+  const attempted = summaries.reduce((n, s) => n + s.attempted, 0);
+  const dropped = summaries.reduce((n, s) => n + (s.attempted - s.runs.length), 0);
+  if (dropped) {
+    console.log(`\n\nREQUEST FAILURES — ${dropped} of ${attempted} requests never came back.`);
+    console.log('Every figure above is an average over the runs that did. Read these first.\n');
+    for (const s of summaries) {
+      if (!s.failures.size) continue;
+      console.log(`${s.model}:`);
+      for (const [message, count] of s.failures) console.log(`  ${count}x ${message}`);
+      console.log('');
+    }
+    if ([...summaries].some((s) => [...s.failures.keys()].some((m) => m.includes('HTTP 429')))) {
+      console.log(
+        'A 429 is the key\'s own quota, not this machine\'s — it is counted per account or\n' +
+          'project, so running from somewhere else draws on the same allowance. Check the\n' +
+          'limits for the key before re-running, and do not score a partial result.',
+      );
+    }
+  }
 
   // Only aggregators report this. Two upstreams for one model id means the
   // latency and score above are averages over different machines.
