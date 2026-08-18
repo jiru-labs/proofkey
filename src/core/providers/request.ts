@@ -173,10 +173,18 @@ function describeNetworkFailure(cause: unknown, url: string): string {
 }
 
 function extractErrorMessage(payload: unknown, response: Response): string {
-  if (typeof payload === 'string' && payload.trim()) return payload.trim().slice(0, 500);
+  // Gemini's OpenAI-compatible endpoint wraps the error in a JSON *array* —
+  // `[{"error": {"code": 429, "message": "..."}}]` — where every other provider
+  // sends the object bare. An array is `typeof 'object'`, so the lookups below
+  // all missed and every Google failure read as a bare "429 request failed",
+  // dropping the one sentence that says which quota ran out. Verified against
+  // the live endpoint on 2026-08-18.
+  const body = Array.isArray(payload) ? payload[0] : payload;
 
-  if (payload && typeof payload === 'object') {
-    const record = payload as Record<string, unknown>;
+  if (typeof body === 'string' && body.trim()) return body.trim().slice(0, 500);
+
+  if (body && typeof body === 'object') {
+    const record = body as Record<string, unknown>;
     const error = record['error'];
     if (typeof error === 'string') return error;
     if (error && typeof error === 'object') {
