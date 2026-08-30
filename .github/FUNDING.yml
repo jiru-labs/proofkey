@@ -1,0 +1,13 @@
+# Renders the "Sponsor" button on the repo page.
+#
+# Points at the personal account, not the jiru-labs org, and that is deliberate:
+# GitHub Sponsors pays out through Stripe Connect, which wants a bank account in
+# the recipient's name. Jiru Labs is not incorporated, so an org listing runs
+# straight into the same wall as the Chrome Web Store trader declaration. The
+# individual route has no such gate and is the one that can actually be enrolled
+# today.
+#
+# INERT UNTIL ENROLMENT. GitHub renders nothing (or a dead link) while
+# https://github.com/sponsors/nyakojiru does not exist. Enrol first, then commit
+# this file — a Sponsor button that 404s is worse than no button at all.
+github: [nyakojiru]
