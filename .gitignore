@@ -14,3 +14,7 @@ tools/lexical-editor.js
 store-shots/
 .shots-ext/
 .shots-profile/
+
+# Local operator tooling: publisher UUID, machine paths, store workflow.
+# Not for a public repo.
+.claude/
