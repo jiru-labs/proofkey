@@ -5,7 +5,8 @@
     <title>ProofKey promo tile</title>
     <!--
       The Chrome Web Store promo tiles, at ?size=small (440x280) and
-      ?size=marquee (1400x560).
+      ?size=marquee (1400x560), plus ?size=social (1280x640) for GitHub's
+      social preview.
 
       The check mark is inlined as SVG rather than loaded from `public/icons/`,
       so this renders from a file:// URL with no server and no build step. It is
@@ -86,6 +87,11 @@
 
       /* 1400x560 — the marquee, used if the listing is ever featured. */
       body.marquee { --mark: 200px; --gap: 64px; --name: 104px; --line: 38px; }
+
+      /* 1280x640 — not a store size. GitHub's social preview, which is what
+         renders wherever the repo link is shared. Without it GitHub serves an
+         auto-generated card of the name and star count instead. */
+      body.social { --mark: 190px; --gap: 60px; --name: 96px; --line: 36px; }
     </style>
   </head>
   <body>

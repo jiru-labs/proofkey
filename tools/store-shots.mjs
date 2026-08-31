@@ -236,13 +236,17 @@ deviceScaleFactor: 1,
 }
 
 /**
- * The promo tiles, at the two sizes the store defines. Exact pixels, so no
- * device scale factor here — a 2x tile is the wrong size, not a sharper one.
+ * The promo tiles, at the two sizes the store defines, plus GitHub's social
+ * preview — which is not a store size but is generated from the same mark, so
+ * a link to the repo renders as the project rather than as an auto-built card.
+ * Exact pixels, so no device scale factor here — a 2x tile is the wrong size,
+ * not a sharper one.
  */
 async function tileShots(browser) {
   const tiles = [
     { size: 'small', width: 440, height: 280, name: '05-promo-tile-440x280.png' },
     { size: 'marquee', width: 1400, height: 560, name: '06-marquee-1400x560.png' },
+    { size: 'social', width: 1280, height: 640, name: '07-github-social-1280x640.png' },
   ];
 
   for (const tile of tiles) {
