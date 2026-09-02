@@ -12,9 +12,34 @@ No backend, no account, no telemetry. Your text goes from your browser straight 
 >
 > **New here?** [Start with Gemini](#no-api-key-yet-start-with-gemini): about two minutes from nothing to working underlines, and ordinary use usually costs nothing.
 >
-> **What is actually known to work is a much shorter list than what is built.** Two sites (WhatsApp Web, X) and five providers (Google Gemini, xAI, OpenRouter, OpenCode Go, and a self-hosted llama.cpp) have been confirmed by hand against real keys; the rest is covered by automated tests, or by nothing. [COMPATIBILITY.md](COMPATIBILITY.md) says exactly which is which — and [reports](CONTRIBUTING.md) are the fastest way to grow that list.
+> **What is actually known to work is a much shorter list than what is built.** The table below is the whole of it — [reports](CONTRIBUTING.md) are the fastest way to grow it.
 
 ---
+
+## Where it works today
+
+Everything here was run by hand, in a real browser, against a real key. Everything
+else is either covered by automated tests or by nothing at all, and
+[COMPATIBILITY.md](COMPATIBILITY.md) marks every row with the evidence behind it.
+
+**Sites**
+
+| Site | Status |
+|---|---|
+| WhatsApp Web | **Verified** — 2026-08-01 |
+| X / Twitter | **Verified** — 2026-08-02 |
+| Gmail · Slack · Notion · Discord · LinkedIn · Reddit · GitHub | *Untested* — same code path as a verified one, but nobody has run it |
+| Google Docs | **Not supported** — text is painted to a canvas, so there is nothing to underline |
+
+**Providers**
+
+| Provider | Status |
+|---|---|
+| Google Gemini · xAI (Grok) · OpenRouter · OpenCode Go · llama.cpp (self-hosted) | **Verified** against real keys |
+| The other 31 presets | *Prefilled, not confirmed* — the base URL is filled in for you, that is all it means |
+
+Untested does not mean broken: most of these share a code path with something
+verified. It means nobody has checked, and this project would rather say so.
 
 ## Why
 
