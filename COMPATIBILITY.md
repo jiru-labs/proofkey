@@ -77,7 +77,7 @@ here, that alone is worth a report.
 | Outlook / Hotmail | Rooster (`contenteditable`) | `Verified` | 2026-09-02, published build: 4 underlines, `erors`→`errors` applied, count fell to 3. **Outlook's own autocorrect rewrote four of the six seeded errors before ProofKey saw the text**, and its native spelling popup renders underneath ProofKey's card — two correctors on one field |
 | Infomaniak Mail | `contenteditable` inside a **cross-origin iframe** | `Broken` | 2026-09-02: nothing is underlined and no badge appears. The whole app is an iframe at `mail.infomaniak.com` inside a `ksuite.infomaniak.com` shell, and the content script never enters it — see *Editors in iframes* below. Granting **both** origins does not help |
 | Tuta | `contenteditable` | `Untested` | — |
-| iCloud Mail | `contenteditable` | `Untested` | — |
+| iCloud Mail | `contenteditable` inside a **same-origin iframe** | `Broken` | 2026-09-02: the app runs in an iframe at `www.icloud.com/applications/mail2/…`. With `https://www.icloud.com` granted, the top frame has `#proofkey-root` and **the iframe does not** — same origin, same granted pattern, no injection. This is the control that isolates the cause to `allFrames`; see below |
 | Slack | Quill | `Untested` | — |
 | Notion | ProseMirror-like | `Untested` | — |
 | Discord | Slate | `Untested` | — |
@@ -95,7 +95,15 @@ before treating that row as current.
 
 ### Editors in iframes are not reached at all
 
-Measured 2026-09-02 on Infomaniak Mail, and it is structural rather than site-specific.
+Measured 2026-09-02 on Infomaniak Mail and iCloud Mail, and it is structural
+rather than site-specific.
+
+**The control that proves it is iCloud.** Infomaniak's frame is cross-origin, so
+"the inner origin was never granted" stayed a live alternative explanation.
+iCloud's frame is **same-origin** — `www.icloud.com` inside `www.icloud.com`,
+matching the one pattern that was granted — and the top frame has `#proofkey-root`
+while the frame has none. Same origin, same pattern, no injection. That leaves
+only the flag.
 The content script is registered with `matches`, `js` and `runAt` and **no
 `allFrames`** (`src/background/index.ts:174`), and the on-demand path injects with
 `target: { tabId }` and no `allFrames` either (`src/core/browser.ts:47`). Chrome
