@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ProofKey",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "BYOK AI writing assistant. Fix grammar and rewrite text with your own LLM API key. No backend, no telemetry.",
   "minimum_chrome_version": "116",
   "permissions": ["storage", "contextMenus", "activeTab", "scripting"],
