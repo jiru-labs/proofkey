@@ -114,11 +114,21 @@ underlines, no badge, no error. It fails silently, which is the worst shape for
 this: the user sees an extension that simply does not work and has no way to tell
 why.
 
-Adding `allFrames: true` is the obvious fix and it does **not** widen exposure on
-its own: frames are still only injected where the frame's own origin matches a
-granted pattern, so an ad iframe on a granted site stays untouched unless its
-origin was granted too. It is a behaviour change to a shipped extension, so it
-wants its own release and a test.
+**Fixed in `main`, not yet released.** `allFrames: true` is now set on both
+injection paths (9e531a5). It does **not** widen exposure: every frame is still
+matched against the granted origins on its own url, so a frame whose origin the
+user never granted is still skipped, ad iframes included.
+
+`npm run test:ext` reproduces the bug against a real frame tree — a served page
+with a same-origin iframe — rather than trusting the registration object, and the
+assertion was watched failing before the fix went in. The test carries its own
+control: *the content script lands in the top frame* passes while *and in a
+same-origin subframe* fails, which is what pinned the cause to the flag rather
+than to permissions.
+
+**The two `Broken` rows above still describe the published 0.1.3 build**, which is
+what users have. They stay `Broken` until a release ships the fix and both sites
+are re-run by hand — a passing test is not a verified site.
 
 The X visit is worth reading as a method note. Live checking reported "no issues
 found" on a tweet with four errors in it, and the tempting reading was that
