@@ -76,7 +76,7 @@ here, that alone is worth a report.
 | Telegram Web | `contenteditable` | `Verified` | 2026-09-02, published build: 8 underlines in the message box, apply exact |
 | Outlook / Hotmail | Rooster (`contenteditable`) | `Verified` | 2026-09-02, published build: 4 underlines, `erors`→`errors` applied, count fell to 3. **Outlook's own autocorrect rewrote four of the six seeded errors before ProofKey saw the text**, and its native spelling popup renders underneath ProofKey's card — two correctors on one field |
 | Infomaniak Mail | `contenteditable` inside a **cross-origin iframe** | `Broken` | 2026-09-02: nothing is underlined and no badge appears. The whole app is an iframe at `mail.infomaniak.com` inside a `ksuite.infomaniak.com` shell, and the content script never enters it — see *Editors in iframes* below. Granting **both** origins does not help |
-| Tuta | `contenteditable` | `Untested` | — |
+| Tuta | `contenteditable` | `Verified` | 2026-09-02, published build: 8 underlines in the compose body, `sentance`→`sentence` applied and the field re-read exact. No iframes anywhere in the app, so the frame limitation below does not reach it |
 | iCloud Mail | `contenteditable` inside a **same-origin iframe** | `Broken` | 2026-09-02: the app runs in an iframe at `www.icloud.com/applications/mail2/…`. With `https://www.icloud.com` granted, the top frame has `#proofkey-root` and **the iframe does not** — same origin, same granted pattern, no injection. This is the control that isolates the cause to `allFrames`; see below |
 | Slack | Quill | `Untested` | — |
 | Notion | ProseMirror-like | `Untested` | — |
@@ -87,7 +87,7 @@ here, that alone is worth a report.
 | GitHub (comments, issues) | `<textarea>`, CodeMirror in places | `Untested` | — |
 | Google Docs | canvas | `Not supported` | See above |
 
-Six sites have now been run by hand. WhatsApp Web is the one row still resting on
+Seven sites have now been run by hand. WhatsApp Web is the one row still resting on
 the **unpacked development build** (2026-08-01); everything marked 2026-09-02 was run
 against the **published 0.1.3 build** from the store, which is a different
 extension id with its own permissions. Re-confirm WhatsApp on the published build
