@@ -45,6 +45,19 @@ function startStubProvider() {
         body: body ? JSON.parse(body) : null,
       });
 
+      // Two HTML routes, so injection scope can be exercised against a real
+      // frame tree rather than inferred from the registration object. Same
+      // origin as the host page, which is the case iCloud Mail turned out to be.
+      if (request.url.startsWith('/frame-')) {
+        response.writeHead(200, { 'content-type': 'text/html' });
+        response.end(
+          request.url.startsWith('/frame-host')
+            ? '<!doctype html><title>host</title><iframe src="/frame-child"></iframe>'
+            : '<!doctype html><title>child</title><textarea>i has an eror</textarea>',
+        );
+        return;
+      }
+
       response.writeHead(200, {
         'content-type': 'application/json',
         'access-control-allow-origin': '*',
@@ -315,6 +328,32 @@ async function run() {
       !!script && script.js.includes('content.js'),
       script?.js?.join(', ') ?? 'no files',
     );
+
+    check(
+      'and it registers for subframes too',
+      script?.allFrames === true,
+      'without allFrames the script reaches the top frame only, so any site whose '
+        + 'editor lives in an iframe gets no underlines, no badge and no error',
+    );
+
+    // The registration object can say the right thing and the script still not
+    // arrive, so this walks a real frame tree. A page serving a same-origin
+    // iframe is exactly the shape iCloud Mail and Infomaniak Mail turned out to
+    // have, and it is where ProofKey silently did nothing.
+    const framePage = await context.newPage();
+    await framePage.goto(`${origin}/frame-host`);
+    await framePage.waitForTimeout(1200);
+    const marker = (frame) => frame.evaluate(() => !!document.getElementById('proofkey-root'));
+    const inTop = await marker(framePage.mainFrame());
+    const child = framePage.frames().find((f) => f.url().includes('/frame-child'));
+    const inChild = child ? await marker(child) : false;
+    check('the content script lands in the top frame', inTop);
+    check(
+      'and in a same-origin subframe',
+      inChild,
+      'granted origin, matching pattern — if this fails the frame gets nothing at all',
+    );
+    await framePage.close();
 
     await setOrigins([]);
     await page.waitForTimeout(900);

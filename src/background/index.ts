@@ -176,6 +176,13 @@ async function syncShortcutOrigins(): Promise<void> {
       matches: granted,
       js: [CONTENT_SCRIPT],
       runAt: 'document_idle',
+      // Whole applications are built inside a frame -- iCloud Mail and Infomaniak
+      // Mail both are -- and Chrome defaults this to false, so the script reached
+      // the top frame only and those sites got no underlines, no badge and no
+      // error. This does not widen exposure: every frame is still matched against
+      // `granted` on its own url, so a frame whose origin the user never granted
+      // is still skipped.
+      allFrames: true,
     };
 
     if (existing) await chrome.scripting.updateContentScripts([script]);

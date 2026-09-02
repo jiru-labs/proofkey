@@ -44,7 +44,10 @@ export function hasDynamicContentScripts(): boolean {
  */
 export async function injectFiles(tabId: number, files: string[]): Promise<void> {
   if (hasScriptingApi()) {
-    await g.chrome!.scripting.executeScript({ target: { tabId }, files });
+    // allFrames for the same reason the registered script carries it: an editor
+    // inside a frame is invisible to a top-frame-only injection. Host permission
+    // is still checked per frame, so this reaches only frames already granted.
+    await g.chrome!.scripting.executeScript({ target: { tabId, allFrames: true }, files });
     return;
   }
 
