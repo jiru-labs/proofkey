@@ -72,17 +72,45 @@ here, that alone is worth a report.
 | Site | Editor (best-effort) | Status | Evidence |
 |---|---|---|---|
 | WhatsApp Web | Lexical | `Verified` | Long Spanish message came back scrambled, fixed in e2ae3b1, confirmed by the maintainer 2026-08-01 |
-| Gmail | `contenteditable` | `Untested` | — |
+| Gmail | `contenteditable` | `Verified` | Live check and apply, 2026-09-02, on the published 0.1.3 build: 9 underlines on a six-error sentence, `sentance`→`sentence` applied, field re-read exact, count fell to 8 |
+| Telegram Web | `contenteditable` | `Verified` | 2026-09-02, published build: 8 underlines in the message box, apply exact |
+| Outlook / Hotmail | Rooster (`contenteditable`) | `Verified` | 2026-09-02, published build: 4 underlines, `erors`→`errors` applied, count fell to 3. **Outlook's own autocorrect rewrote four of the six seeded errors before ProofKey saw the text**, and its native spelling popup renders underneath ProofKey's card — two correctors on one field |
+| Infomaniak Mail | `contenteditable` inside a **cross-origin iframe** | `Broken` | 2026-09-02: nothing is underlined and no badge appears. The whole app is an iframe at `mail.infomaniak.com` inside a `ksuite.infomaniak.com` shell, and the content script never enters it — see *Editors in iframes* below. Granting **both** origins does not help |
+| Tuta | `contenteditable` | `Untested` | — |
+| iCloud Mail | `contenteditable` | `Untested` | — |
 | Slack | Quill | `Untested` | — |
 | Notion | ProseMirror-like | `Untested` | — |
 | Discord | Slate | `Untested` | — |
 | LinkedIn | Quill | `Untested` | — |
-| X / Twitter | Draft.js / custom | `Verified` | `Ctrl+Shift+K` run by the maintainer 2026-08-02. Live checking did nothing on that same visit — two universal bugs, not X ones — and was confirmed working by the maintainer after f56f4ec, same day |
-| Reddit | Lexical | `Untested` | — |
+| X / Twitter | Draft.js / custom | `Verified` | `Ctrl+Shift+K` run by the maintainer 2026-08-02. Live checking did nothing on that same visit — two universal bugs, not X ones — and was confirmed working by the maintainer after f56f4ec, same day. Live check and apply **re-confirmed on the published 0.1.3 build 2026-09-02**: 8 underlines, apply exact, count fell to 7 |
+| Reddit | Lexical | `Verified` | 2026-09-02, published build: 9 underlines in the Lexical comment box, apply exact, count fell to 7. The write goes through `execCommand`, so Lexical's model stays in sync |
 | GitHub (comments, issues) | `<textarea>`, CodeMirror in places | `Untested` | — |
 | Google Docs | canvas | `Not supported` | See above |
 
-WhatsApp Web and X are the only sites any human has run this on.
+Six sites have now been run by hand. WhatsApp Web is the one row still resting on
+the **unpacked development build** (2026-08-01); everything marked 2026-09-02 was run
+against the **published 0.1.3 build** from the store, which is a different
+extension id with its own permissions. Re-confirm WhatsApp on the published build
+before treating that row as current.
+
+### Editors in iframes are not reached at all
+
+Measured 2026-09-02 on Infomaniak Mail, and it is structural rather than site-specific.
+The content script is registered with `matches`, `js` and `runAt` and **no
+`allFrames`** (`src/background/index.ts:174`), and the on-demand path injects with
+`target: { tabId }` and no `allFrames` either (`src/core/browser.ts:47`). Chrome
+defaults that flag to `false`, so both paths reach **the top frame only**.
+
+Any site whose editor lives in a child frame therefore gets nothing — no
+underlines, no badge, no error. It fails silently, which is the worst shape for
+this: the user sees an extension that simply does not work and has no way to tell
+why.
+
+Adding `allFrames: true` is the obvious fix and it does **not** widen exposure on
+its own: frames are still only injected where the frame's own origin matches a
+granted pattern, so an ad iframe on a granted site stays untouched unless its
+origin was granted too. It is a behaviour change to a shipped extension, so it
+wants its own release and a test.
 
 The X visit is worth reading as a method note. Live checking reported "no issues
 found" on a tweet with four errors in it, and the tempting reading was that
