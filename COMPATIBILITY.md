@@ -45,7 +45,7 @@ editors; engines are what the code branches on (`src/content/target.ts`).
 |---|---|---|---|
 | `<textarea>` | Mirror overlay for underlines, `execCommand` to write | `Tested` | `test:render` — `plain`, `odd` fields: overlay typography, box alignment, underline containment, card, apply. `chat` field: a lone unterminated sentence is checked rather than reported clean, and all three of its corrections apply in turn to reach the same text a single pass would produce |
 | `<input type=text>` | Same, single-line | `Tested` | `test:render` — `single` field |
-| Plain `contenteditable` | CSS Custom Highlight API for underlines, word-level diff to write | `Tested` | `test:render` — `rich` field, incl. bold surviving both a single apply and a whole-field rewrite |
+| Plain `contenteditable` | CSS Custom Highlight API for underlines, word-level diff to write | `Tested` | `test:render` — `rich` field, incl. bold surviving both a single apply and a whole-field rewrite. `blocks` field: an action run on a selected paragraph rewrites that paragraph and leaves the ones around it alone, asserted with the control that the selection really does have an element endpoint |
 | `contenteditable` that re-renders on every input | Same, edits bounded and awaited | `Tested` | `test:render` — `rerender` field |
 | **Lexical** (WhatsApp, Reddit) | `execCommand` through the browser's editing path; never a DOM mutation | `Tested` + `Verified` | `test:render` — `lexical` field, a real embedded Lexical instance (35a8351): whole-field rewrite, and live checking driven by a real clipboard paste. Verified against WhatsApp Web 2026-08-01 (e2ae3b1) |
 | **Quill** (Slack, LinkedIn) | Same path as Lexical | `Untested` | — |
@@ -75,9 +75,9 @@ here, that alone is worth a report.
 | Gmail | `contenteditable` | `Verified` | Live check and apply, 2026-09-02, on the published 0.1.3 build: 9 underlines on a six-error sentence, `sentance`→`sentence` applied, field re-read exact, count fell to 8 |
 | Telegram Web | `contenteditable` | `Verified` | 2026-09-02, published build: 8 underlines in the message box, apply exact |
 | Outlook / Hotmail | Rooster (`contenteditable`) | `Verified` | 2026-09-02, published build: 4 underlines, `erors`→`errors` applied, count fell to 3. **Outlook's own autocorrect rewrote four of the six seeded errors before ProofKey saw the text**, and its native spelling popup renders underneath ProofKey's card — two correctors on one field |
-| Infomaniak Mail | `contenteditable` inside a **cross-origin iframe** | `Broken` | 2026-09-02: nothing is underlined and no badge appears. The whole app is an iframe at `mail.infomaniak.com` inside a `ksuite.infomaniak.com` shell, and the content script never enters it — see *Editors in iframes* below. Granting **both** origins does not help |
+| Infomaniak Mail | `contenteditable` inside a **cross-origin iframe** | `Verified` — **requires a manual origin grant** | 2026-09-04, published 0.1.4 build. The whole app is one iframe at `mail.infomaniak.com` inside a `ksuite.infomaniak.com` shell. With `ksuite` alone the site did nothing (2026-09-02). After adding **`https://mail.infomaniak.com/`** to the origins list: 7 underlines, `sentance`→`sentence` applied, field re-read exact, count fell to 6. Nothing in the product offers that origin — see *Editors in iframes* below |
 | Tuta | `contenteditable` | `Verified` | 2026-09-02, published build: 8 underlines in the compose body, `sentance`→`sentence` applied and the field re-read exact. No iframes anywhere in the app, so the frame limitation below does not reach it |
-| iCloud Mail | `contenteditable` inside a **same-origin iframe** | `Broken` | 2026-09-02: the app runs in an iframe at `www.icloud.com/applications/mail2/…`. With `https://www.icloud.com` granted, the top frame has `#proofkey-root` and **the iframe does not** — same origin, same granted pattern, no injection. This is the control that isolates the cause to `allFrames`; see below |
+| iCloud Mail | `contenteditable` inside a **cross-origin iframe, two levels down** | `Verified` — **requires a manual origin grant** | 2026-09-04, published 0.1.4 build. The compose editor is not in the same-origin `mail2` frame; it is one level deeper, cross-origin at `www-mail.icloud-sandbox.com/…/mail2-rte/`. With `https://www.icloud.com` alone: six seeded errors, no underlines, no badge. After adding **`https://www-mail.icloud-sandbox.com/`** to the origins list: 6 underlines, `sentance`→`sentence` applied, field re-read exact, count fell to 5. Nothing in the product offers that origin — see *Editors in iframes* below |
 | Slack | Quill | `Untested` | — |
 | Notion | ProseMirror-like | `Untested` | — |
 | Discord | Slate | `Untested` | — |
@@ -87,7 +87,7 @@ here, that alone is worth a report.
 | GitHub (comments, issues) | `<textarea>`, CodeMirror in places | `Untested` | — |
 | Google Docs | canvas | `Not supported` | See above |
 
-Seven sites have now been run by hand. WhatsApp Web is the one row still resting on
+Nine sites have now been run by hand. WhatsApp Web is the one row still resting on
 the **unpacked development build** (2026-08-01); everything marked 2026-09-02 was run
 against the **published 0.1.3 build** from the store, which is a different
 extension id with its own permissions. Re-confirm WhatsApp on the published build
@@ -114,10 +114,48 @@ underlines, no badge, no error. It fails silently, which is the worst shape for
 this: the user sees an extension that simply does not work and has no way to tell
 why.
 
-**Fixed in `main`, not yet released.** `allFrames: true` is now set on both
-injection paths (9e531a5). It does **not** widen exposure: every frame is still
-matched against the granted origins on its own url, so a frame whose origin the
-user never granted is still skipped, ad iframes included.
+**`allFrames` shipped in 0.1.4 and does what it claimed — and it is not enough.**
+`allFrames: true` is set on both injection paths (9e531a5). It does **not** widen
+exposure: every frame is still matched against the granted origins on its own url,
+so a frame whose origin the user never granted is still skipped, ad iframes
+included.
+
+That last sentence is also the limitation, and it is the half nobody had measured.
+**A granted *page* does not grant the frames inside it.** `allFrames` lets the
+script into a frame; the frame's *own* origin still has to be one the user turned
+on. So the flag alone rescues only a site whose editor frame shares an origin
+that was already granted — and neither site this was written for does.
+
+Measured end to end on the published 0.1.4 build, 2026-09-04, both halves:
+
+| | granted | result |
+|---|---|---|
+| iCloud Mail | `www.icloud.com` only | 6 errors, **no underlines, no badge** |
+| iCloud Mail | `+ www-mail.icloud-sandbox.com` | **6 underlines**, apply exact, count 6→5 |
+| Infomaniak Mail | `ksuite.infomaniak.com` only | **nothing** (2026-09-02) |
+| Infomaniak Mail | `+ mail.infomaniak.com` | **7 underlines**, apply exact, count 7→6 |
+
+**The original iCloud diagnosis was incomplete.** The same-origin `mail2` frame
+now carries `#proofkey-root` where it did not on 0.1.3, so the old control passes
+and the flag is doing its job — but the compose editor is not in that frame. It is
+a *third* frame down, cross-origin at
+`www-mail.icloud-sandbox.com/applications/mail2-rte/`. The frame that got fixed
+was not the frame that holds the editor.
+
+**So the remaining bug is a permissions-UX bug, not an injection bug.** The fix
+works; the user cannot reach it. The origins box in Options accepts any origin and
+`syncShortcutOrigins` registers the script for it, which is why both sites above
+went green. Nothing in the product tells anyone those origins exist: the toolbar
+button toggles the origin in the address bar and nothing else, there is no
+all-sites grant in the UI, and a site that fails this way still fails **silently**.
+A user would have to open devtools and read the frame tree to find the string to
+type.
+
+Fixing it properly means offering the frame origins alongside the tab's. That
+needs the tab's frame list, which needs a permission the manifest does not
+currently request — so it is a real change, not a one-liner. Until then, both rows
+above carry `requires a manual origin grant` rather than a bare `Verified`, because
+out of the box neither site works.
 
 `npm run test:ext` reproduces the bug against a real frame tree — a served page
 with a same-origin iframe — rather than trusting the registration object, and the
@@ -126,9 +164,12 @@ control: *the content script lands in the top frame* passes while *and in a
 same-origin subframe* fails, which is what pinned the cause to the flag rather
 than to permissions.
 
-**The two `Broken` rows above still describe the published 0.1.3 build**, which is
-what users have. They stay `Broken` until a release ships the fix and both sites
-are re-run by hand — a passing test is not a verified site.
+**`npm run test:ext` passing was never going to settle this.** Its fixture is a
+*same-origin* subframe, so it asserts the flag and nothing else. Both real sites
+that motivated the fix put their editor **cross-origin**, where the flag is
+necessary and a second grant is what actually decides it — a case the fixture
+cannot express, which is why it stayed green through two `Broken` rows. Worth
+adding a cross-origin frame to it whose origin is deliberately not granted.
 
 The X visit is worth reading as a method note. Live checking reported "no issues
 found" on a tweet with four errors in it, and the tempting reading was that

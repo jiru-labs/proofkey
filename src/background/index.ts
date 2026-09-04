@@ -182,6 +182,19 @@ async function syncShortcutOrigins(): Promise<void> {
       // error. This does not widen exposure: every frame is still matched against
       // `granted` on its own url, so a frame whose origin the user never granted
       // is still skipped.
+      //
+      // Necessary but not sufficient, and that is the part still unfixed. A
+      // granted page does not grant the frames inside it, so an editor in a
+      // cross-origin frame needs that frame's origin in `granted` too. Measured
+      // both ways on the published 0.1.4 build 2026-09-04: iCloud (editor two
+      // frames down on `www-mail.icloud-sandbox.com`) and Infomaniak (whole app on
+      // `mail.infomaniak.com`) each do nothing with only the address-bar origin
+      // granted, and both underline and apply correctly once the frame origin is
+      // added by hand. Nothing in the UI offers those origins -- the toolbar
+      // toggle knows only the tab's -- so the user has to read the frame tree to
+      // find the string. Surfacing them needs the tab's frame list, which needs a
+      // permission this manifest does not request.
+      // See COMPATIBILITY.md, "Editors in iframes".
       allFrames: true,
     };
 
