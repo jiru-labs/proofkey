@@ -101,6 +101,18 @@ The quarterly report show that revenue have increased. Their is more work to do.
       to do.
     </div>
 
+    <!--
+      Every other rich field here is a single run of text, so a selection made in
+      one always has text nodes at both ends and maps cleanly. That is not what an
+      email compose box or a comment box is: those hold block children, and the
+      moment a selection crosses a block boundary the browser reports an *element*
+      as one endpoint. Selecting a paragraph and running an action then rewrote
+      the entire field, silently, because the offsets could not be mapped and the
+      whole field was the fallback. No field here could express that case.
+    -->
+    <h2>contenteditable — paragraphs (selection must not leak past them)</h2>
+    <div id="blocks" class="rich" contenteditable="true"><p>Their is a problem on the first line.</p><p>The projet needs alot of attention.</p><p>Their is one more line after it.</p></div>
+
     <script>
       // Stand-in for the service worker. Returns canned corrections so the whole
       // content pipeline — segmentation, diff, offsets, rendering — runs for real

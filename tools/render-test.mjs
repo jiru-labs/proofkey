@@ -765,6 +765,61 @@ async function run() {
     );
   }
 
+  // A selection is supposed to scope the action to itself -- `readTarget` says
+  // so in as many words. It does, right up until the selection crosses a block
+  // boundary: the browser then reports a *`<p>`* as an endpoint rather than a
+  // text node, `offsetOfPoint` cannot map an element, and the whole field is the
+  // fallback. Triple-clicking one paragraph of an email and pressing the
+  // shortcut therefore rewrote the entire email, with nothing on screen to say
+  // so. Every other rich field in this harness is a single run of text and
+  // cannot express the case.
+  {
+    console.log('\nselection scoping across block boundaries:');
+    await page.goto(`${BASE}?field=blocks`, { waitUntil: 'load' });
+    await page.waitForTimeout(400);
+
+    const read = () => page.evaluate(() => document.getElementById('blocks').textContent);
+    const before = await read();
+
+    // Triple-click is how people select a paragraph, and it is the gesture that
+    // produces the unmappable endpoint.
+    await page.click('#blocks p:nth-child(2)', { clickCount: 3 });
+
+    // The control. If a browser change ever made triple-click return text nodes
+    // at both ends, everything below would still pass while testing nothing --
+    // so assert that the hard case is actually the case being run.
+    const endpoints = await page.evaluate(() => {
+      const range = getSelection().getRangeAt(0);
+      return {
+        text: range.toString().trim(),
+        elementEndpoint:
+          range.startContainer.nodeType !== Node.TEXT_NODE ||
+          range.endContainer.nodeType !== Node.TEXT_NODE,
+      };
+    });
+    check(
+      'the selection has an element endpoint (the case under test)',
+      endpoints.elementEndpoint,
+      endpoints.elementEndpoint ? '' : 'both endpoints are text nodes — this run proves nothing',
+    );
+    check(
+      'the selection is the middle paragraph',
+      endpoints.text.startsWith('The projet needs alot'),
+      JSON.stringify(endpoints.text.slice(0, 50)),
+    );
+
+    await page.evaluate(() => window.__pkInvoke('fix-grammar'));
+    await page.waitForTimeout(900);
+
+    const after = await read();
+    check('the selected paragraph is corrected', after.includes('The project needs a lot of attention.'),
+      after === before ? 'nothing changed at all' : JSON.stringify(after.slice(0, 80)));
+    check('the paragraph above it is untouched', after.includes('Their is a problem on the first line.'),
+      after.includes('There is a problem on the first line.') ? 'it was rewritten too' : '');
+    check('the paragraph below it is untouched', after.includes('Their is one more line after it.'),
+      after.includes('There is one more line after it.') ? 'it was rewritten too' : '');
+  }
+
   await browser.close();
   console.log(failures === 0 ? '\nAll render checks passed.' : `\n${failures} check(s) FAILED`);
   process.exit(failures === 0 ? 0 : 1);

@@ -116,9 +116,28 @@ export function rangeFor(flat: FlatText, start: number, end: number): Range | nu
 }
 
 export function offsetOfPoint(flat: FlatText, node: Node, offset: number): number | null {
-  if (node.nodeType !== Node.TEXT_NODE) return null;
-  const chunk = flat.chunks.find((candidate) => candidate.node === node);
-  return chunk ? chunk.start + Math.min(offset, chunk.node.data.length) : null;
+  if (node.nodeType === Node.TEXT_NODE) {
+    const chunk = flat.chunks.find((candidate) => candidate.node === node);
+    return chunk ? chunk.start + Math.min(offset, chunk.node.data.length) : null;
+  }
+
+  // An element point means "before child N of this element", and it is what a
+  // browser reports whenever a selection crosses a block boundary — triple-
+  // clicking one paragraph of an email gives exactly that. Returning null here
+  // made `readTarget` treat the selection as unmappable and fall back to the
+  // whole field, so selecting one paragraph and running an action silently
+  // rewrote every paragraph. Resolve the point instead.
+  const children = [...node.childNodes];
+
+  // Forwards from the point: the first text this position sits before.
+  for (const child of children.slice(offset)) {
+    const chunk = flat.chunks.find((c) => child === c.node || child.contains(c.node));
+    if (chunk) return chunk.start;
+  }
+
+  // Nothing textual after it, so the point is at the end of this element's text.
+  const last = flat.chunks.filter((c) => node.contains(c.node)).at(-1);
+  return last ? last.end : null;
 }
 
 // ------------------------------------------------------------------ read
