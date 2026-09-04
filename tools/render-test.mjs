@@ -820,6 +820,38 @@ async function run() {
       after.includes('There is one more line after it.') ? 'it was rewritten too' : '');
   }
 
+  // What happens when the model answers with nothing. `runAction` checks the text
+  // going out and never checks what came back, so an empty completion -- or a
+  // refusal that trims away to nothing -- used to be written straight over the
+  // target. With a selection that is not the whole field, that deletes exactly
+  // the words the user picked out and leaves the rest looking untouched.
+  {
+    console.log('\nempty reply from the provider:');
+    await page.goto(`${BASE}?field=blocks`, { waitUntil: 'load' });
+    await page.waitForTimeout(400);
+    await page.evaluate(() => { window.__pkEmptyReply = true; });
+
+    const read = () => page.evaluate(() => document.getElementById('blocks').textContent);
+    const before = await read();
+
+    await page.click('#blocks p:nth-child(2)', { clickCount: 3 });
+    await page.evaluate(() => window.__pkInvoke('fix-grammar'));
+    await page.waitForTimeout(900);
+
+    const after = await read();
+    check('the selected text is not deleted', after === before,
+      after === before ? '' : `field became ${JSON.stringify(after.slice(0, 70))}`);
+
+    const toast = await page.evaluate(() => {
+      const shadow = document.getElementById('proofkey-root')?.shadowRoot;
+      return [...(shadow?.querySelectorAll('.pk-toast') ?? [])].map((t) => t.textContent).join(' | ');
+    });
+    check('it says the provider returned nothing', /returned nothing/i.test(toast),
+      JSON.stringify(toast.slice(0, 90)));
+
+    await page.evaluate(() => { window.__pkEmptyReply = false; });
+  }
+
   await browser.close();
   console.log(failures === 0 ? '\nAll render checks passed.' : `\n${failures} check(s) FAILED`);
   process.exit(failures === 0 ? 0 : 1);

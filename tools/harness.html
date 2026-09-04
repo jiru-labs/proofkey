@@ -187,6 +187,12 @@ The quarterly report show that revenue have increased. Their is more work to do.
           sendMessage: async (message) => {
             switch (message.type) {
               case 'proofkey:run':
+                // A provider answering with nothing is a real shape: an empty
+                // completion, or a refusal that trims to nothing. It used to be
+                // written straight over the target, which deleted the selection.
+                if (window.__pkEmptyReply) {
+                  return { ok: true, value: { text: '', servedBy: 'harness', fallbackErrors: [] } };
+                }
                 return {
                   ok: true,
                   value: { text: correct(message.text), servedBy: 'harness', fallbackErrors: [] },

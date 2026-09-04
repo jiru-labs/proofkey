@@ -139,6 +139,23 @@ async function invoke(actionId: string): Promise<void> {
       return;
     }
 
+    // A provider that answers with nothing -- an empty completion, or a refusal
+    // that trims away to nothing -- would otherwise be written straight over the
+    // target, deleting exactly the text the user picked out. Nothing downstream
+    // catches this: `runAction` validates the text going *out* and returns
+    // `result.text.trim()` without ever checking that anything came back.
+    //
+    // Note this is only safe as an emptiness check. A length-ratio guard would
+    // be wrong here, because `summarize` and `simplify` are supposed to come
+    // back much shorter than they went in.
+    if (!result.value.text.trim()) {
+      toast(ui(), {
+        kind: 'error',
+        text: `${result.value.servedBy} returned nothing, so your text was left as it was.`,
+      });
+      return;
+    }
+
     // The round-trip takes seconds and the user can type through it. `target`
     // was read before the request went out, so writing now would land the
     // rewrite over text the model never saw. `applyToTarget` refuses this too;
