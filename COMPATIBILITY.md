@@ -71,7 +71,7 @@ here, that alone is worth a report.
 
 | Site | Editor (best-effort) | Status | Evidence |
 |---|---|---|---|
-| WhatsApp Web | Lexical | `Verified` | Long Spanish message came back scrambled, fixed in e2ae3b1, confirmed by the maintainer 2026-08-01 |
+| WhatsApp Web | Lexical | `Broken` (live checking) | Live checking produces **nothing** on the published 0.1.4 build — measured 2026-09-04 with three error-filled sentences in the composer. The content script is there (`#proofkey-root` and its shadow root both present), the badge stays hidden and all three CSS highlight sets are empty. **Control:** Infomaniak underlined the same sentence normally minutes later, same build, same provider, same session, so this is not a quota or a global toggle. The apply path could not be re-tested here — `Ctrl+Shift+K` is unbound on this profile (see the shortcut collision below) and the context menu is browser UI that automation cannot drive. The old evidence — long Spanish message scrambled, fixed in e2ae3b1, confirmed 2026-08-01 — was the **unpacked development build** |
 | Gmail | `contenteditable` | `Verified` | Live check and apply, 2026-09-02, on the published 0.1.3 build: 9 underlines on a six-error sentence, `sentance`→`sentence` applied, field re-read exact, count fell to 8 |
 | Telegram Web | `contenteditable` | `Verified` | 2026-09-02, published build: 8 underlines in the message box, apply exact |
 | Outlook / Hotmail | Rooster (`contenteditable`) | `Verified` | 2026-09-02, published build: 4 underlines, `erors`→`errors` applied, count fell to 3. **Outlook's own autocorrect rewrote four of the six seeded errors before ProofKey saw the text**, and its native spelling popup renders underneath ProofKey's card — two correctors on one field |
@@ -87,11 +87,21 @@ here, that alone is worth a report.
 | GitHub (comments, issues) | `<textarea>`, CodeMirror in places | `Untested` | — |
 | Google Docs | canvas | `Not supported` | See above |
 
-Nine sites have now been run by hand. WhatsApp Web is the one row still resting on
-the **unpacked development build** (2026-08-01); everything marked 2026-09-02 was run
-against the **published 0.1.3 build** from the store, which is a different
-extension id with its own permissions. Re-confirm WhatsApp on the published build
-before treating that row as current.
+Nine sites have now been run by hand. **Re-confirming WhatsApp Web on a published
+build was the right call and it did not survive it** (2026-09-04): the row had rested
+on the unpacked development build since 2026-08-01, and live checking turns out to do
+nothing at all on the store build. That is the whole reason the dev-build caveat was
+written down rather than waved through — a build that is a different extension id
+with its own permissions is a different thing, and one row in nine was resting on the
+wrong one.
+
+Everything marked 2026-09-02 was run against the published 0.1.3 build, and the
+2026-09-04 rows against the published 0.1.4 build.
+
+**What is not yet known about WhatsApp:** whether the quick actions still work there.
+Only live checking was measurable — the shortcut is unbound on this profile and the
+right-click menu cannot be automated — so the apply path is `Untested` on a published
+build rather than broken. Someone with the shortcut bound should run it.
 
 ### Editors in iframes are not reached at all
 
