@@ -1,6 +1,6 @@
 {
   "name": "proofkey",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "description": "BYOK AI writing assistant for Chrome (MV3). Your key, your provider, no backend.",
