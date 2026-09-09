@@ -117,6 +117,24 @@ const FIXTURES: Fixture[] = [
     tests: 'German base with English technical terms — plus a real umlaut error to fix',
   },
   {
+    input: 'I told her mañana works better, pero she wants to meet today.',
+    mustSurvive: ['mañana', 'pero'],
+    mustNotAppear: ['tomorrow', 'but she wants'],
+    tests: 'English base, Spanish inserted — the reverse direction of the usual case',
+  },
+  {
+    input: 'Vou fazer o deploy depois do almoco, mas preciso revisar o rollback primeiro.',
+    mustSurvive: ['deploy', 'rollback'],
+    mustNotAppear: ['implantação', 'reversão', 'lançamento'],
+    tests: 'Portuguese base, English terms — accent error is on a Portuguese word',
+  },
+  {
+    input: '明日のミーティングはcancelになりましたので、参加しなくて大丈夫です。',
+    mustSurvive: ['cancel'],
+    mustNotAppear: ['キャンセル', '中止'],
+    tests: 'Japanese base, one English verb — no shared script to hide behind',
+  },
+  {
     input: 'Le dije al cliente "we will ship it on Friday" y no se si fue buena idea.',
     mustSurvive: ['we will ship it on Friday'],
     mustNotAppear: ['lo enviaremos', 'viernes'],
