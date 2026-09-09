@@ -456,6 +456,77 @@ page: [MODELS.md](MODELS.md) has the cost arithmetic, and measured results from
 reached through OpenRouter and twenty on OpenCode Go. Adding a row there is the
 same one-minute job as adding one here.
 
+## Actions
+
+Until v0.1.6 this page said nothing about the **actions** themselves — Fix
+grammar, Improve writing, Translate and the rest — because nothing had
+measured them. `tools/action-eval.ts` now does: it sends each action's real,
+composed prompt to a live provider and checks one specific promise —
+`PRESERVATION_RULES` says a message mixing two languages keeps the mixture
+rather than being collapsed into one — because that promise is exactly what a
+user reported broken (38168f8). Everything below is measured on
+**`gemini-2.5-flash` only**, the Gemini preset's quick-actions default, and
+says nothing about another model, another provider, or (unless stated
+otherwise) a real browser.
+
+**The run count matters more than the score.** Five control runs against the
+identical, unmodified prompt — same model, same fixtures, nothing changed
+between sessions — scored 16, 19, 21, 22 and 22 out of 25 at 5 runs each: a
+six-point spread on one unchanging input. One fixture in that set scored 3/3
+in one session and 0/5 in the next. Every score below ran at 20 runs, four
+times what produced that spread, which is better but still a handful of
+sessions on one model. Read it the way [MODELS.md](MODELS.md) already asks a
+three-run row to be read — as a direction, not a certainty — before quoting
+any number from this section.
+
+| Action | Measured? | Status | Evidence |
+|---|---|---|---|
+| `fix-grammar` | Yes | `Verified` (gemini-2.5-flash) | `tools/action-eval.ts`, 2026-09-09 (38168f8). The shipped mixed-language wording scored **160/160** over 20 runs on 8 fixtures, against **146/160** for the wording it replaced; on the original 5-fixture set — the one that caught the bug — the gap was **100/100 against a 74/100 control**, and the control is the bug itself: `El deadline es mañana pero todavia no tengo el draft.` → `El plazo es mañana, pero todavía no tengo el borrador.`, reproduced every run. Five reworded candidates were each measured against their own control rather than picked by argument, and all five beat theirs; a candidate that only moved the existing rule later in the prompt, without rewording it, scored 22/25 against a 21/25 control, which is what rules out prompt position as the mechanism. Two shorter candidates reached 98/100 and 99/100 on the five-fixture set — the worked example that shipped is what closes the last two cases |
+| `summarize` | Yes | `Verified` (gemini-2.5-flash) | `tools/action-eval.ts`, 2026-09-09 (38168f8) — **50/50 before the wording change and 50/50 after**. It never translated once in 100 checks either way; see the note below on why that mattered |
+| `bullet-points` | Yes | `Verified` (gemini-2.5-flash) | Same measurement, same result as `summarize`: 50/50 before, 50/50 after |
+| `translate` | Yes, harness only | `Partly verified` (gemini-2.5-flash) | `tools/action-eval.ts`, 2026-09-09 (75d51fd). Ships at **80/80** over 20 runs on 4 fixtures of its own, after two prompt bullets fixed two failures the harness only saw once its own fixtures were corrected. Before those bullets, the same corrected fixtures scored the old prompt **53/80**: one run in ten obeyed an injected instruction instead of translating it, and `#urgente` came back as `#urgent` though hashtags are promised to survive unchanged. The harness's very first reading had been a false **40/40** — its injection fixture then only checked that the Spanish was gone, and a bare `"OK"` satisfied that. **None of this ran through the extension.** No context menu, no keyboard shortcut, no field written into — every number above is a direct API call, and nobody has run Translate on a real site |
+| `improve-writing` | No | `Untested` | Composes `PRESERVATION_RULES`, the same shared text `fix-grammar` was measured against, but has not itself been sent to a model by this harness or any other |
+| `make-professional` | No | `Untested` | Same as above |
+| `make-friendly` | No | `Untested` | Same as above |
+| `simplify` | No | `Untested` | Same as above |
+| `expand` | No | `Untested` | Same as above |
+
+`fix-grammar`, `summarize` and `bullet-points` are marked `Verified` on the same
+looser basis the Providers section above already uses that tier on: a script
+talking to the real endpoint over `gemini-2.5-flash`, not a maintainer's hands
+on a real page. The five `Untested` rows are not weaker guesses than that —
+they run the identical shared prompt text, they are simply the ones nobody has
+pointed the harness at yet. Doing so is the same one-minute job the Providers
+section describes for a new model: `node --experimental-strip-types
+tools/action-eval.ts --action improve-writing`.
+
+`translate` is marked down to `Partly verified` for a reason specific to it.
+This whole file is otherwise a record of what happens in a real editor on a
+real site, and Translate has none of that evidence — it is brand new, there is
+no site row for it anywhere above, and every number in its row came from
+`tools/action-eval.ts` talking to the API directly. That measures whether the
+model translates correctly when asked; it says nothing about whether the
+context menu resolves and shows the right language ("Translate to
+Portuguese"), whether the refusal message fires correctly with nothing
+configured, or whether the result writes back into a Lexical or ProseMirror
+field the way `fix-grammar` has been shown to elsewhere on this page. Running
+it once by hand on any `Verified` site above — Gmail, Telegram, Reddit, X —
+would move that half of the row.
+
+A diagnosis worth recording precisely because it did not survive: `summarize`
+and `bullet-points` each carried their own restatement of the language rule —
+"write the summary/bullets in the language of the text," singular, sitting
+under `PRESERVATION_RULES`'s instruction to keep a mixture — and that
+contradiction was the leading suspected cause of the bug before anything was
+measured. It was not. Both actions scored 50/50 before any change and 50/50
+after; they never translated once across either measurement, and the bug was
+entirely in `fix-grammar`, which carried no such line. The restatements were
+removed anyway, as a consistency change with no measured effect of its own —
+three differently-worded copies of one rule is how the bug got written into
+`fix-grammar` in the first place — and both actions gained `VOICE_RULES`, which
+every other built-in action already had. That addition is unmeasured here on
+purpose: this harness tests language mixing, not register.
+
 ## Reporting what you find
 
 Two issue templates, both short:

@@ -373,10 +373,20 @@ visible", which is [weaker than it sounds](#caveats):
 | **Avoid for live check** | 3.5-flash, 3.6-flash, 2.5-pro | 4–20× the cost on a task a flash-lite model does perfectly. |
 
 **Caveat on the quick-actions row.** `npm run eval` exercises the live-check
-prompt only. `gemini-2.5-flash` scores *worst* of the three there (11/14), but
-that is a result about one prompt, not about the model's judgement on
-"improve writing" or "make professional" — which nobody has measured. Do not
-read the live-check ranking as a general ranking.
+prompt only, and `gemini-2.5-flash` scores *worst* of the three there
+(11/14) — that is a result about one prompt, not about "improve writing" or
+"make professional". Do not read the live-check ranking as a general ranking.
+
+Four of the nine actions now have a number of their own, from a second harness
+built to answer exactly that — [Measuring quick
+actions](#measuring-quick-actions) below. On `gemini-2.5-flash`: `fix-grammar`
+scores 160/160, `translate` scores 80/80, and `summarize` and `bullet-points`
+score 50/50 each. The other five actions — `improve-writing`,
+`make-professional`, `make-friendly`, `simplify`, `expand` — are still
+unmeasured, on this model and every other one, and none of the four numbers
+above has been checked on any model besides this one or any provider besides
+Google Gemini. Most of the original caveat still stands; do not read four
+measured actions as the other five.
 
 ### If you are on xAI
 
@@ -415,6 +425,10 @@ score one fixture better.
 | **Quick actions** | `anthropic/claude-haiku-4.5` or `openai/gpt-4.1-mini` | Both held the contract with no false alarms. Same caveat as everywhere on this page: the eval measures live checking, not "improve writing". |
 | **Avoid for live check** | `mistralai/mistral-small-3.2-24b-instruct`, `meta-llama/llama-3.3-70b-instruct` | 8.7/14 and 10.7/14, both with false alarms — and llama flattened `usted` to `tú` and translated the mixed ES/EN fixture into Spanish. |
 | **Not tested** | the `:free` variants | Free tiers are out of scope on this page, for every provider — [see below](#the-free-tier). |
+
+That translated ES/EN line recurs later in this page, this time as a
+`gemini-2.5-flash` quick-action failure with its own fix — see [Measuring quick
+actions](#measuring-quick-actions). Llama itself has not been re-measured.
 
 Two OpenRouter-specific things to set up. The **Thinking** setting does nothing
 here — an aggregator's behaviour is a property of the upstream, not of
@@ -776,6 +790,13 @@ estás hoy?", flattening exactly the register the prompt says to preserve, and
 translated the mixed ES/EN fixture into Spanish outright. On a live check those
 are the failures a user notices.
 
+That same sentence is the oldest fixture in `tools/action-eval.ts`, a harness
+for the quick-action prompts rather than the live-check one, where
+`gemini-2.5-flash`'s `fix-grammar` failed the identical way and a prompt change
+fixed it — see [Measuring quick actions](#measuring-quick-actions). A different
+model, a different provider, the same failure shape; llama was not re-run to
+check whether it would score differently now.
+
 ### Results — OpenCode Go, sixteen coding models on a flat rate
 
 The first provider on this page measured at **ten runs** rather than three,
@@ -1018,6 +1039,121 @@ input. Cost per 1,000 checks went from $0.13 to $0.14 — a 7% rise, because inp
 is the cheap side. Which is the "output dominates" point from the top of this
 page, arriving from the other direction.
 
+### Measuring quick actions
+
+`npm run eval` only ever sent the live-check prompt. Nothing measured whether a
+quick action — the button you press on purpose, not the underline that fires as
+you type — behaves the way its own prompt promises. `tools/action-eval.ts` is a
+second harness for that:
+
+```bash
+export PROOFKEY_EVAL_KEY=...
+node --experimental-strip-types tools/action-eval.ts                       # fix-grammar, 3 runs
+node --experimental-strip-types tools/action-eval.ts --action summarize --runs 5
+node --experimental-strip-types tools/action-eval.ts --actions all --runs 20
+node --experimental-strip-types tools/action-eval.ts --base https://api.x.ai/v1 \
+  --models grok-4.3 --reasoning off
+```
+
+It sends the same composed prompt that ships — the real `BUILT_IN_ACTIONS`
+entry through the real `composeSystemPrompt` — so what it measures is
+ProofKey, not an approximation of it. `runs × actions × fixtures` small
+requests: cents at most, and free tiers are out of scope by the same rule as
+everywhere else on this page.
+
+Every fixture mixes two languages in one message — a Spanish sentence with an
+English loanword, a German one with an English technical term, a quoted
+English sentence inside Spanish, and five more shapes besides — because that is
+the specific promise `PRESERVATION_RULES` makes ("if the text mixes languages,
+keep the mixture") and the specific way a user reported it broken. A fixture
+carries no expected output, since "fix the grammar" has no single right answer;
+instead it carries `mustSurvive`, the foreign-language words a translation
+would eat first, and `mustNotAppear`, the specific translation a model reaches
+for when it does. For `translate`, the one action where translating is the
+point, the two lists swap roles: `mustSurvive` becomes the payload — a URL, a
+mention, a placeholder — that has to outlive the translation, and losing one of
+those counts as a failure rather than as spelling.
+
+Three limits the harness states about itself rather than leaving for a reader
+to find out the hard way: token survival is a floor, not a proof — a word can
+survive while the sentence around it is translated, so every distinct output is
+printed for a human to read. `mustNotAppear` is a blocklist of guesses, so a
+translation it does not name scores as a pass here and a fail to a reader. And
+there is no language identification, because doing that properly needs a
+dependency this project does not have and will not add for a test harness. A
+related non-failure — a token respelled rather than translated, `standup`
+becoming `stand-up`, ordinary German compounding — is printed but not scored
+against a non-translating action, since folding it into the headline number
+would overstate the bug.
+
+**The bug, and the fix.** A user reported `fix-grammar` translating a mixed
+Spanish/English message despite a rule against exactly that, shipped since
+v0.1.0. Measured on `gemini-2.5-flash`, the rule did not hold: 74/100 over 20
+runs on 5 fixtures, with "El deadline es mañana pero todavia no tengo el
+draft." coming back as "El plazo es mañana, pero todavía no tengo el borrador."
+— the borrowed nouns translated, not left alone. Five reworded versions of the
+rule were each measured against a control run of the unmodified prompt in the
+same session, and every one beat its control, which is what says the wording
+was the problem rather than the model. The version that shipped teaches by
+worked example and scored **100/100** against a 74/100 control on that
+5-fixture set, and **160/160** against 146/160 for the wording it replaced on
+an expanded 8-fixture set. Two shorter rewordings scored 98/100 and 99/100. A
+control that moved the existing rule later in the prompt without changing its
+wording scored 22/25 against a 21/25 control — enough to rule out prompt
+position as the mechanism, and no more than that.
+
+**A diagnosis that did not survive contact with a control run.** `summarize`
+and `bullet-points` each carried their own restatement of the rule — "write the
+summary/bullets in the language of the text," singular — sitting directly under
+`PRESERVATION_RULES`' "if the text mixes languages, keep the mixture." That
+contradiction looked like the leading explanation before anyone measured it.
+Measured, both actions scored 50/50 before any change and 50/50 after; they
+never translated once in 100 checks. The bug was entirely in `fix-grammar`,
+which had no such line. The contradictory restatements were removed anyway —
+three different wordings of one rule is how this bug got written in the first
+place — and that change is recorded as harmless rather than helpful, because it
+measured as no different. Both actions also gained `VOICE_RULES`, which every
+other built-in already had; that part is unmeasured, since this harness tests
+language mixing and not register.
+
+**`translate`**, the ninth built-in, scores **80/80** over 20 runs on 4
+fixtures of its own — a URL with a query string, a placeholder, a plain
+question, and a prompt-injection attempt, each translated into the profile's
+resolved target language. That number took two corrections to reach. The first
+reading was 40/40 and wrong: the injection fixture asserted only that the
+Spanish was gone, so a bare "OK" — the model obeying the injected instruction
+instead of translating it — satisfied that, one run in ten, and the harness
+scored the injection a pass. Scored properly, with a dropped `mustSurvive`
+token counted as a failure rather than as orthography, it was 53/80: the
+injection, plus "#urgente" coming back as "#urgent" though the payload rules
+promise a hashtag survives exactly as written. Two added prompt bullets fixed
+both, and the harness now shows zero bare-"OK" outputs across 20 runs.
+
+**The same failure, a different provider.** The oldest fixture here — the
+Spanish/English sentence above — is kept word-for-word from `tools/eval.ts`,
+where [`meta-llama/llama-3.3-70b-instruct` was already recorded translating
+it](#results--openrouter-seven-vendors-through-one-key) on the live-check path.
+That is now a second, independent case of the same failure shape: a different
+model, a different provider, a different prompt, translating a mixture it was
+told to leave alone. The fix above corrects Gemini's quick-action prompt. Llama
+was not re-measured, and nothing here says it would score any differently than
+it did in that table.
+
+**Run-count evidence, and the sharpest kind in this repo.** The five control
+runs behind the `fix-grammar` numbers above — one per candidate wording,
+against the identical unmodified prompt, 5 fixtures at 5 runs each — scored 16,
+19, 21, 22 and 22 out of 25. Same file, same fixtures, same model: a six-point
+spread with nothing changed between sessions but which session it was.
+Separately, one fixture scored 3/3 in one session and 0/5 in the next — the
+same input, going from a clean pass to a clean fail. [The three-run warning
+below](#caveats) already said not to trust a small run count on this page; this
+is the evidence that it was right to.
+
+Not measured here, and it should be read as that rather than as an oversight:
+`improve-writing`, `make-professional`, `make-friendly`, `simplify` and
+`expand`; every model besides `gemini-2.5-flash`; every provider besides
+Google Gemini.
+
 ### Caveats
 
 14 fixtures is a smoke test, not a benchmark: it will catch a model that is
@@ -1026,8 +1162,12 @@ failure — a case a model got wrong in the wild is worth more than one somebody
 invented.
 
 It measures **live checking only**, which is a small fraction of what the model
-does for you. Nothing on this page measures "improve writing" or "make
-professional", so do not read a live-check ranking as a general one.
+does for you. Four quick actions have their own numbers from a separate
+harness, on `gemini-2.5-flash` — see [Measuring quick
+actions](#measuring-quick-actions) — but "improve writing", "make
+professional", "make friendly", "simplify" and "expand" are still unmeasured,
+on that model and every other. Do not read a live-check ranking as a general
+one.
 
 A held contract is not a usable reply. The harness validates that the reply maps
 back to the sentences, and `minimax-m3` passed that check on every run while
@@ -1040,6 +1180,13 @@ catch a model that is *obviously* erratic; a clean 3-run result means "no
 instability visible", not "stable". Use `--runs 10` before believing a spread of
 zero — the OpenCode Go table is the first here to do that, and it is the standard
 to hold new rows to.
+
+`tools/action-eval.ts` found the same thing from the other side. Five control
+runs against one unmodified prompt — same file, same fixtures, same model,
+nothing different between them but which run it was — scored 16, 19, 21, 22 and
+22 out of 25, and one fixture went 3/3 in one session and 0/5 in the next. See
+[Measuring quick actions](#measuring-quick-actions). Read a single run of
+anything on this page as a sample, not a score.
 
 Free tiers are **not tested**, on any provider, by rule rather than by
 result — [see above](#the-free-tier).
