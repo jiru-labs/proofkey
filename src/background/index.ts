@@ -389,7 +389,8 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
   // action's id, so a user who edits Translate's prompt to name a language
   // outright stops being asked for one, and a custom action that uses the token
   // gets the same check for free.
-  if (composeSystemPrompt(action, settings.profile).includes(TARGET_LANGUAGE)) {
+  const systemPrompt = composeSystemPrompt(action, settings.profile);
+  if (systemPrompt.includes(TARGET_LANGUAGE)) {
     return {
       ok: false,
       error: `"${action.label}" needs a language. Set one under Profile in the options page.`,
@@ -398,7 +399,7 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
 
   try {
     const result = await runCompletion(connectionChain(settings), {
-      systemPrompt: composeSystemPrompt(action, settings.profile),
+      systemPrompt,
       userText: text,
     });
     return {

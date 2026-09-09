@@ -23,6 +23,14 @@ If you cannot improve the text, return it unchanged.`.trim();
  * that also dropped the "never switch language partway through" clause reached
  * 98 and 99 of 100 on a smaller fixture set; the example is what closes the
  * last case. See `tools/action-eval.ts`.
+ *
+ * What this comment claimed until 2026-09-10, and should not: that rewording was
+ * the mechanism and prompt position was not. Re-measured at 20 runs, the *old*
+ * wording moved to the end of the prompt also scores 160/160, against 138/160
+ * where it used to sit. Position matters at least as much as the words do. Both
+ * fixes saturate the fixture set, so it can no longer tell them apart -- if this
+ * rule ever regresses, moving it later is as reasonable a first attempt as
+ * rewriting it again.
  */
 const SAME_LANGUAGE_RULES = `
 - Work in the language the text is written in. Never translate it into a

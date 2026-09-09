@@ -6,6 +6,7 @@
  *     node --experimental-strip-types tools/action-eval.ts --action summarize --runs 5
  *     node --experimental-strip-types tools/action-eval.ts --models gemini-2.5-flash --actions all
  *     node --experimental-strip-types tools/action-eval.ts --base https://api.x.ai/v1 --models grok-4.3 --reasoning off
+ *     node --experimental-strip-types tools/action-eval.ts --actions translate --target-language French
  *
  * `tools/eval.ts` sends `composeCheckPrompt` and measures the live underline
  * pass. It has never sent an action prompt, and MODELS.md says so out loud:
@@ -112,7 +113,11 @@ const FIXTURES: Fixture[] = [
   {
     input: "Je t'envoie le rapport après le standup, but I still need to review the numbers first.",
     mustSurvive: ['rapport', 'standup', 'review', 'numbers'],
-    mustNotAppear: ['informe', 'revisar', 'chiffres', 'nombres'],
+    // Guesses in the two languages this fixture actually mixes. It shipped with
+    // Spanish guesses ('informe', 'revisar') for a French sentence, which could
+    // never fire: a French word lost with nothing on the blocklist to match
+    // scores as orthography rather than as the translation it is.
+    mustNotAppear: ['report', 'réviser', 'revoir', 'examiner', 'chiffres', 'nombres'],
     tests: 'One French clause, one English clause — neither may swallow the other',
   },
   {
@@ -266,6 +271,12 @@ interface Attempt {
    */
   translated: boolean;
   /**
+   * A `mustSurvive` entry went missing on a translating action, where the
+   * payload disappearing is itself the failure. Kept on the attempt rather than
+   * recomputed, so the reporting below can say which token went.
+   */
+  dropped: boolean;
+  /**
    * The weak signal: a `mustSurvive` token is gone but no translation showed
    * up in its place. Measured runs show this is usually orthography rather
    * than translation — `standup` to `stand-up`, `feature flag` to
@@ -354,6 +365,7 @@ async function runOne(
     lost,
     appeared,
     translated,
+    dropped,
     respelled,
     // "ok" is the headline: the mixture was not collapsed into one language.
     // A respelling does not fail it — see the note on `respelled`.
@@ -399,7 +411,9 @@ async function main(): Promise<void> {
   console.log(`\nBase:     ${base}`);
   console.log(`Models:   ${models.join(', ')}`);
   console.log(`Actions:  ${actions.map((a) => a.id).join(', ')}`);
-  console.log(`Fixtures: ${FIXTURES.length} mixed-language, ${runs} run(s) each`);
+  if (actions.some((action) => !isTranslating(action))) {
+    console.log(`Fixtures: ${FIXTURES.length} mixed-language, ${runs} run(s) each`);
+  }
   if (actions.some(isTranslating)) {
     console.log(`Target:   ${targetLanguage} (translating actions use ${TRANSLATE_FIXTURES.length} fixtures of their own)`);
   }
@@ -470,6 +484,15 @@ async function main(): Promise<void> {
         // reader has to judge for themselves: whether the altered token is a
         // legitimate spelling in that language or the first step of a
         // translation.
+        // For a translating action a lost token IS the failure -- a dropped URL,
+        // mention, placeholder or instruction -- and nothing else prints it, so
+        // without this a translate fixture failed showing no reason at all.
+        const droppedTokens = new Set(results.filter((r) => r.dropped).flatMap((r) => r.lost));
+        if (droppedTokens.size > 0) {
+          console.log(`        DROPPED: ${[...droppedTokens].join(', ')}`);
+          console.log(`        ${ok}/${results.length} run(s) kept the payload`);
+        }
+
         const respelledTokens = new Set(results.filter((r) => r.respelled).flatMap((r) => r.lost));
         if (respelledTokens.size > 0) {
           console.log(

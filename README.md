@@ -116,7 +116,7 @@ Once that works, [MODELS.md](MODELS.md) covers what to move to and what it costs
 | Custom | whatever you paste | depends |
 
 <details>
-<summary><b>All 34 presets</b></summary>
+<summary><b>All 36 provider presets, plus Custom</b></summary>
 
 OpenAI · Anthropic · OpenRouter · Groq · Ollama · LM Studio · OpenCode Go · OpenCode Zen · Google Gemini · DeepSeek · Mistral · xAI (Grok) · Together AI · Fireworks AI · Cerebras · Novita AI · NVIDIA NIM · Z.ai (GLM) · Moonshot (Kimi) · Moonshot China · Qwen Cloud (DashScope) · Alibaba Coding Plan · Hugging Face · Vercel AI Gateway · Kilo Code · StepFun · Arcee AI · GMI Cloud · Xiaomi MiMo · Tencent TokenHub · Ollama Cloud · Azure OpenAI · Azure AI Foundry · MiniMax (+ China) · vLLM / llama.cpp · Custom
 
@@ -153,7 +153,7 @@ Honestly: probably, but nobody has checked. ProofKey has to survive two things i
 Which makes the most useful contribution right now a one-minute report:
 
 - **[Site report](https://github.com/jiru-labs/proofkey/issues/new?template=site-report.yml)** — it works on Slack, or it scrambled your text
-- **[Provider report](https://github.com/jiru-labs/proofkey/issues/new?template=provider-report.yml)** — you have a key for one of the other 33 presets
+- **[Provider report](https://github.com/jiru-labs/proofkey/issues/new?template=provider-report.yml)** — you have a key for one of the other 31 presets
 
 Reports that it *worked* matter as much as bug reports. Nothing else moves a row out of `Untested`.
 

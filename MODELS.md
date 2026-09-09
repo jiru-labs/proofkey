@@ -1099,8 +1099,17 @@ worked example and scored **100/100** against a 74/100 control on that
 5-fixture set, and **160/160** against 146/160 for the wording it replaced on
 an expanded 8-fixture set. Two shorter rewordings scored 98/100 and 99/100. A
 control that moved the existing rule later in the prompt without changing its
-wording scored 22/25 against a 21/25 control — enough to rule out prompt
-position as the mechanism, and no more than that.
+wording scored 22/25 against a 21/25 control, and that one-point gap was taken
+at the time as ruling out prompt position.
+
+**It did not survive its own re-measurement, and this page's own warning about
+run counts is why.** Re-run at 20 runs on 2026-09-10, the old wording *moved to
+the end of the prompt* scores **160/160**, against **138/160** for the identical
+words sitting near the top. Position is a real mechanism and on this fixture set
+as strong as rewording. The 5-run reading that dismissed it was noise of exactly
+the size the controls below predict. Both interventions now saturate the fixture
+set at 160/160, so it cannot distinguish them, and nothing here claims the
+shipped rewording is better than simply moving the old one would have been.
 
 **A diagnosis that did not survive contact with a control run.** `summarize`
 and `bullet-points` each carried their own restatement of the rule — "write the
@@ -1108,7 +1117,7 @@ summary/bullets in the language of the text," singular — sitting directly unde
 `PRESERVATION_RULES`' "if the text mixes languages, keep the mixture." That
 contradiction looked like the leading explanation before anyone measured it.
 Measured, both actions scored 50/50 before any change and 50/50 after; they
-never translated once in 100 checks. The bug was entirely in `fix-grammar`,
+never translated once in 100 checks each. The bug was entirely in `fix-grammar`,
 which had no such line. The contradictory restatements were removed anyway —
 three different wordings of one rule is how this bug got written in the first
 place — and that change is recorded as harmless rather than helpful, because it
