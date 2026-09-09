@@ -67,6 +67,7 @@ const EMPTY_PROFILE: WritingProfile = {
   neverFlag: [],
   nativeLanguage: '',
   explainLanguage: '',
+  translateLanguage: '',
 };
 
 // ------------------------------------------------------------------- pricing

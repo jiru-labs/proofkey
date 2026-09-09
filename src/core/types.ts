@@ -196,6 +196,18 @@ export interface WritingProfile {
   nativeLanguage: string;
   /** Language for explanations. Empty means explain in the text's own language. */
   explainLanguage: string;
+  /**
+   * Target language for the Translate action, in English, e.g. "Portuguese".
+   *
+   * Empty is the normal state rather than an unfinished one. Translate falls
+   * back to `explainLanguage` and then to `nativeLanguage`, both of which
+   * already exist and already mean "a language this user reads", so somebody
+   * who filled in either gets a working Translate without being sent to the
+   * options page first. This field exists for the case those two get wrong:
+   * translating *into* a language that is neither your first nor the one you
+   * want explanations in.
+   */
+  translateLanguage: string;
 }
 
 export interface Settings {

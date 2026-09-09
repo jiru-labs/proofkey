@@ -145,6 +145,7 @@ const EMPTY_PROFILE: WritingProfile = {
   neverFlag: [],
   nativeLanguage: '',
   explainLanguage: '',
+  translateLanguage: '',
 };
 
 const DEFAULT_BASE = 'https://generativelanguage.googleapis.com/v1beta/openai';

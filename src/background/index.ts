@@ -18,6 +18,8 @@ import {
   composeSystemPrompt,
   formatCheckPayload,
   parseCheckReply,
+  resolveTargetLanguage,
+  TARGET_LANGUAGE,
 } from '../core/prompts';
 import { runCompletion, validateConnection } from '../core/providers';
 import {
@@ -70,12 +72,22 @@ async function rebuildContextMenus(): Promise<void> {
     contexts: ['selection', 'editable'],
   });
 
+  // An action carrying the target-language token is shown with the language it
+  // would actually use — "Translate to Portuguese" rather than "Translate".
+  // The menu is rebuilt on every settings change already, so this follows the
+  // profile without any extra wiring.
+  const targetLanguage = resolveTargetLanguage(settings.profile);
+
   for (const action of resolveActions(settings)) {
     if (!action.enabled) continue;
+    const named =
+      targetLanguage && action.systemPrompt.includes(TARGET_LANGUAGE)
+        ? `${action.label} to ${targetLanguage}`
+        : action.label;
     chrome.contextMenus.create({
       id: `${MENU_ACTION_PREFIX}${action.id}`,
       parentId: MENU_ROOT,
-      title: action.label,
+      title: named,
       contexts: ['selection', 'editable'],
     });
   }
@@ -372,6 +384,17 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
   const settings = await loadSettings();
   const action = findAction(settings, actionId);
   if (!action) return { ok: false, error: `Unknown action "${actionId}".` };
+
+  // Gated on the token still being there after composition rather than on the
+  // action's id, so a user who edits Translate's prompt to name a language
+  // outright stops being asked for one, and a custom action that uses the token
+  // gets the same check for free.
+  if (composeSystemPrompt(action, settings.profile).includes(TARGET_LANGUAGE)) {
+    return {
+      ok: false,
+      error: `"${action.label}" needs a language. Set one under Profile in the options page.`,
+    };
+  }
 
   try {
     const result = await runCompletion(connectionChain(settings), {

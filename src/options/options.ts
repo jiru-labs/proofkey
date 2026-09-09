@@ -24,7 +24,14 @@ import {
   setActionShortcut,
   shortcutConflicts,
 } from '../core/storage';
-import type { AuthStyle, Connection, PresetId, Settings, WritingAction } from '../core/types';
+import type {
+  AuthStyle,
+  Connection,
+  PresetId,
+  Settings,
+  WritingAction,
+  WritingProfile,
+} from '../core/types';
 import {
   button,
   checkbox,
@@ -645,7 +652,39 @@ function renderProfile(): HTMLElement {
       }),
       'Useful when you are writing in a language you are still learning.',
     ),
+
+    field(
+      'Translate into',
+      input(profile.translateLanguage, {
+        placeholder: translatePlaceholder(profile),
+        on: { input: (e) => (profile.translateLanguage = (e.target as HTMLInputElement).value) },
+      }),
+      translateHint(profile),
+    ),
   );
+}
+
+/**
+ * The placeholder does the explaining here rather than the hint, because the
+ * useful thing to say is which language Translate would use *right now* — and
+ * on a profile that already names one, the answer is "you do not need to fill
+ * this in".
+ */
+function translatePlaceholder(profile: WritingProfile): string {
+  const inherited = profile.explainLanguage.trim() || profile.nativeLanguage.trim();
+  return inherited ? `${inherited} — inherited from above` : 'Spanish, German, Japanese…';
+}
+
+function translateHint(profile: WritingProfile): string {
+  const explain = profile.explainLanguage.trim();
+  const native = profile.nativeLanguage.trim();
+  if (profile.translateLanguage.trim()) {
+    return 'The Translate action translates into this language.';
+  }
+  if (explain || native) {
+    return `Falling back to the ${explain ? 'explanation' : 'first'} language above. Set one here only if you want Translate to use a different one.`;
+  }
+  return 'Translate needs a language before it will run. Nothing else here depends on it.';
 }
 
 // ----------------------------------------------------------------- actions
