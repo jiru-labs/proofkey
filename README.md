@@ -26,9 +26,10 @@ else is either covered by automated tests or by nothing at all, and
 
 | Site | Status |
 |---|---|
-| WhatsApp Web | **Verified** — 2026-08-01 |
-| X / Twitter | **Verified** — 2026-08-02 |
-| Gmail · Slack · Notion · Discord · LinkedIn · Reddit · GitHub | *Untested* — same code path as a verified one, but nobody has run it |
+| Gmail · Telegram Web · Outlook / Hotmail · Tuta · X / Twitter · Reddit | **Verified** — 2026-08-02 to 2026-09-02 |
+| Infomaniak Mail · iCloud Mail | **Verified** — requires a manual origin grant; the editor sits inside a cross-origin frame |
+| WhatsApp Web | **Broken** (live checking) — 2026-09-04, on the published build; quick actions *Untested* there |
+| Slack · Notion · Discord · LinkedIn · GitHub | *Untested* — same code path as a verified one, but nobody has run it |
 | Google Docs | **Not supported** — text is painted to a canvas, so there is nothing to underline |
 
 **Providers**
@@ -51,7 +52,7 @@ Grammarly and LanguageTool are excellent, and both route your writing through th
 - **Editable prompts.** Every built-in action is a prompt you can rewrite, and you can add your own.
 - **A key per action.** Any action, including one you wrote, can be given its own shortcut in the options page — press the combination, and it is recorded. These are handled inside the page rather than by Chrome's shortcut system, which is limited to four keys fixed at build time and can only be changed from `chrome://extensions/shortcuts`. The trade is that ProofKey has to be loaded in a page to see a keypress there, so these keys run on the sites you list and nowhere else. The right-click menu works everywhere with no site permission, and `Ctrl+Shift+K` does too — [when Chrome actually assigned it](#ctrlshiftk-does-nothing).
 - **Live checking is quieter than the quick actions, on purpose.** It fires on a pause you did not ask for, so it treats messaging conventions as valid: no full stop added to a line that lacks one, no capitalising a lowercase sentence start, no expanding slang. `Ctrl+Shift+K` you pressed deliberately, so it completes the correction, capitals included.
-- **36 provider presets** over two transports, plus a free-form Custom option for any OpenAI-compatible endpoint. Prefilled is not the same as confirmed — four have been used against a real key so far, see [COMPATIBILITY.md](COMPATIBILITY.md).
+- **36 provider presets** over two transports, plus a free-form Custom option for any OpenAI-compatible endpoint. Prefilled is not the same as confirmed — five have been used against a real key so far, see [COMPATIBILITY.md](COMPATIBILITY.md).
 - **Fallback chain.** Put a local model first and a cloud key second; ProofKey moves down the list when one fails, and tells you which one failed.
 - **Any language the model knows.** The interface is English; the text doesn't have to be. The prompts are written to detect the language and work inside it — including text that mixes two languages, which rule-based checkers cannot handle at all.
 - **Doesn't flatten your voice.** Regional variety (en-GB/en-US, pt-BR/pt-PT, zh-Hans/zh-Hant) and politeness register (tú/usted, du/Sie, tu/vous, Japanese registers) are treated as choices to preserve, not errors to normalise.
@@ -147,7 +148,7 @@ The symptom is worth knowing because it does not look like a missing shortcut. T
 
 Honestly: probably, but nobody has checked. ProofKey has to survive two things it doesn't control — the editor you're typing into and the provider you point it at — and neither can be covered exhaustively by one person.
 
-[COMPATIBILITY.md](COMPATIBILITY.md) tracks both, and separates *an automated test asserts this* from *a maintainer ran it* from *a user reported it* from *nobody has tried*. Today that is one site and three providers confirmed by a human; almost everything else is untested. A row only moves when there's a link to point at.
+[COMPATIBILITY.md](COMPATIBILITY.md) tracks both, and separates *an automated test asserts this* from *a maintainer ran it* from *a user reported it* from *nobody has tried*. Today that is eight sites and five providers confirmed by a human; almost everything else is untested. A row only moves when there's a link to point at.
 
 Which makes the most useful contribution right now a one-minute report:
 
