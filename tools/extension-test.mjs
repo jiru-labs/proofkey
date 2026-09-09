@@ -217,6 +217,31 @@ async function run() {
     'liveCheck.connectionId is the biggest lever on cost; it has to be reachable from the UI',
   );
 
+  // Translate is the first action whose prompt carries a token that has to be
+  // filled in before it can run, and the only one that can be configured into a
+  // dead end. Both halves are checked against the real options page rather than
+  // against the composer, because the failure that matters is a user pressing
+  // Translate and getting nothing with no way to see why.
+  {
+    console.log('\ntranslate:');
+    check(
+      'the Translate action reaches the UI',
+      (await page.locator('summary', { hasText: 'Translate' }).count()) > 0,
+      'a built-in that never renders cannot be enabled, edited or given a key',
+    );
+    check(
+      'there is a field to set the target language',
+      (await page.locator('text=Translate into').count()) > 0,
+    );
+    // Empty profile: the field must say the action will not run yet, rather
+    // than looking like an optional extra.
+    check(
+      'an unset target language is explained, not left blank',
+      (await page.locator('text=Translate needs a language before it will run').count()) > 0,
+      'the cold-start case is the one a new user hits first',
+    );
+  }
+
   // Per-action shortcuts, against the real storage the options page writes to.
   // The recorder can look right and still store nothing: a built-in's chord
   // goes into `builtInOverrides`, not onto the action, and that is invisible
