@@ -28,7 +28,7 @@ else is either covered by automated tests or by nothing at all, and
 |---|---|
 | Gmail · Telegram Web · Outlook / Hotmail · Tuta · X / Twitter · Reddit | **Verified** — 2026-08-02 to 2026-09-02 |
 | Infomaniak Mail · iCloud Mail | **Verified** — requires a manual origin grant; the editor sits inside a cross-origin frame |
-| WhatsApp Web | **Broken** (live checking) — 2026-09-04, on the published build; quick actions *Untested* there |
+| WhatsApp Web | **Verified** quick actions (2026-09-10, published build); live checking *Untested* on a published build — the 2026-09-04 "Broken" reading was taken with the site switched off |
 | Slack · Notion · Discord · LinkedIn · GitHub | *Untested* — same code path as a verified one, but nobody has run it |
 | Google Docs | **Not supported** — text is painted to a canvas, so there is nothing to underline |
 

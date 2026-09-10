@@ -71,7 +71,7 @@ here, that alone is worth a report.
 
 | Site | Editor (best-effort) | Status | Evidence |
 |---|---|---|---|
-| WhatsApp Web | Lexical | `Broken` (live checking) | Live checking produces **nothing** on the published 0.1.4 build — measured 2026-09-04 with three error-filled sentences in the composer. The content script is there (`#proofkey-root` and its shadow root both present), the badge stays hidden and all three CSS highlight sets are empty. **Control:** Infomaniak underlined the same sentence normally minutes later, same build, same provider, same session, so this is not a quota or a global toggle. The apply path could not be re-tested here — `Ctrl+Shift+K` is unbound on this profile (see the shortcut collision below) and the context menu is browser UI that automation cannot drive. The old evidence — long Spanish message scrambled, fixed in e2ae3b1, confirmed 2026-08-01 — was the **unpacked development build** |
+| WhatsApp Web | Lexical | Quick actions `Verified`; live checking `Untested` on a published build | **Quick actions: 2026-09-10, published 0.1.5.** `Alt+Shift+G` — a per-action shortcut bound in Options, sent by the automation so the OS-level Alt+Shift layout chord was bypassed — on three error-filled sentences in the composer: "Applied.", every correction landed, field re-read exact. **Live checking: the 2026-09-04 `Broken` reading is withdrawn.** It was taken with live checking switched *off* for this origin. The extension's stored settings, read off the profile's `Sync Extension Settings` log, show `web.whatsapp.com` dropped from `liveCheck.enabledOrigins` that day, in the write just before the two frame-origin grants, and absent from every write since — the toolbar button toggles, and a click meant to make sure it was on turned it off. Same symptoms on 2026-09-10 (script present, badge hidden, no highlights), same cause; the shortcut succeeding in the same composer on the same visit rules out injection, the worker and the provider. Re-test with the switch on is pending. The old `Verified` (2026-08-01, e2ae3b1) was the **unpacked development build** |
 | Gmail | `contenteditable` | `Verified` | Live check and apply, 2026-09-02, on the published 0.1.3 build: 9 underlines on a six-error sentence, `sentance`→`sentence` applied, field re-read exact, count fell to 8 |
 | Telegram Web | `contenteditable` | `Verified` | 2026-09-02, published build: 8 underlines in the message box, apply exact |
 | Outlook / Hotmail | Rooster (`contenteditable`) | `Verified` | 2026-09-02, published build: 4 underlines, `erors`→`errors` applied, count fell to 3. **Outlook's own autocorrect rewrote four of the six seeded errors before ProofKey saw the text**, and its native spelling popup renders underneath ProofKey's card — two correctors on one field |
@@ -88,20 +88,27 @@ here, that alone is worth a report.
 | Google Docs | canvas | `Not supported` | See above |
 
 Nine sites have now been run by hand. **Re-confirming WhatsApp Web on a published
-build was the right call and it did not survive it** (2026-09-04): the row had rested
-on the unpacked development build since 2026-08-01, and live checking turns out to do
-nothing at all on the store build. That is the whole reason the dev-build caveat was
-written down rather than waved through — a build that is a different extension id
-with its own permissions is a different thing, and one row in nine was resting on the
-wrong one.
+build was the right call, and the first re-confirmation was wrong** (2026-09-04,
+corrected 2026-09-10). The row had rested on the unpacked development build since
+2026-08-01 — a different extension id with its own permissions, which is why the
+caveat was written down — and on the store build live checking appeared to do
+nothing. It had been switched off for that origin, by the toolbar button, the same
+day. The button *toggles*: a click meant to make sure it is on turns it off, the
+toast says so for four seconds, and after that nothing on the page distinguishes
+"off for this site" from "broken" — the badge is hidden either way. The control
+that was run, Infomaniak underlining minutes later, ruled out the key and the
+global state and could not rule out a per-site switch, because that is the one
+setting the two sites did not share. What settled it was the extension's own
+stored settings read off disk, and a quick action succeeding in the same composer
+on 2026-09-10. Check the origin lists before calling a site broken.
 
-Everything marked 2026-09-02 was run against the published 0.1.3 build, and the
-2026-09-04 rows against the published 0.1.4 build.
+Everything marked 2026-09-02 was run against the published 0.1.3 build, the
+2026-09-04 rows against the published 0.1.4 build, and 2026-09-10 against 0.1.5.
 
-**What is not yet known about WhatsApp:** whether the quick actions still work there.
-Only live checking was measurable — the shortcut is unbound on this profile and the
-right-click menu cannot be automated — so the apply path is `Untested` on a published
-build rather than broken. Someone with the shortcut bound should run it.
+**What is not yet known about WhatsApp:** live checking on a published build with
+the switch actually on. The quick actions are known now, through the shortcut path;
+the right-click menu is browser UI that automation cannot drive, so it stays
+inferred from the shortcut rather than run.
 
 ### Editors in iframes are not reached at all
 
