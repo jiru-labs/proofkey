@@ -234,6 +234,20 @@ export interface Settings {
    * can reach it.
    */
   shortcutOrigins: string[];
+  /**
+   * Frame origins the user allowed from inside a page, keyed by the origin of
+   * the page they were allowed from: `https://www.icloud.com` →
+   * `["https://www-mail.icloud-sandbox.com"]`.
+   *
+   * A whole application can live in a frame on another origin — iCloud Mail
+   * and Infomaniak Mail both do — and the browser grants a page without
+   * granting the frames inside it. The frame's origin has to be granted,
+   * registered and switched on in its own right, and this records which page
+   * each one belongs to so the toolbar toggle on the page carries the frame
+   * with it, rather than leaving live checking running in a frame the user
+   * believes they switched off.
+   */
+  frameOrigins: Record<string, string[]>;
 }
 
 /**

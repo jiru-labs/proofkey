@@ -1,5 +1,6 @@
 import {
   hasDynamicContentScripts,
+  hasScriptingApi,
   injectFiles,
   isInjectableUrl,
   originMatchPattern,
@@ -8,6 +9,8 @@ import type {
   CheckResult,
   ContentRequest,
   ContentState,
+  FrameGrant,
+  FrameOffer,
   Result,
   RunResult,
   WorkerRequest,
@@ -195,17 +198,16 @@ async function syncShortcutOrigins(): Promise<void> {
       // `granted` on its own url, so a frame whose origin the user never granted
       // is still skipped.
       //
-      // Necessary but not sufficient, and that is the part still unfixed. A
-      // granted page does not grant the frames inside it, so an editor in a
-      // cross-origin frame needs that frame's origin in `granted` too. Measured
-      // both ways on the published 0.1.4 build 2026-09-04: iCloud (editor two
-      // frames down on `www-mail.icloud-sandbox.com`) and Infomaniak (whole app on
+      // Necessary but not sufficient. A granted page does not grant the frames
+      // inside it, so an editor in a cross-origin frame needs that frame's
+      // origin in `granted` too. Measured both ways on the published 0.1.4 build
+      // 2026-09-04: iCloud (editor two frames down on
+      // `www-mail.icloud-sandbox.com`) and Infomaniak (whole app on
       // `mail.infomaniak.com`) each do nothing with only the address-bar origin
       // granted, and both underline and apply correctly once the frame origin is
-      // added by hand. Nothing in the UI offers those origins -- the toolbar
-      // toggle knows only the tab's -- so the user has to read the frame tree to
-      // find the string. Surfacing them needs the tab's frame list, which needs a
-      // permission this manifest does not request.
+      // added by hand. The toolbar toggle knows only the tab's origin, so the
+      // offer is made from inside the page instead -- `frameGrant` below, at the
+      // moment focus lands in a frame this registration does not reach.
       // See COMPATIBILITY.md, "Editors in iframes".
       allFrames: true,
     };
@@ -293,6 +295,127 @@ async function handle(
 
     case 'proofkey:add-word':
       return addWord(message.word);
+
+    case 'proofkey:frame-offer':
+      return frameOffer(sender, message.origin);
+
+    case 'proofkey:frame-grant':
+      return frameGrant(sender, message.origin);
+  }
+}
+
+// ---------------------------------------------------------- frame origins
+
+/**
+ * Whether a frame on `origin`, inside the page that asked, still needs setting
+ * up before ProofKey can work in it.
+ *
+ * Three things have to hold for a frame on another origin, and a grant alone
+ * is none of them: the browser has to allow the origin, the script has to be
+ * registered there so it loads with the frame, and if live checking is on for
+ * the page it has to be on for the frame as well — the frame reports its own
+ * origin, not the page's. An origin the user put on the never-run list is
+ * left alone; that list is a decision, not an oversight.
+ */
+async function frameOffer(
+  sender: chrome.runtime.MessageSender,
+  origin: string,
+): Promise<Result<FrameOffer>> {
+  const pattern = originMatchPattern(origin);
+  const parent = originOf(sender.url ?? sender.tab?.url);
+  if (!pattern || !parent || origin === parent) return { ok: true, value: { needed: false } };
+
+  const settings = await loadSettings();
+  const { enabledOrigins, blockedOrigins } = settings.liveCheck;
+  if (blockedOrigins.includes(origin)) return { ok: true, value: { needed: false } };
+
+  const granted = await chrome.permissions.contains({ origins: [pattern] });
+  const registered = settings.shortcutOrigins.includes(origin);
+  const parentLive = enabledOrigins.includes(parent) && !blockedOrigins.includes(parent);
+  const frameLive = enabledOrigins.includes(origin);
+
+  return { ok: true, value: { needed: !granted || !registered || (parentLive && !frameLive) } };
+}
+
+/**
+ * Allows a frame origin from inside the page around it.
+ *
+ * The permission request is the first thing that happens, before anything is
+ * awaited. The browser only shows its prompt from a user gesture, and the
+ * gesture here is the click on Allow in the page, carried over by the message
+ * that got this far — it does not survive being made to wait.
+ *
+ * Once granted, the origin is registered the same way a hand-typed one is:
+ * added to the shortcut origins, which `syncShortcutOrigins` turns into a
+ * registration on the next settings change, and switched on for live checking
+ * if the page around it is. It is also remembered as belonging to this page,
+ * so the toolbar toggle on the page carries it. Then the script is injected
+ * into whichever frames of the tab do not have it yet, so the editor works
+ * now rather than after a reload.
+ */
+async function frameGrant(
+  sender: chrome.runtime.MessageSender,
+  origin: string,
+): Promise<Result<FrameGrant>> {
+  const pattern = originMatchPattern(origin);
+  const parent = originOf(sender.url ?? sender.tab?.url);
+  if (!pattern || !parent) {
+    return { ok: false, error: `"${origin}" is not an address ProofKey can be allowed on.` };
+  }
+
+  let granted: boolean;
+  try {
+    granted = await chrome.permissions.request({ origins: [pattern] });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      error: `The browser would not ask about ${new URL(origin).host} (${reason}). Add it under "Shortcuts run on" in Settings and save; that click can ask.`,
+    };
+  }
+  if (!granted) return { ok: true, value: { granted: false, injected: false } };
+
+  const settings = await loadSettings();
+  const { enabledOrigins, blockedOrigins } = settings.liveCheck;
+  if (!settings.shortcutOrigins.includes(origin)) settings.shortcutOrigins.push(origin);
+
+  const parentLive = enabledOrigins.includes(parent) && !blockedOrigins.includes(parent);
+  if (parentLive && !enabledOrigins.includes(origin)) enabledOrigins.push(origin);
+
+  const siblings = settings.frameOrigins[parent] ?? [];
+  if (!siblings.includes(origin)) settings.frameOrigins[parent] = [...siblings, origin];
+
+  await saveSettings(settings);
+
+  const injected = await injectIntoBareFrames(sender.tab?.id);
+  return { ok: true, value: { granted: true, injected } };
+}
+
+/**
+ * Injects the content script into every frame of a tab that can be reached
+ * and does not carry it yet.
+ *
+ * Injecting into all frames outright would run the script a second time in
+ * the frames that already have it — a second badge, a second set of
+ * listeners. Probing first costs one round trip and needs no frame list from
+ * the browser: `executeScript` reports the frame it ran in, and it only runs
+ * where the extension is allowed, so an origin that was never granted is
+ * simply absent from the answer.
+ */
+async function injectIntoBareFrames(tabId: number | undefined): Promise<boolean> {
+  if (tabId === undefined || !hasScriptingApi()) return false;
+  try {
+    const probes = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => !!document.getElementById('proofkey-root'),
+    });
+    const bare = probes.filter((probe) => probe.result === false).map((probe) => probe.frameId);
+    if (bare.length === 0) return false;
+    await chrome.scripting.executeScript({ target: { tabId, frameIds: bare }, files: [CONTENT_SCRIPT] });
+    return true;
+  } catch (error) {
+    console.warn('[ProofKey] could not inject into frames', error);
+    return false;
   }
 }
 
@@ -370,8 +493,13 @@ async function setLive(
 
   const settings = await loadSettings();
   const enabledOrigins = new Set(settings.liveCheck.enabledOrigins);
-  if (enabled) enabledOrigins.add(origin);
-  else enabledOrigins.delete(origin);
+  // A frame origin allowed from this page follows the page. Live checking
+  // spends the key, and a frame left running after the page was switched off
+  // would be doing exactly what the user just asked it not to.
+  for (const each of [origin, ...(settings.frameOrigins[origin] ?? [])]) {
+    if (enabled) enabledOrigins.add(each);
+    else enabledOrigins.delete(each);
+  }
 
   settings.liveCheck.enabledOrigins = [...enabledOrigins];
   await saveSettings(settings);

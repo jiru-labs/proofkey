@@ -1145,7 +1145,7 @@ function renderShortcutOrigins(): HTMLElement {
     field(
       'Shortcuts run on',
       box,
-      'One site per line. Saving asks for access to each of them — ProofKey has to be loaded in a page before it can see a keypress there. Changing this list takes effect on the next page load, so reload any tab you already have open. The right-click menu and the browser shortcut keep working everywhere, with no permission.',
+      'One site per line. Saving asks for access to each of them — ProofKey has to be loaded in a page before it can see a keypress there. Changing this list takes effect on the next page load, so reload any tab you already have open. The right-click menu and the browser shortcut keep working everywhere, with no permission. A frame address you allow from inside a page — the offer ProofKey makes when your cursor lands in an editor it cannot reach — is added here too.',
     ),
     problems,
   );

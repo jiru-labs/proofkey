@@ -24,6 +24,12 @@ const DIST = `${ROOT}dist`;
 const TEST_EXT = `${ROOT}.test-ext`;
 const PROFILE = `${ROOT}.test-profile`;
 const PORT = 8899;
+/**
+ * A second port is a second origin. The cross-origin frame fixtures need one
+ * origin the test manifest grants and one it does not, and `localhost` against
+ * `127.0.0.1` on the same port only gives the second.
+ */
+const ALT_PORT = 8898;
 
 let failures = 0;
 const check = (name, ok, detail = '') => {
@@ -34,7 +40,7 @@ const check = (name, ok, detail = '') => {
 /** Records every request so the test can assert on it. */
 function startStubProvider() {
   const seen = [];
-  const server = createServer((request, response) => {
+  const handle = (request, response) => {
     let body = '';
     request.on('data', (chunk) => (body += chunk));
     request.on('end', () => {
@@ -50,10 +56,20 @@ function startStubProvider() {
       // origin as the host page, which is the case iCloud Mail turned out to be.
       if (request.url.startsWith('/frame-')) {
         response.writeHead(200, { 'content-type': 'text/html' });
+        // The cross-origin host embeds two frames: one on an origin the test
+        // manifest already grants but nobody listed, and one on an origin it
+        // does not grant at all. Both are the shape iCloud Mail and Infomaniak
+        // Mail turned out to have — an editor the page's own grant never reaches.
+        const crossHost =
+          '<!doctype html><title>host</title>'
+          + `<iframe id="listed-nowhere" src="http://localhost:${ALT_PORT}/frame-child"></iframe>`
+          + `<iframe id="never-granted" src="http://127.0.0.1:${PORT}/frame-child"></iframe>`;
         response.end(
-          request.url.startsWith('/frame-host')
-            ? '<!doctype html><title>host</title><iframe src="/frame-child"></iframe>'
-            : '<!doctype html><title>child</title><textarea>i has an eror</textarea>',
+          request.url.startsWith('/frame-host-x')
+            ? crossHost
+            : request.url.startsWith('/frame-host')
+              ? '<!doctype html><title>host</title><iframe src="/frame-child"></iframe>'
+              : '<!doctype html><title>child</title><textarea>i has an eror</textarea>',
         );
         return;
       }
@@ -98,8 +114,14 @@ function startStubProvider() {
             }),
       );
     });
-  });
-  return new Promise((resolve) => server.listen(PORT, '127.0.0.1', () => resolve({ server, seen })));
+  };
+  const server = createServer(handle);
+  const alt = createServer(handle);
+  return new Promise((resolve) =>
+    server.listen(PORT, '127.0.0.1', () =>
+      alt.listen(ALT_PORT, '127.0.0.1', () => resolve({ server, alt, seen })),
+    ),
+  );
 }
 
 async function buildTestExtension() {
@@ -109,7 +131,7 @@ async function buildTestExtension() {
 
   const manifestPath = `${TEST_EXT}/manifest.json`;
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
-  manifest.host_permissions = [`http://localhost:${PORT}/*`];
+  manifest.host_permissions = [`http://localhost:${PORT}/*`, `http://localhost:${ALT_PORT}/*`];
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
 }
 
@@ -165,7 +187,7 @@ function geminiSettings() {
 }
 
 async function run() {
-  const { server, seen } = await startStubProvider();
+  const { server, alt, seen } = await startStubProvider();
   await buildTestExtension();
   await rm(PROFILE, { recursive: true, force: true });
 
@@ -379,6 +401,113 @@ async function run() {
       'granted origin, matching pattern — if this fails the frame gets nothing at all',
     );
     await framePage.close();
+
+    // A frame on another origin. The registration above cannot reach it, and
+    // neither can a grant on its own: the origin has to be granted, listed and
+    // switched on in its own right, and until this the only way to do that was
+    // to read the frame tree in devtools and type the address into Options.
+    // What the product now does instead is offer it at the moment focus moves
+    // into the frame — and the offer is only worth anything if the click on
+    // it can reach the browser's permission prompt from a service worker,
+    // which is the thing measured here rather than assumed.
+    {
+      console.log('\nframe origins:');
+      const altOrigin = `http://localhost:${ALT_PORT}`;
+      const strangerOrigin = `http://127.0.0.1:${PORT}`;
+      await page.evaluate(async (parent) => {
+        const all = await chrome.storage.sync.get('proofkey:settings');
+        const settings = all['proofkey:settings'] ?? {};
+        settings.liveCheck = { ...(settings.liveCheck ?? {}), enabledOrigins: [parent] };
+        await chrome.storage.sync.set({ 'proofkey:settings': settings });
+      }, origin);
+      await page.waitForTimeout(600);
+
+      const xPage = await context.newPage();
+      await xPage.goto(`${origin}/frame-host-x`);
+      await xPage.waitForTimeout(1200);
+      const listedNowhere = xPage.frames().find((f) => f.url().startsWith(`${altOrigin}/frame-child`));
+      const neverGranted = xPage.frames().find((f) => f.url().startsWith(`${strangerOrigin}/frame-child`));
+      check('the fixture serves both cross-origin frames', !!listedNowhere && !!neverGranted);
+      check('the script lands in the page around them', await marker(xPage.mainFrame()));
+      check(
+        'a granted origin nobody listed gets nothing',
+        !!listedNowhere && !(await marker(listedNowhere)),
+        'the control: allFrames plus a grant is still not a registration',
+      );
+
+      const toastText = () =>
+        xPage.evaluate(
+          () =>
+            document.getElementById('proofkey-root')?.shadowRoot?.querySelector('.pk-toast')
+              ?.textContent ?? '',
+        );
+
+      await listedNowhere.locator('textarea').click();
+      await xPage.waitForTimeout(700);
+      const offer = await toastText();
+      check(
+        'focus moving into it is answered with an offer naming the origin',
+        offer.includes(`localhost:${ALT_PORT}`) && offer.includes('Allow'),
+        offer || 'no toast',
+      );
+
+      // Playwright's CSS locators pierce open shadow roots, so this is a real
+      // click on the button the user would press — the gesture under test.
+      await xPage.locator('#proofkey-root .pk-toast__action').click();
+      await xPage.waitForTimeout(1500);
+      const answer = await toastText();
+      check(
+        'the click reaches the browser as a user gesture, through the worker',
+        !/user gesture/i.test(answer),
+        answer || 'no toast',
+      );
+      check('and the origin is reported allowed', answer.includes('is allowed'), answer);
+      check(
+        'and the frame carries the script without a reload',
+        !!listedNowhere && (await marker(listedNowhere)),
+      );
+
+      const stored = await page.evaluate(async () => {
+        const all = await chrome.storage.sync.get('proofkey:settings');
+        return all['proofkey:settings'] ?? null;
+      });
+      check(
+        'the origin is listed so it registers on the next load',
+        stored?.shortcutOrigins?.includes(altOrigin) === true,
+        JSON.stringify(stored?.shortcutOrigins ?? null),
+      );
+      check(
+        'live checking follows the page into the frame',
+        stored?.liveCheck?.enabledOrigins?.includes(altOrigin) === true,
+        JSON.stringify(stored?.liveCheck?.enabledOrigins ?? null),
+      );
+      check(
+        'and the frame is remembered as belonging to the page',
+        JSON.stringify(stored?.frameOrigins?.[origin] ?? null) === JSON.stringify([altOrigin]),
+        JSON.stringify(stored?.frameOrigins ?? null),
+      );
+
+      // The origin the browser has not granted: the prompt itself cannot be
+      // answered from here, so the assertion is only that the request reached
+      // it — that the reply is anything but a refusal to ask.
+      await neverGranted.locator('textarea').click();
+      await xPage.waitForTimeout(700);
+      const strangerOffer = await toastText();
+      check(
+        'an origin the browser never granted is offered too',
+        strangerOffer.includes(`127.0.0.1:${PORT}`) && strangerOffer.includes('Allow'),
+        strangerOffer || 'no toast',
+      );
+      await xPage.locator('#proofkey-root .pk-toast__action').click();
+      await xPage.waitForTimeout(2000);
+      const strangerAnswer = await toastText();
+      check(
+        'and the worker gets as far as asking the browser',
+        !/user gesture/i.test(strangerAnswer),
+        strangerAnswer || 'no toast (prompt pending)',
+      );
+      await xPage.close();
+    }
 
     await setOrigins([]);
     await page.waitForTimeout(900);
@@ -601,6 +730,7 @@ async function run() {
 
   await context.close();
   server.close();
+  alt.close();
   await rm(PROFILE, { recursive: true, force: true });
   await rm(TEST_EXT, { recursive: true, force: true });
 

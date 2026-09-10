@@ -75,9 +75,9 @@ here, that alone is worth a report.
 | Gmail | `contenteditable` | `Verified` | Live check and apply, 2026-09-02, on the published 0.1.3 build: 9 underlines on a six-error sentence, `sentance`→`sentence` applied, field re-read exact, count fell to 8 |
 | Telegram Web | `contenteditable` | `Verified` | 2026-09-02, published build: 8 underlines in the message box, apply exact |
 | Outlook / Hotmail | Rooster (`contenteditable`) | `Verified` | 2026-09-02, published build: 4 underlines, `erors`→`errors` applied, count fell to 3. **Outlook's own autocorrect rewrote four of the six seeded errors before ProofKey saw the text**, and its native spelling popup renders underneath ProofKey's card — two correctors on one field |
-| Infomaniak Mail | `contenteditable` inside a **cross-origin iframe** | `Verified` — **requires a manual origin grant** | 2026-09-04, published 0.1.4 build. The whole app is one iframe at `mail.infomaniak.com` inside a `ksuite.infomaniak.com` shell. With `ksuite` alone the site did nothing (2026-09-02). After adding **`https://mail.infomaniak.com/`** to the origins list: 7 underlines, `sentance`→`sentence` applied, field re-read exact, count fell to 6. Nothing in the product offers that origin — see *Editors in iframes* below |
+| Infomaniak Mail | `contenteditable` inside a **cross-origin iframe** | `Verified` — **requires a manual origin grant** | 2026-09-04, published 0.1.4 build. The whole app is one iframe at `mail.infomaniak.com` inside a `ksuite.infomaniak.com` shell. With `ksuite` alone the site did nothing (2026-09-02). After adding **`https://mail.infomaniak.com/`** to the origins list: 7 underlines, `sentance`→`sentence` applied, field re-read exact, count fell to 6. The product now offers that origin when the cursor lands in the frame — unreleased, measured against the `test:ext` fixture and not yet on this site; see *Editors in iframes* below |
 | Tuta | `contenteditable` | `Verified` | 2026-09-02, published build: 8 underlines in the compose body, `sentance`→`sentence` applied and the field re-read exact. No iframes anywhere in the app, so the frame limitation below does not reach it |
-| iCloud Mail | `contenteditable` inside a **cross-origin iframe, two levels down** | `Verified` — **requires a manual origin grant** | 2026-09-04, published 0.1.4 build. The compose editor is not in the same-origin `mail2` frame; it is one level deeper, cross-origin at `www-mail.icloud-sandbox.com/…/mail2-rte/`. With `https://www.icloud.com` alone: six seeded errors, no underlines, no badge. After adding **`https://www-mail.icloud-sandbox.com/`** to the origins list: 6 underlines, `sentance`→`sentence` applied, field re-read exact, count fell to 5. Nothing in the product offers that origin — see *Editors in iframes* below |
+| iCloud Mail | `contenteditable` inside a **cross-origin iframe, two levels down** | `Verified` — **requires a manual origin grant** | 2026-09-04, published 0.1.4 build. The compose editor is not in the same-origin `mail2` frame; it is one level deeper, cross-origin at `www-mail.icloud-sandbox.com/…/mail2-rte/`. With `https://www.icloud.com` alone: six seeded errors, no underlines, no badge. After adding **`https://www-mail.icloud-sandbox.com/`** to the origins list: 6 underlines, `sentance`→`sentence` applied, field re-read exact, count fell to 5. The product now offers that origin when the cursor lands in the frame — unreleased, measured against the `test:ext` fixture and not yet on this site; see *Editors in iframes* below |
 | Slack | Quill | `Untested` | — |
 | Notion | ProseMirror-like | `Untested` | — |
 | Discord | Slate | `Untested` | — |
@@ -168,11 +168,41 @@ all-sites grant in the UI, and a site that fails this way still fails **silently
 A user would have to open devtools and read the frame tree to find the string to
 type.
 
-Fixing it properly means offering the frame origins alongside the tab's. That
-needs the tab's frame list, which needs a permission the manifest does not
-currently request — so it is a real change, not a one-liner. Until then, both rows
-above carry `requires a manual origin grant` rather than a bare `Verified`, because
-out of the box neither site works.
+**Fixed in the tree on 2026-09-10, unreleased, and not yet run on either site.**
+The first plan was to offer the frame origins alongside the tab's, which needs the
+tab's frame list and a permission the manifest does not request. It turned out not
+to be needed. A frame on another origin is opaque, but focus moving into it is not:
+the page around it loses window focus and its `activeElement` becomes the
+`<iframe>`, whose `src` names the origin. The content script in the parent frame —
+already there, because the parent's origin is the one the user granted — catches
+that moment, asks the worker whether the origin is set up, and if not shows a
+toast naming it with an *Allow* button. The same offer is made when a menu or
+shortcut action lands while the cursor is in such a frame, which was the silent
+case before.
+
+The click on Allow is what makes it work, and it was measured rather than assumed.
+The browser's permission prompt needs a user gesture, and the request has to come
+from the service worker. `test:ext` now serves a page with two cross-origin frames
+— one on an origin the test manifest grants but nobody listed, one on an origin it
+never granted — clicks into each, clicks Allow in the parent's toast, and reads the
+reply. For the granted-but-unlisted origin the worker's `permissions.request`
+resolved, the origin was added to the shortcut list and the live-check list,
+remembered as belonging to the page, and the script was injected into the frame
+without a reload: the frame carried `#proofkey-root` where the control a moment
+earlier had shown it bare. For the never-granted origin the worker got as far as
+the prompt, which headless Chromium cannot answer — so what is measured there is
+that the gesture survived the trip, not the grant itself. A click's gesture does
+survive `runtime.sendMessage` into a service worker, provided the request is made
+before anything is awaited.
+
+Once granted, the frame origin follows the page: the toolbar toggle on
+`www.icloud.com` switches `www-mail.icloud-sandbox.com` with it, so a frame the
+user switched off does not keep spending the key. That is `frameOrigins` in the
+settings, page origin to frame origins.
+
+Both rows above keep `requires a manual origin grant` until this ships and is run
+on the real sites on a published build. The fixture is the same shape as they are;
+it is not them.
 
 `npm run test:ext` reproduces the bug against a real frame tree — a served page
 with a same-origin iframe — rather than trusting the registration object, and the
@@ -185,8 +215,9 @@ than to permissions.
 *same-origin* subframe, so it asserts the flag and nothing else. Both real sites
 that motivated the fix put their editor **cross-origin**, where the flag is
 necessary and a second grant is what actually decides it — a case the fixture
-cannot express, which is why it stayed green through two `Broken` rows. Worth
-adding a cross-origin frame to it whose origin is deliberately not granted.
+cannot express, which is why it stayed green through two `Broken` rows. It now
+has two such frames, described above — one granted and unlisted, one never
+granted.
 
 The X visit is worth reading as a method note. Live checking reported "no issues
 found" on a tweet with four errors in it, and the tempting reading was that

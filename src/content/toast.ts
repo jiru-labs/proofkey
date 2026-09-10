@@ -33,9 +33,12 @@ export function toast(root: ShadowRoot, options: ToastOptions): () => void {
     button.className = 'pk-toast__action';
     button.type = 'button';
     button.textContent = options.action.label;
+    // Dismissed first: an action that shows a toast of its own would otherwise
+    // have it removed a moment later by this very handler, and a click that
+    // asks the browser for a permission was left looking like nothing happened.
     button.addEventListener('click', () => {
-      options.action?.run();
       dismissCurrent();
+      options.action?.run();
     });
     node.append(button);
   }

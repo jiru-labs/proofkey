@@ -1,4 +1,5 @@
 import { askWorker, type ContentState, type RunResult, type WorkerRequest } from '../core/messages';
+import { createFrameWatcher } from './frames';
 import { createShortcuts } from './keys';
 import { createLive, type LiveController } from './live';
 import { applyToTarget, readTarget, targetIsCurrent, type EditTarget } from './target';
@@ -59,6 +60,13 @@ let live: LiveController | null = null;
 const shortcuts = createShortcuts((actionId) => void invoke(actionId));
 
 /**
+ * Built lazily like the live layer: the shadow root is only appended when
+ * something is going to be shown, and this shows nothing on a page the user
+ * never set ProofKey up for.
+ */
+let frames: ReturnType<typeof createFrameWatcher> | null = null;
+
+/**
  * Pulls the current settings and applies them to both in-page layers.
  *
  * The live controller is built once, on the first pull, because rebuilding it
@@ -72,6 +80,12 @@ async function refreshState(): Promise<void> {
   shortcuts.setBindings(state.value.shortcuts);
   if (!live) live = createLive(ui(), state.value);
   live.setEnabled(state.value.liveEnabled);
+
+  // Only on a page ProofKey was set up for. The script also arrives on demand,
+  // from the menu or the toolbar button, and a page reached that way has
+  // frames of its own — ads, embeds — that nobody asked about.
+  if (!frames) frames = createFrameWatcher(ui());
+  frames.setActive(state.value.liveEnabled || state.value.shortcuts.length > 0);
 }
 
 // Edits in the options page reach open tabs without a reload. Without this a
@@ -112,6 +126,17 @@ async function invoke(actionId: string): Promise<void> {
 
   const target = readTarget();
   if (!target) {
+    // The cursor may well be in a text field — one inside a frame on another
+    // origin, where this copy of the script cannot see it. If that frame is
+    // set up, its own copy is handling this invocation and there is nothing to
+    // say here; if it is not, the user just asked for an action in a place
+    // ProofKey cannot reach, which is exactly when to offer the grant.
+    const focused = document.activeElement;
+    if (focused instanceof HTMLIFrameElement) {
+      if (!frames) frames = createFrameWatcher(ui());
+      await frames.offerFor(focused);
+      return;
+    }
     toast(ui(), {
       kind: 'error',
       text: 'Select some text, or put the cursor in a text field first.',

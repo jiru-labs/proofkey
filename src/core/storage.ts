@@ -54,6 +54,7 @@ export function defaultSettings(): Settings {
       dictionary: [],
     },
     shortcutOrigins: [],
+    frameOrigins: {},
   };
 }
 

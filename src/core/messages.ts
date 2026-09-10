@@ -17,7 +17,11 @@ export type ContentRequest =
   | { type: 'proofkey:open-options' }
   | { type: 'proofkey:set-live'; enabled: boolean }
   | { type: 'proofkey:add-word'; word: string }
-  | { type: 'proofkey:get-state' };
+  | { type: 'proofkey:get-state' }
+  /** Focus went into a frame on another origin; does that origin need setting up? */
+  | { type: 'proofkey:frame-offer'; origin: string }
+  /** The user clicked Allow on that offer. Must be sent from the click itself. */
+  | { type: 'proofkey:frame-grant'; origin: string };
 
 /** Service worker → content script. */
 export type WorkerRequest =
@@ -39,6 +43,22 @@ export interface RunResult {
   servedBy: string;
   /** Failures from earlier connections in the chain. */
   fallbackErrors: { label: string; message: string }[];
+}
+
+export interface FrameOffer {
+  /**
+   * True when ProofKey cannot work inside a frame on this origin yet: the
+   * browser has not granted it, or the script is not registered there, or
+   * live checking is on for the page around it but not for the frame.
+   */
+  needed: boolean;
+}
+
+export interface FrameGrant {
+  /** Whether the browser granted the origin. False when the user declined. */
+  granted: boolean;
+  /** Whether the script was injected into the frame right away. */
+  injected: boolean;
 }
 
 export interface ContentState {
