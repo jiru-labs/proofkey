@@ -71,7 +71,7 @@ here, that alone is worth a report.
 
 | Site | Editor (best-effort) | Status | Evidence |
 |---|---|---|---|
-| WhatsApp Web | Lexical | Quick actions `Verified`; live checking `Untested` on a published build | **Quick actions: 2026-09-10, published 0.1.5.** `Alt+Shift+G` — a per-action shortcut bound in Options, sent by the automation so the OS-level Alt+Shift layout chord was bypassed — on three error-filled sentences in the composer: "Applied.", every correction landed, field re-read exact. **Live checking: the 2026-09-04 `Broken` reading is withdrawn.** It was taken with live checking switched *off* for this origin. The extension's stored settings, read off the profile's `Sync Extension Settings` log, show `web.whatsapp.com` dropped from `liveCheck.enabledOrigins` that day, in the write just before the two frame-origin grants, and absent from every write since — the toolbar button toggles, and a click meant to make sure it was on turned it off. Same symptoms on 2026-09-10 (script present, badge hidden, no highlights), same cause; the shortcut succeeding in the same composer on the same visit rules out injection, the worker and the provider. Re-test with the switch on is pending. The old `Verified` (2026-08-01, e2ae3b1) was the **unpacked development build** |
+| WhatsApp Web | Lexical | `Verified` | **Live checking: 2026-09-10, published 0.1.5, switch on** — three error-filled sentences in the composer: badge 7, four spelling and three style underlines, `Ths`→`This` applied from the card, field re-read exact (two reads agreeing, after the ~20 s lag noted below), count fell to 6. **Quick actions: same visit.** `Alt+Shift+G` — a per-action shortcut bound in Options, sent by the automation so the OS-level Alt+Shift layout chord was bypassed — on three error-filled sentences in the composer: "Applied.", every correction landed, field re-read exact. **Live checking: the 2026-09-04 `Broken` reading is withdrawn.** It was taken with live checking switched *off* for this origin. The extension's stored settings, read off the profile's `Sync Extension Settings` log, show `web.whatsapp.com` dropped from `liveCheck.enabledOrigins` that day, in the write just before the two frame-origin grants, and absent from every write since — the toolbar button toggles, and a click meant to make sure it was on turned it off. Same symptoms reproduced on 2026-09-10 with the switch still off (script present, badge hidden, no highlights); one click on the toolbar button later, everything above. The old `Verified` (2026-08-01, e2ae3b1) was the **unpacked development build** |
 | Gmail | `contenteditable` | `Verified` | Live check and apply, 2026-09-02, on the published 0.1.3 build: 9 underlines on a six-error sentence, `sentance`→`sentence` applied, field re-read exact, count fell to 8 |
 | Telegram Web | `contenteditable` | `Verified` | 2026-09-02, published build: 8 underlines in the message box, apply exact |
 | Outlook / Hotmail | Rooster (`contenteditable`) | `Verified` | 2026-09-02, published build: 4 underlines, `erors`→`errors` applied, count fell to 3. **Outlook's own autocorrect rewrote four of the six seeded errors before ProofKey saw the text**, and its native spelling popup renders underneath ProofKey's card — two correctors on one field |
@@ -105,10 +105,15 @@ on 2026-09-10. Check the origin lists before calling a site broken.
 Everything marked 2026-09-02 was run against the published 0.1.3 build, the
 2026-09-04 rows against the published 0.1.4 build, and 2026-09-10 against 0.1.5.
 
-**What is not yet known about WhatsApp:** live checking on a published build with
-the switch actually on. The quick actions are known now, through the shortcut path;
-the right-click menu is browser UI that automation cannot drive, so it stays
-inferred from the shortcut rather than run.
+**What is still not run on WhatsApp:** the right-click menu, which is browser UI
+that automation cannot drive. It reaches the same `invoke` path the shortcut does,
+so it is inferred rather than measured.
+
+A read of the field straight after an apply can lag the rendered page by ~20 s
+through the automation's DOM access, and it did here: the first read after the
+card's Apply showed the old text and a count of 7 while the page already showed
+`This` and 6. Re-read until two consecutive reads agree before calling an apply
+failed.
 
 ### Editors in iframes are not reached at all
 
