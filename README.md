@@ -148,7 +148,7 @@ The symptom is worth knowing because it does not look like a missing shortcut. T
 
 Honestly: probably, but nobody has checked. ProofKey has to survive two things it doesn't control — the editor you're typing into and the provider you point it at — and neither can be covered exhaustively by one person.
 
-[COMPATIBILITY.md](COMPATIBILITY.md) tracks both, and separates *an automated test asserts this* from *a maintainer ran it* from *a user reported it* from *nobody has tried*. Today that is eight sites and five providers confirmed by a human; almost everything else is untested. A row only moves when there's a link to point at.
+[COMPATIBILITY.md](COMPATIBILITY.md) tracks both, and separates *an automated test asserts this* from *a maintainer ran it* from *a user reported it* from *nobody has tried*. Today that is nine sites and five providers confirmed by a human; almost everything else is untested. A row only moves when there's a link to point at.
 
 Which makes the most useful contribution right now a one-minute report:
 
