@@ -8,6 +8,10 @@ A Grammarly-style writing assistant for Chrome that talks to **your** LLM, using
 
 No backend, no account, no telemetry. Your text goes from your browser straight to the provider you picked, and nowhere else.
 
+![Typing a draft, the underlines appearing, one fix applied from the card, then the shortcut fixing the rest](docs/demo.gif)
+
+*Recorded against the shipped content script with canned corrections, so no key was involved. On a real site the suggestions come from the model you configured.*
+
 > **[Install from the Chrome Web Store](https://chromewebstore.google.com/detail/loibjoemoahkajjnfioajcibcamhdafc)** — or [build it from source](#install-from-source) if you would rather read the code first.
 >
 > **New here?** [Start with Gemini](#no-api-key-yet-start-with-gemini): about two minutes from nothing to working underlines, and ordinary use usually costs nothing.
