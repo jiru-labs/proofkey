@@ -258,6 +258,14 @@ async function sendToTab(tabId: number, message: WorkerRequest): Promise<void> {
 // ---------------------------------------------------------- message router
 
 chrome.runtime.onMessage.addListener((message: ContentRequest, sender, sendResponse) => {
+  // Nothing outside this extension can reach this listener today: there is no
+  // externally_connectable entry, so pages and other extensions have no route
+  // in. The check costs one comparison and keeps that true if the manifest
+  // ever grows one, which is the case the security guide is written for.
+  if (sender.id !== chrome.runtime.id) {
+    sendResponse({ ok: false, error: 'Rejected message from outside ProofKey.' } satisfies Result<never>);
+    return false;
+  }
   handle(message, sender)
     .then(sendResponse)
     .catch((error: unknown) => {
