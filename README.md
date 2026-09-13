@@ -48,7 +48,7 @@ verified. It means nobody has checked, and this project would rather say so.
 
 ## Why
 
-Grammarly and LanguageTool are excellent, and both route your writing through their servers. ProofKey keeps the interaction model — inline underlines, a suggestion card, quick rewrite actions — and swaps the engine for an endpoint you control. Point it at a local Ollama and nothing leaves your machine at all.
+Grammarly and LanguageTool are excellent, and both route your writing through their servers. ProofKey keeps the interaction model — inline underlines, a suggestion card, quick rewrite actions — and swaps the engine for an endpoint you control. Point it at a model running on your own machine and nothing leaves it at all.
 
 ## Features
 
