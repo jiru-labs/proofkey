@@ -16,5 +16,7 @@ store-shots/
 .shots-profile/
 
 # Local operator tooling: publisher UUID, machine paths, store workflow.
-# Not for a public repo.
-.claude/
+# Not for a public repo. settings.json is the exception: it is shared config,
+# and a cloud session reads only the committed file.
+.claude/*
+!.claude/settings.json
