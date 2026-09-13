@@ -45,6 +45,7 @@
 
 import {
   composeCheckPrompt,
+  dropAddedFullStops,
   formatCheckPayload,
   parseCheckReply,
 } from '../src/core/prompts.ts';
@@ -273,7 +274,10 @@ async function once({
   const finishReason = payload?.choices?.[0]?.finish_reason;
   const servedBy = typeof payload?.provider === 'string' ? payload.provider : undefined;
   const usage = (payload?.usage ?? {}) as Record<string, unknown>;
-  const parsed = parseCheckReply(reply, inputs.length);
+  // The same post-processing the worker applies, so the score is the product's.
+  // Tables in MODELS.md dated before 2026-09-13 were measured without it.
+  const replyLines = parseCheckReply(reply, inputs.length);
+  const parsed = replyLines && dropAddedFullStops(inputs, replyLines);
 
   return parsed
     ? { ms, usage, contractBroken: false, outputs: parsed, servedBy }

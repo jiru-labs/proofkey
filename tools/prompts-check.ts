@@ -52,6 +52,7 @@
 import {
   BUILT_IN_ACTIONS,
   composeSystemPrompt,
+  dropAddedFullStops,
   emptyProfile,
   parseCheckReply,
   resolveTargetLanguage,
@@ -247,6 +248,54 @@ for (const [field, language] of [
   check(`${field} alone resolves the token`, !composed.includes(TARGET_LANGUAGE));
   check(`${field} alone: the resolved language appears in the prompt`, composed.includes(language));
 }
+
+console.log('\ndropAddedFullStops — the one live-check rule models ignore:');
+
+equal(
+  'a full stop added to a line that had none is taken back off',
+  dropAddedFullStops(['gonna push the fix tonight, lmk if that works'], ['gonna push the fix tonight, lmk if that works.']),
+  ['gonna push the fix tonight, lmk if that works'],
+);
+equal(
+  'the real corrections on that line survive',
+  dropAddedFullStops(['i has been working on this projet'], ['I have been working on this project.']),
+  ['I have been working on this project'],
+);
+equal(
+  'a line that already ended with a full stop is left alone',
+  dropAddedFullStops(['The meating is thursday.'], ['The meeting is Thursday.']),
+  ['The meeting is Thursday.'],
+);
+equal(
+  'an added question mark is a correction, not a messaging habit, and stays',
+  dropAddedFullStops(['did you see it'], ['Did you see it?']),
+  ['Did you see it?'],
+);
+equal(
+  'an added ellipsis is not cut down to two dots',
+  dropAddedFullStops(['wait'], ['wait...']),
+  ['wait...'],
+);
+equal(
+  'a line ending in other punctuation keeps whatever the model returned',
+  dropAddedFullStops(['great!'], ['Great!']),
+  ['Great!'],
+);
+equal(
+  'the stop closing a dotted abbreviation stays, or "p.m" is left broken',
+  dropAddedFullStops(['Meet at 3pm'], ['Meet at 3 p.m.']),
+  ['Meet at 3 p.m.'],
+);
+equal(
+  'an added stop after a closing bracket is still an added stop',
+  dropAddedFullStops(['See the details (page 12)'], ['See the details (page 12).']),
+  ['See the details (page 12)'],
+);
+equal(
+  'each line is judged against its own original',
+  dropAddedFullStops(['Todo esta bien', 'Ya está.'], ['Todo está bien.', 'Ya está.']),
+  ['Todo está bien', 'Ya está.'],
+);
 
 console.log(failures === 0 ? '\nPrompt checks passed.' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

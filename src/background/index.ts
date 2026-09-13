@@ -20,6 +20,7 @@ import {
   composeExplainPrompt,
   composeSystemPrompt,
   formatCheckPayload,
+  dropAddedFullStops,
   parseCheckReply,
   resolveTargetLanguage,
   TARGET_LANGUAGE,
@@ -458,11 +459,14 @@ async function check(sentences: string[]): Promise<Result<CheckResult>> {
     });
 
     const parsed = parseCheckReply(result.text, sentences.length);
-    if (parsed) return { ok: true, value: { corrections: parsed } };
+    if (parsed) return { ok: true, value: { corrections: dropAddedFullStops(sentences, parsed) } };
 
     if (sentences.length === 1) {
       // Nothing to fall back to; treat the reply as the correction itself.
-      return { ok: true, value: { corrections: [stripNumbering(result.text)] } };
+      return {
+        ok: true,
+        value: { corrections: dropAddedFullStops(sentences, [stripNumbering(result.text)]) },
+      };
     }
 
     const individually = await Promise.all(
@@ -471,7 +475,8 @@ async function check(sentences: string[]): Promise<Result<CheckResult>> {
           systemPrompt: composeCheckPrompt(settings.profile, 1),
           userText: formatCheckPayload([sentence]),
         });
-        return parseCheckReply(single.text, 1)?.[0] ?? sentence;
+        const reply = parseCheckReply(single.text, 1)?.[0];
+        return reply === undefined ? sentence : dropAddedFullStops([sentence], [reply])[0]!;
       }),
     );
     return { ok: true, value: { corrections: individually } };

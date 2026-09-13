@@ -432,6 +432,36 @@ export function formatCheckPayload(sentences: string[]): string {
 }
 
 /**
+ * Enforces one rule of the live-check prompt in code, because models do not
+ * follow it: "Do not add a full stop to a line that ends without one."
+ *
+ * Measured 2026-09-13 on Chrome's Gemini Nano, 14 fixtures x 10 runs: at
+ * greedy decoding it added a full stop to every unpunctuated line, correct
+ * words and all, which scored 8.0/14 with a false alarm on every run — the
+ * informal fixture underlined for nothing. It is not a Nano quirk: MODELS.md
+ * records `grok-4.20-0309-non-reasoning` losing its point to the same stop, and
+ * `gemini-2.5-flash-lite` adding one on the ~15% of requests that go bimodal.
+ * Taking the stop back off only restores what the prompt already asked for;
+ * every other change on the line is kept.
+ *
+ * Narrow on purpose: a single trailing `.` only. An added `?` or `!` changes
+ * what the sentence says, an ellipsis is not a full stop, and the stop that
+ * closes a dotted abbreviation (`p.m.`, `e.g.`) stays.
+ */
+export function dropAddedFullStops(sentences: string[], corrections: string[]): string[] {
+  return corrections.map((correction, index) => {
+    const original = (sentences[index] ?? '').trimEnd();
+    if (!original || /[.!?…。！？]$/u.test(original)) return correction;
+    const trimmed = correction.trimEnd();
+    if (!/[^.]\.$/u.test(trimmed)) return correction;
+    // "3pm" corrected to "3 p.m." ends in a stop that closes the abbreviation;
+    // taking it off leaves "p.m", which is worse than either version.
+    if (/\p{L}\.\p{L}\.$/u.test(trimmed)) return correction;
+    return trimmed.slice(0, -1);
+  });
+}
+
+/**
  * Parses the numbered reply back into per-sentence corrections. Returns null
  * when the model broke the contract, so the caller can fall back rather than
  * silently mis-attributing a correction to the wrong sentence.
