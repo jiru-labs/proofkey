@@ -2,6 +2,7 @@ import { getPreset } from '../presets';
 import type { Connection } from '../types';
 import * as anthropic from './anthropic';
 import * as chatCompletions from './chatCompletions';
+import * as chromeBuiltin from './chromeBuiltin';
 import { ProviderError, type CompletionRequest, type CompletionResult } from './request';
 
 export { ProviderError } from './request';
@@ -13,12 +14,14 @@ interface Adapter {
 }
 
 /**
- * Two adapters cover every supported provider. Adding a provider that speaks
- * one of these transports is a row in `presets.ts`, not code.
+ * Two network adapters cover every remote provider. Adding a provider that
+ * speaks one of these transports is a row in `presets.ts`, not code. The third
+ * is Chrome's on-device model, which has no URL at all.
  */
 const ADAPTERS: Record<Connection['transport'], Adapter> = {
   chat_completions: chatCompletions,
   anthropic_messages: anthropic,
+  chrome_builtin: chromeBuiltin,
 };
 
 export interface ChainResult extends CompletionResult {
@@ -81,6 +84,10 @@ export function validateConnection(
 ): string | null {
   const { requireModel = true } = options;
 
+  // Nothing to configure: whether this browser can run the model is only
+  // known asynchronously, and the adapter reports it at request time.
+  if (connection.transport === 'chrome_builtin') return null;
+
   if (!connection.baseUrl.trim()) return 'No base URL set.';
   try {
     new URL(connection.baseUrl);
@@ -107,6 +114,7 @@ export function validateConnection(
 
 /** Origin pattern to request host access for, e.g. `https://api.openai.com/*`. */
 export function originPattern(connection: Connection): string | null {
+  if (connection.transport === 'chrome_builtin') return null;
   try {
     return `${new URL(connection.baseUrl).origin}/*`;
   } catch {

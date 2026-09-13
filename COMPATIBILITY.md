@@ -350,6 +350,7 @@ and the model naming, not the logic.
 |---|---|---|---|
 | `chat_completions` | `POST {baseUrl}/chat/completions`, `Bearer` auth, system as the first message, no `temperature` | `Tested` | `test:ext` — asserted against the real service worker with the extension loaded (863d241) |
 | `anthropic_messages` | `POST {baseUrl}/messages`, `x-api-key`, `anthropic-version`, `anthropic-dangerous-direct-browser-access`, system as a top-level string | `Tested` | `test:ext` |
+| `chrome_builtin` | No request: `LanguageModel.create` in the service worker, system prompt as `initialPrompts`, greedy (`temperature: 0`, `topK: 1`), languages `en es de fr ja` declared | `Tested` + `Verified` | `tools/builtin-test.mjs` — the real build, freshly loaded into Google Chrome 153 with nothing configured: 11 checks through the real worker, 2026-09-13. `test:ext` cannot run the model — its Playwright Chromium answers `unavailable` in the extension worker — so it asserts the other half instead: a fresh install fails with a message naming the built-in model, refuses non-offered actions, and sends no request (6 checks) |
 
 `test:ext` asserts the shape of what goes on the wire against a stub that
 records requests. It does **not** prove any real provider accepts it — a stub
@@ -376,6 +377,8 @@ agrees with whatever you send it. That is the gap this table exists to close.
 | llama.cpp (self-hosted) | `Huihui-Qwen3-4B-Instruct-2507-abliterated`, `Josiefied-Qwen3-4B-Instruct-2507-abliterated-v1`, both Q4_K_M | `chat_completions` | `Broken` | `npm run eval`, 2026-08-13 — **0.0/14, contract broke 10/10, on both.** They echo the input back uncorrected: no diacritics restored in Spanish or French, no typo fixed. Byte-identical replies from two independent abliterations of a base model that scores 11.0/14 unmodified, which makes the abliteration the cause rather than the size or the quant. At 10+ sentences they also emit `1 1.` for line 11, which `parseCheckReply` correctly rejects rather than mis-attribute |
 | llama.cpp (self-hosted) | CORS and host permission | — | `Verified` | 2026-08-13 — `llama-server` echoes `chrome-extension://<id>` into `Access-Control-Allow-Origin` with `Access-Control-Allow-Headers: *`, so unlike Ollama it needs no origin flag. `http://127.0.0.1:8080/*` is a valid match pattern — ports are accepted by `chrome.permissions.contains` in a real browser, so `originPattern` (`src/core/providers/index.ts:109`) grants correctly for a local server |
 | llama.cpp (self-hosted) | **Fetch models** | — | `Partly verified` | Observed 2026-08-13: `GET /v1/models` answers **200 without a key** while `POST /chat/completions` answers 401 `Invalid API Key`. On a server started with `--api-key-file` the list therefore populates and the connection looks configured while every request fails. **Test** is what catches it, and the preset ships `authStyle: 'none'` — labelled *"Not sent (local server)"* — which must be switched to Bearer before a typed key is sent at all (`src/core/providers/request.ts:59`) |
+| Chrome built-in AI | Gemini Nano (`nano_v3_gpu_component` 2025.8.8.1141), in Google Chrome 153 | `chrome_builtin` | `Verified` — **live checking and Fix grammar only** | 2026-09-13, one machine: Ryzen 7840U / Radeon 780M laptop. `npm run eval` through `tools/nano-bridge.mjs`, 10 runs: **13.0/14 on every run, 0.0 false alarms, contract held 10/10** with ProofKey's greedy sampling; Chrome's default sampling gave 12.8/14 (12–13). `tools/action-eval.ts --actions all`, 3 runs: Fix grammar kept mixed-language text in 21/24 checks; the rewrites translated borrowed words (9–18/24) and Translate obeyed the injection fixture 3/3, so ProofKey does not offer them while this model is active. Through the real extension, three runs: 8-sentence live check 8.6–8.8s, Fix grammar 4.8–4.9s. See [MODELS.md](MODELS.md#results--chromes-built-in-model) |
+| Brave | Chrome built-in AI | `chrome_builtin` | `Not supported` | Measured 2026-09-13 on Brave Origin 153, on the same laptop Chrome runs it on: `LanguageModel` exists and `availability()` answers `unavailable`. ProofKey's message for that state names the browser as a possible cause rather than calling the computer too weak — that message has not itself been seen in Brave |
 | Any provider | free tiers and `:free` model variants | — | `Not tested` | Project rule, not an outcome: free endpoints are deliberately not measured or recommended. They are rate-limited, silently rerouted and withdrawn, so publishing a score would imply a durability the tier does not have |
 | OpenCode Go | `minimax-m3`, `deepseek-v4-pro`, `qwen3.6-plus` | `chat_completions` | `Not recommended` | Project rule, applied to a measurement: `minimax-m3` scores 0.0/14 by writing its reasoning into the reply; `deepseek-v4-pro` and `qwen3.6-plus` average 98s and 73s against a 60s timeout, so they fail rather than arrive late. Out of scope for every workload. See [MODELS.md](MODELS.md#forced-reasoning) |
 | xAI, Gemini, OpenCode Go | `grok-4.5`, `grok-build-0.1`, `grok-4.20-0309-reasoning`, `gemini-2.5-pro`, `gemini-3.5-flash`, `gemini-3.6-flash`, and OpenCode Go apart from `gpt-5.6-luna` / `glm-5.1` / `glm-5.2` | `chat_completions` | `Not recommended` | Project rule, applied to a measurement: thinking cannot be turned off and costs 14.7s–48s per check, against ~1s on a flash-lite. Excluded from **live checking only** — fine for quick actions, where you wait on purpose. Note the rule keys on measured harm, not on forced thinking: `gemini-3.1-flash-lite` also cannot be turned off, and stays recommended at 918ms. See [MODELS.md](MODELS.md#forced-reasoning) |
@@ -481,6 +484,37 @@ of the models rather than of the server:
   (`liveCheck.connectionId`) on the 4B and leave the quick actions on the 12B.
   Together they occupy 9.2 GB of the 780M's 14.8 GB GTT budget, so both servers
   run at once — verified 2026-08-13 with `llama-server` on ports 8080 and 8081.
+
+Five caveats about Chrome's built-in model, all measured on the one machine
+above:
+
+- **The download is gated, and the gate is quiet.** Chrome will not start the
+  4.0 GB download unless the volume holding the profile has 20 GB free, and it
+  says so only on `chrome://on-device-internals` (*Enough disk space to install:
+  false*) while `availability()` keeps answering `downloading`. A profile on a
+  15 GB tmpfs sat at zero bytes for the ten minutes it was watched. The partial
+  download is written to the system temp directory, not to the profile.
+- **Automation can make it look absent.** Chrome launched by Playwright answers
+  `unavailable` for the same profile and binary that answer `downloadable` when
+  launched plainly: Playwright's defaults include `--disable-component-update`,
+  which is the channel the model arrives through. `tools/nano-bridge.mjs` spawns
+  Chrome itself for that reason.
+- **It adds full stops.** At greedy decoding Nano appended a full stop to five of
+  the six eval lines that lacked one, scoring 8.0/14 with a false alarm on every
+  run.
+  ProofKey now takes an added stop back off any live-check line whose original
+  had none (`dropAddedFullStops`, `src/core/prompts.ts`), for every provider —
+  the prompt already forbade it, and two other models in MODELS.md do the same.
+  With that, 13.0/14.
+- **Its rewrites absorb borrowed words.** "Hola team, mañana tenemos el kickoff
+  meeting" came back from Improve writing as "Hola equipo, mañana tenemos la
+  reunión de inicio" on 3 of 3 runs. The output reads well, which is what makes
+  it a bad default: the writer never sees what was dropped. Declaring a single
+  language would not help — the output already stays in the sentence's main
+  language, and that is the problem.
+- **Latency is an iGPU figure.** 8.6–8.8s for an eight-sentence live check is
+  comparable to `Qwen3-4B` on the same laptop's llama.cpp (7.5s) and far behind
+  the cloud models above. No other hardware has been measured.
 
 ### Everything else
 

@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated: 8 August 2026**
+**Last updated: 13 September 2026**
 
 ProofKey is a browser extension published by Jiru Labs. This policy describes
 what it does with your data. It is short because the extension does very little.
@@ -21,6 +21,14 @@ Jiru Labs.
 
 Which provider that is, is entirely your choice. If you point ProofKey at a
 local model such as Ollama, nothing leaves your machine at all.
+
+**Chrome's built-in model sends nothing.** In Google Chrome, a fresh install of
+ProofKey uses the language model Chrome keeps on your computer. Your text is
+handed to Chrome on the same machine and the check runs there; ProofKey makes no
+network request for it. Chrome downloads that model once, from Google, when you
+click **Download model**. What Chrome itself records about the download or about
+using its model is governed by Google's Chrome privacy notice, not by this
+policy.
 
 **Your text is then subject to that provider's privacy policy, not this one.**
 Providers differ enormously in whether they retain prompts or train on them.

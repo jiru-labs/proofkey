@@ -4,7 +4,7 @@
 [![Version](https://img.shields.io/chrome-web-store/v/loibjoemoahkajjnfioajcibcamhdafc?label=version&color=4285F4)](https://chromewebstore.google.com/detail/loibjoemoahkajjnfioajcibcamhdafc)
 [![License](https://img.shields.io/github/license/jiru-labs/proofkey)](LICENSE)
 
-A Grammarly-style writing assistant for Chrome that talks to **your** LLM, using **your** API key.
+A Grammarly-style writing assistant for Chrome that talks to **your** LLM, using **your** API key — or, in Google Chrome, to the model Chrome already keeps on your computer, with no key at all.
 
 No backend, no account, no telemetry. Your text goes from your browser straight to the provider you picked, and nowhere else.
 
@@ -14,7 +14,7 @@ No backend, no account, no telemetry. Your text goes from your browser straight 
 
 > **[Install from the Chrome Web Store](https://chromewebstore.google.com/detail/loibjoemoahkajjnfioajcibcamhdafc)** — or [build it from source](#install-from-source) if you would rather read the code first.
 >
-> **New here?** [Start with Gemini](#no-api-key-yet-start-with-gemini): about two minutes from nothing to working underlines, and ordinary use usually costs nothing.
+> **New here?** In Google Chrome it works as installed: [Chrome's built-in model](#no-api-key-at-all-chromes-built-in-model) checks your writing on your own computer — free, no account, one download. For every action rather than two, [start with Gemini](#no-api-key-yet-start-with-gemini): about two minutes to a key, and ordinary use usually costs nothing.
 >
 > **What is actually known to work is a much shorter list than what is built.** The table below is the whole of it — [reports](CONTRIBUTING.md) are the fastest way to grow it.
 
@@ -41,6 +41,7 @@ else is either covered by automated tests or by nothing at all, and
 | Provider | Status |
 |---|---|
 | Google Gemini · xAI (Grok) · OpenRouter · OpenCode Go · llama.cpp (self-hosted) | **Verified** against real keys |
+| Chrome's built-in model (Gemini Nano, no key) | **Verified** — 2026-09-13, Chrome 153 on one laptop, through the real service worker. Live checking and Fix grammar only; [why](#no-api-key-at-all-chromes-built-in-model) |
 | The other 31 presets | *Prefilled, not confirmed* — the base URL is filled in for you, that is all it means |
 
 Untested does not mean broken: most of these share a code path with something
@@ -56,6 +57,7 @@ Grammarly and LanguageTool are excellent, and both route your writing through th
 - **Editable prompts.** Every built-in action is a prompt you can rewrite, and you can add your own.
 - **A key per action.** Any action, including one you wrote, can be given its own shortcut in the options page — press the combination, and it is recorded. These are handled inside the page rather than by Chrome's shortcut system, which is limited to four keys fixed at build time and can only be changed from `chrome://extensions/shortcuts`. The trade is that ProofKey has to be loaded in a page to see a keypress there, so these keys run on the sites you list and nowhere else. The right-click menu works everywhere with no site permission, and `Ctrl+Shift+K` does too — [when Chrome actually assigned it](#ctrlshiftk-does-nothing).
 - **Live checking is quieter than the quick actions, on purpose.** It fires on a pause you did not ask for, so it treats messaging conventions as valid: no full stop added to a line that lacks one, no capitalising a lowercase sentence start, no expanding slang. `Ctrl+Shift+K` you pressed deliberately, so it completes the correction, capitals included.
+- **Chrome's built-in model, with nothing to set up.** In Google Chrome the first connection is Chrome's own on-device model: no key, no account, and ProofKey sends your text nowhere — Chrome runs the check on the computer. It is smaller than the cloud models, so ProofKey offers it live checking and Fix grammar only — the two it measured well on.
 - **36 provider presets** over two transports, plus a free-form Custom option for any OpenAI-compatible endpoint. Prefilled is not the same as confirmed — five have been used against a real key so far, see [COMPATIBILITY.md](COMPATIBILITY.md).
 - **Fallback chain.** Put a local model first and a cloud key second; ProofKey moves down the list when one fails, and tells you which one failed.
 - **Mixed-language text: tested, not just asserted.** The interface is English; the text doesn't have to be, and the prompts are written to detect the language and work inside it — including a single message that mixes two, which rule-based checkers cannot handle at all. The rule forbidding translation has been in the prompt since v0.1.0, and until this release it didn't hold: on `gemini-2.5-flash`, `fix-grammar` translated the borrowed English nouns it was told to leave alone in a mixed Spanish sentence. The reworded rule now holds the mixture 160/160 over 20 runs on eight fixtures (`tools/action-eval.ts`), against 146/160 for the wording it replaced — measured on that one model; no other provider or model has been run through this harness.
@@ -63,7 +65,7 @@ Grammarly and LanguageTool are excellent, and both route your writing through th
 
 ## Install
 
-**[Get it from the Chrome Web Store](https://chromewebstore.google.com/detail/loibjoemoahkajjnfioajcibcamhdafc)**, then click the ProofKey icon → **Settings** and set up a provider. If you have never used an LLM API before, [start here](#no-api-key-yet-start-with-gemini).
+**[Get it from the Chrome Web Store](https://chromewebstore.google.com/detail/loibjoemoahkajjnfioajcibcamhdafc)**. Settings opens by itself. In Google Chrome it already has [Chrome's built-in model](#no-api-key-at-all-chromes-built-in-model) selected — click **Download model** once and you are done. In any other browser, set up a provider; if you have never used an LLM API before, [start here](#no-api-key-yet-start-with-gemini).
 
 ### Install from source
 
@@ -86,6 +88,24 @@ Then:
 ## Configuring a provider
 
 Every provider needs the same three things: a **base URL**, an **API key**, and a **model**. Picking a preset fills in the base URL for you; **Fetch models** lists what your key can actually reach.
+
+### No API key at all: Chrome's built-in model
+
+Google Chrome ships a small language model of its own (Gemini Nano) and lets extensions use it through its [Prompt API](https://developer.chrome.com/docs/ai/prompt-api). ProofKey selects it for you on a fresh install, so there is nothing to sign up for:
+
+1. Open ProofKey **Settings** — it opens by itself after installing.
+2. On the **Chrome built-in AI** card, click **Download model**. Chrome fetches it once from Google — 4.0 GB when it was measured here.
+3. When the card says **Ready**, reload any tab you already had open.
+
+What you get, and what you do not:
+
+- **Private by construction.** Every check runs on your computer. ProofKey makes no request, and no provider sees your text; what Chrome itself logs is Chrome's policy, not ours.
+- **Live checking and Fix grammar, and nothing else.** Measured inside an extension service worker, where ProofKey runs it, it scored 13.0/14 on `npm run eval` — the same on all ten runs — with no false alarms, and Fix grammar kept mixed-language text intact in 21 of 24 checks. The other rewrites did not: asked to improve or reword a message that mixes languages, it translated the borrowed words, and Translate obeyed an instruction hidden in the text. So those actions stay out of the menu while this model is active and come back the moment a provider with a key is. The numbers are in [MODELS.md](MODELS.md#results--chromes-built-in-model).
+- **Slower than a cloud model.** In three runs through the real extension, an eight-sentence live check took 8.6–8.8s and a Fix grammar 4.8–4.9s on a laptop with integrated graphics; Gemini answers the eval's larger request in about 1s.
+- **Google Chrome on a desktop, and a capable one.** Measured: Google Chrome 153 runs it, and Brave reports it unavailable. Other browsers have not been tried. Chrome itself wants 22 GB of free disk and either a GPU with more than 4 GB of memory or 16 GB of RAM with 4 cores — its [own requirements](https://developer.chrome.com/docs/ai/prompt-api), not a ProofKey measurement. Where it cannot run, the card says so and the first request tells you to add a provider.
+- **Five languages, officially.** Chrome documents English, Spanish, German, French and Japanese for this model. Others are untested.
+
+Measured on one machine so far — Chrome 153, a Ryzen 7840U laptop — so read the latency figures as that machine's.
 
 ### No API key yet? Start with Gemini
 
@@ -164,7 +184,7 @@ Reports that it *worked* matter as much as bug reports. Nothing else moves a row
 ## Privacy
 
 - Your key and settings live in `chrome.storage.sync`. There is no ProofKey server to send them to.
-- Requests go directly from your browser to the provider's endpoint.
+- Requests go directly from your browser to the provider's endpoint. With Chrome's built-in model there is no request at all: the check runs on your computer.
 - No analytics, no error reporting, no remote logging.
 - **The extension declares no host permissions up front.** It asks for access to a specific API origin when you save a connection, and for access to a site only when you switch on inline checking there.
 

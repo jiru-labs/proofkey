@@ -1,4 +1,5 @@
 import { getPreset, PRESETS } from './presets';
+import { ACTIONS_ON_BUILTIN_MODEL } from './providers/chromeBuiltin';
 import { BUILT_IN_ACTIONS, DEFAULT_ACTION_ID, emptyProfile } from './prompts';
 import { parseChord, type ShortcutBinding } from './shortcuts';
 import type { Connection, PresetId, Settings, WritingAction } from './types';
@@ -35,7 +36,10 @@ export function connectionFromPreset(presetId: PresetId, label?: string): Connec
 }
 
 export function defaultSettings(): Settings {
-  const first = connectionFromPreset('custom');
+  // Chrome's on-device model, so a fresh install can check text before anyone
+  // has signed up for anything. Where the browser has no model, the first
+  // request says so and points at settings.
+  const first = connectionFromPreset('chrome-builtin');
   return {
     schemaVersion: SCHEMA_VERSION,
     connections: [first],
@@ -130,6 +134,28 @@ export function resolveActions(settings: Settings): WritingAction[] {
   return [...builtIns, ...custom];
 }
 
+/**
+ * What the menu, the card and the shortcuts offer right now: enabled actions,
+ * narrowed to the ones measured to work when Chrome's built-in model is the
+ * active connection. Actions the user wrote are always offered — which prompt
+ * suits which model is their call.
+ */
+export function offeredActions(settings: Settings): WritingAction[] {
+  return resolveActions(settings).filter(
+    (action) => action.enabled && runsOnActiveConnection(settings, action),
+  );
+}
+
+/**
+ * Whether the active connection may run this action at all, enabled or not. A
+ * disabled action can still arrive — it may be the default action behind
+ * `Ctrl+Shift+K` — so the worker asks this, not `offeredActions`.
+ */
+export function runsOnActiveConnection(settings: Settings, action: WritingAction): boolean {
+  if (activeConnection(settings)?.transport !== 'chrome_builtin') return true;
+  return !action.builtIn || ACTIONS_ON_BUILTIN_MODEL.has(action.id);
+}
+
 export function findAction(settings: Settings, actionId: string): WritingAction | undefined {
   return resolveActions(settings).find((action) => action.id === actionId);
 }
@@ -146,8 +172,8 @@ export function shortcutBindings(settings: Settings): ShortcutBinding[] {
   const bindings: ShortcutBinding[] = [];
   const claimed = new Set<string>();
 
-  for (const action of resolveActions(settings)) {
-    if (!action.enabled || !action.shortcut) continue;
+  for (const action of offeredActions(settings)) {
+    if (!action.shortcut) continue;
     if (!parseChord(action.shortcut)) continue;
     // First one wins, matching the order the options page lists conflicts in.
     if (claimed.has(action.shortcut)) continue;

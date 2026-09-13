@@ -3,7 +3,7 @@
  * abstraction: almost every provider is OpenAI-compatible, so only genuinely
  * different protocols get their own adapter. Everything else is registry data.
  */
-export type Transport = 'chat_completions' | 'anthropic_messages';
+export type Transport = 'chat_completions' | 'anthropic_messages' | 'chrome_builtin';
 
 /** How the API key is attached to the request. */
 export type AuthStyle =
@@ -25,6 +25,7 @@ export type AuthStyle =
  * user has a gateway in front of it.
  */
 export type PresetId =
+  | 'chrome-builtin'
   | 'custom'
   | 'openai'
   | 'openrouter'

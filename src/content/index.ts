@@ -224,7 +224,9 @@ function showFailure(message: string): void {
   const needsSetup =
     message.includes('No provider is configured') ||
     message.includes('requires an API key') ||
-    message.includes('No base URL');
+    message.includes('No base URL') ||
+    // Chrome's on-device model: missing, not downloaded, or not supported here.
+    message.includes('built-in model');
 
   toast(ui(), {
     kind: 'error',

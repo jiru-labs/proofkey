@@ -67,6 +67,20 @@ function openaiCompatible(
 
 export const PRESETS: readonly Preset[] = [
   // ---------------------------------------------------------------- primary
+  // First, because it is the only entry that works with nothing to sign up
+  // for: Chrome's own on-device model. No URL, no key, no network request.
+  {
+    id: 'chrome-builtin',
+    label: 'Chrome built-in AI (on this computer, no key)',
+    transport: 'chrome_builtin',
+    baseUrl: '',
+    defaultModel: 'gemini-nano',
+    authStyle: 'none',
+    requiresApiKey: false,
+    group: 'primary',
+    hint: 'Runs on this computer through Chrome\'s own model: free, no account, and ProofKey sends your text nowhere. Works in Google Chrome on desktop; Brave reports it unavailable. Smaller than the cloud models, so ProofKey offers it live checking and Fix grammar only.',
+    docsUrl: 'https://developer.chrome.com/docs/ai/prompt-api',
+  },
   openaiCompatible('custom', 'Custom (any OpenAI-compatible endpoint)', '', {
     requiresApiKey: false,
     group: 'primary',

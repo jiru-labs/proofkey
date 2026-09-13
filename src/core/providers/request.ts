@@ -81,7 +81,7 @@ export function buildHeaders(
   return { ...headers, ...connection.extraHeaders };
 }
 
-const REQUEST_TIMEOUT_MS = 60_000;
+export const REQUEST_TIMEOUT_MS = 60_000;
 
 /**
  * POSTs JSON and returns the parsed body, turning non-2xx responses into a

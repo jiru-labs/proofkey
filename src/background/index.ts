@@ -30,7 +30,8 @@ import {
   connectionChain,
   findAction,
   loadSettings,
-  resolveActions,
+  offeredActions,
+  runsOnActiveConnection,
   saveSettings,
   shortcutBindings,
 } from '../core/storage';
@@ -82,8 +83,7 @@ async function rebuildContextMenus(): Promise<void> {
   // profile without any extra wiring.
   const targetLanguage = resolveTargetLanguage(settings.profile);
 
-  for (const action of resolveActions(settings)) {
-    if (!action.enabled) continue;
+  for (const action of offeredActions(settings)) {
     const named =
       targetLanguage && action.systemPrompt.includes(TARGET_LANGUAGE)
         ? `${action.label} to ${targetLanguage}`
@@ -525,6 +525,15 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
   const settings = await loadSettings();
   const action = findAction(settings, actionId);
   if (!action) return { ok: false, error: `Unknown action "${actionId}".` };
+  // A shortcut, the default-action command or a stale menu can still name an
+  // action the active connection does not offer — disabled or not. Say why
+  // rather than run a prompt measured not to hold on this model.
+  if (!runsOnActiveConnection(settings, action)) {
+    return {
+      ok: false,
+      error: `"${action.label}" is not offered on Chrome's built-in model: measured on it, it did not do what its prompt promises. Fix grammar works there; for the rest, add a provider with an API key in settings.`,
+    };
+  }
 
   // Gated on the token still being there after composition rather than on the
   // action's id, so a user who edits Translate's prompt to name a language
@@ -577,9 +586,7 @@ async function buildContentState(sender: chrome.runtime.MessageSender): Promise<
   const origin = originOf(sender.url ?? sender.tab?.url);
 
   return {
-    actions: resolveActions(settings)
-      .filter((action) => action.enabled)
-      .map((action) => ({ id: action.id, label: action.label })),
+    actions: offeredActions(settings).map((action) => ({ id: action.id, label: action.label })),
     defaultActionId: settings.defaultActionId,
     // Gated on the origin, not just on the registration: the content script is
     // also injected on demand by the menu and the toolbar button, and a page

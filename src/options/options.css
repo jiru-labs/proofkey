@@ -112,6 +112,14 @@ body {
   color: var(--danger);
 }
 
+/* Only shown while Chrome is downloading its built-in model. */
+.field__progress {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  accent-color: var(--accent);
+}
+
 /* Empty until "Fetch models" fills it, so it must not take space before then. */
 .field__picker:not(:empty) {
   margin-top: 6px;

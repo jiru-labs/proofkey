@@ -24,6 +24,7 @@
     "test": "node --experimental-strip-types tools/diff-check.ts && node --experimental-strip-types tools/shortcut-check.ts && node --experimental-strip-types tools/prompts-check.ts && node --experimental-strip-types tools/errors-check.ts && node --experimental-strip-types tools/thinking-check.ts",
     "cost": "node --experimental-strip-types tools/cost.ts",
     "eval": "node --experimental-strip-types tools/eval.ts",
+    "nano-bridge": "node tools/nano-bridge.mjs",
     "test:render": "vite build --config vite.harness.config.ts && node tools/render-test.mjs",
     "serve": "python3 -m http.server 8777 --bind 127.0.0.1",
     "test:ext": "node tools/extension-test.mjs",

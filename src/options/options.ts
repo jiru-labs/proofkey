@@ -3,6 +3,13 @@ import { getPreset, normalizeBaseUrl, PRESETS, thinkingNote } from '../core/pres
 import { BUILT_IN_ACTIONS } from '../core/prompts';
 import { listModels, originPattern, runCompletion, validateConnection } from '../core/providers';
 import {
+  builtinAvailability,
+  BUILTIN_MODEL,
+  builtinProblem,
+  downloadBuiltinModel,
+  type BuiltinAvailability,
+} from '../core/providers/chromeBuiltin';
+import {
   chordFromEvent,
   chordProblem,
   chordWarning,
@@ -49,6 +56,16 @@ let settings: Settings;
 let expandedConnectionId: string | null = null;
 
 /**
+ * Chrome's built-in model as last read, and a download in flight. Both live
+ * here rather than in the card's DOM because every edit on this page rebuilds
+ * the DOM: progress bound to the nodes of the click would freeze the moment the
+ * user touched anything else while 4 GB came down.
+ */
+let builtinState: BuiltinAvailability | null = null;
+let builtinDownload: { fraction: number } | null = null;
+let builtinDownloadError: string | null = null;
+
+/**
  * Which action panels are open, so a re-render does not close the one the user
  * is working in. `<details>` keeps its open state in the DOM, and every edit
  * here rebuilds the DOM.
@@ -78,8 +95,13 @@ async function init(): Promise<void> {
   settings = await loadSettings();
   expandedConnectionId = settings.activeConnectionId;
   // Awaited before the first paint so shortcut labels never visibly change from
-  // the US legend to the real one a moment later.
-  await Promise.all([loadLayoutMap(), loadCommandChords()]);
+  // the US legend to the real one a moment later — and so the built-in model's
+  // card and the Save button know its state from the first render.
+  await Promise.all([
+    loadLayoutMap(),
+    loadCommandChords(),
+    builtinAvailability().then((state) => (builtinState = state)),
+  ]);
   render();
 }
 
@@ -185,7 +207,7 @@ function renderConnectionCard(connection: Connection): HTMLElement {
   const preset = getPreset(connection.presetId);
   const isActive = connection.id === settings.activeConnectionId;
   const isExpanded = connection.id === expandedConnectionId;
-  const problem = validateConnection(connection);
+  const problem = validateConnection(connection) ?? builtinCardProblem(connection);
 
   const header = el(
     'div',
@@ -197,7 +219,13 @@ function renderConnectionCard(connection: Connection): HTMLElement {
       isActive ? el('span', { class: 'badge badge--active', text: 'Active' }) : null,
       problem ? el('span', { class: 'badge badge--warn', text: 'Needs setup' }) : null,
     ),
-    el('span', { class: 'conn__model', text: connection.model || 'no model set' }),
+    // Chrome's built-in model ignores the stored model and URL, and they are left
+    // untouched so a user who looks at it and switches back loses nothing. The
+    // header names what actually runs instead.
+    el('span', {
+      class: 'conn__model',
+      text: connection.transport === 'chrome_builtin' ? BUILTIN_MODEL : connection.model || 'no model set',
+    }),
   );
 
   const card = el('div', { class: `conn ${isExpanded ? 'conn--open' : ''}` }, header);
@@ -216,6 +244,10 @@ function renderConnectionBody(connection: Connection, problem: string | null): H
     label: p.label,
     group: p.group === 'primary' ? 'Common' : 'More providers',
   }));
+
+  if (connection.transport === 'chrome_builtin') {
+    return renderBuiltinBody(connection, presetOptions);
+  }
 
   const modelInput = input(connection.model, {
     placeholder: 'model name',
@@ -405,41 +437,182 @@ function renderConnectionBody(connection: Connection, problem: string | null): H
     ),
 
     testStatus,
+    connectionActions(connection, testStatus),
+  );
+}
+
+/** Test, Make active and Remove — the same for every kind of connection. */
+function connectionActions(connection: Connection, testStatus: HTMLElement): HTMLElement {
+  return el(
+    'div',
+    { class: 'row row--between' },
     el(
       'div',
-      { class: 'row row--between' },
-      el(
-        'div',
-        { class: 'row' },
-        button('Test', () => void testConnection(connection, testStatus), 'secondary'),
-        connection.id === settings.activeConnectionId
-          ? null
-          : button(
-              'Make active',
-              () => {
-                settings.activeConnectionId = connection.id;
-                render();
-              },
-              'primary',
-            ),
-      ),
-      settings.connections.length > 1
-        ? button(
-            'Remove',
+      { class: 'row' },
+      button('Test', () => void testConnection(connection, testStatus), 'secondary'),
+      connection.id === settings.activeConnectionId
+        ? null
+        : button(
+            'Make active',
             () => {
-              settings.connections = settings.connections.filter((c) => c.id !== connection.id);
-              settings.fallbackConnectionIds = settings.fallbackConnectionIds.filter(
-                (id) => id !== connection.id,
-              );
-              if (settings.activeConnectionId === connection.id) {
-                settings.activeConnectionId = settings.connections[0]!.id;
-              }
+              settings.activeConnectionId = connection.id;
               render();
             },
-            'danger',
-          )
-        : null,
+            'primary',
+          ),
     ),
+    settings.connections.length > 1
+      ? button(
+          'Remove',
+          () => {
+            settings.connections = settings.connections.filter((c) => c.id !== connection.id);
+            settings.fallbackConnectionIds = settings.fallbackConnectionIds.filter(
+              (id) => id !== connection.id,
+            );
+            if (settings.activeConnectionId === connection.id) {
+              settings.activeConnectionId = settings.connections[0]!.id;
+            }
+            render();
+          },
+          'danger',
+        )
+      : null,
+  );
+}
+
+/**
+ * `validateConnection` cannot see the built-in model's state — it is only known
+ * asynchronously — so the card badge and the Save button ask this as well.
+ */
+function builtinCardProblem(connection: Connection): string | null {
+  if (connection.transport !== 'chrome_builtin' || !builtinState) return null;
+  return builtinProblem(builtinDownload ? 'downloading' : builtinState);
+}
+
+function startBuiltinDownload(): void {
+  // Called before any await: Chrome only starts the download from a click.
+  const running = downloadBuiltinModel((fraction) => {
+    if (builtinDownload) builtinDownload.fraction = fraction;
+    paintBuiltinProgress();
+  });
+  builtinDownload = { fraction: 0 };
+  builtinDownloadError = null;
+  render();
+  running.then(
+    async () => {
+      builtinDownload = null;
+      builtinState = await builtinAvailability();
+      render();
+    },
+    (error: unknown) => {
+      builtinDownload = null;
+      builtinDownloadError = error instanceof Error ? error.message : String(error);
+      render();
+    },
+  );
+}
+
+/** Writes progress into whichever card is on the page now, not the one clicked. */
+function paintBuiltinProgress(): void {
+  if (!builtinDownload) return;
+  const bar = document.querySelector<HTMLProgressElement>('[data-builtin-progress]');
+  const text = document.querySelector<HTMLElement>('[data-builtin-state]');
+  if (bar) {
+    bar.hidden = false;
+    bar.value = builtinDownload.fraction;
+  }
+  if (text) text.textContent = `Downloading… ${Math.round(builtinDownload.fraction * 100)}%`;
+}
+
+/**
+ * Chrome's on-device model has no URL, key or model list, so its card is the
+ * model's state and, while it is missing, the button that fetches it.
+ */
+function renderBuiltinBody(
+  connection: Connection,
+  presetOptions: { value: string; label: string; group: string }[],
+): HTMLElement {
+  const state = el('p', { class: 'field__hint', dataset: { builtinState: '' } });
+  const progress = el('progress', {
+    class: 'field__progress',
+    max: 1,
+    value: builtinDownload?.fraction ?? 0,
+    dataset: { builtinProgress: '' },
+  });
+  const download = button('Download model', startBuiltinDownload, 'primary');
+
+  const paint = (): void => {
+    const current = builtinDownload ? 'downloading' : builtinState;
+    download.hidden = !!builtinDownload || current !== 'downloadable';
+    progress.hidden = !builtinDownload;
+    if (builtinDownload) {
+      state.className = 'field__hint';
+      paintBuiltinProgress();
+      return;
+    }
+    if (builtinDownloadError) {
+      state.className = 'field__hint field__hint--error';
+      state.textContent = builtinDownloadError;
+      return;
+    }
+    state.className =
+      current === 'no-api' || current === 'unavailable'
+        ? 'field__hint field__hint--error'
+        : 'field__hint';
+    state.textContent =
+      current === null
+        ? 'Checking this browser…'
+        : current === 'available'
+          ? 'Ready. The model is on this computer, and ProofKey sends nothing you check anywhere.'
+          : (builtinProblem(current) ?? '');
+  };
+  paint();
+
+  // Re-read in the background: Chrome may have finished, or started, a download
+  // this page did not start. Only a change re-renders — a re-render rebuilds
+  // every input on the page and takes the caret with it — so while Chrome
+  // reports a download nobody here is tracking, poll quietly until it ends.
+  // The poll belongs to this card's nodes and stops once they are replaced.
+  const poll = async (): Promise<void> => {
+    if (!state.isConnected || builtinDownload) return;
+    const latest = await builtinAvailability();
+    if (latest !== builtinState) {
+      builtinState = latest;
+      render();
+    } else if (latest === 'downloading') {
+      setTimeout(() => void poll(), 5000);
+    }
+  };
+  queueMicrotask(() => void poll());
+
+  const testStatus = el('p', { class: 'status' });
+
+  return el(
+    'div',
+    { class: 'conn__body' },
+    field(
+      'Name',
+      input(connection.label, {
+        on: { input: (e) => (connection.label = (e.target as HTMLInputElement).value) },
+      }),
+    ),
+    field(
+      'Provider',
+      select(presetOptions, connection.presetId, {
+        on: { change: (e) => applyPreset(connection, (e.target as HTMLSelectElement).value as PresetId) },
+      }),
+      getPreset(connection.presetId).hint,
+    ),
+    el(
+      'div',
+      { class: 'field' },
+      el('label', { class: 'field__label', text: 'Model' }),
+      el('div', { class: 'row' }, download),
+      progress,
+      state,
+    ),
+    testStatus,
+    connectionActions(connection, testStatus),
   );
 }
 
@@ -600,6 +773,7 @@ async function testConnection(connection: Connection, status: HTMLElement): Prom
  * origins resolve to true without showing a dialog, so the check bought nothing.
  */
 async function ensureOriginPermission(connection: Connection): Promise<boolean> {
+  if (connection.transport === 'chrome_builtin') return true;
   const pattern = originPattern(connection);
   if (!pattern) return false;
   return chrome.permissions.request({ origins: [pattern] });
@@ -788,9 +962,26 @@ function renderActions(): HTMLElement {
     );
   }
 
+  const onBuiltinModel =
+    settings.connections.find((c) => c.id === settings.activeConnectionId)?.transport ===
+    'chrome_builtin';
+
   return section(
     'Actions',
     'Every action is just a prompt. Edit any of them, or add your own — they appear in the right-click menu, and each one can have its own key.',
+    onBuiltinModel
+      ? el(
+          'div',
+          { class: 'notice' },
+          el('p', {
+            class: 'notice__text',
+            text:
+              "Chrome's built-in model is active, so the menu offers Fix grammar and your own actions only. " +
+              'Measured on it, the other built-in rewrites translated words borrowed from another language ("kickoff meeting" became "reunión de inicio"). ' +
+              'They come back as soon as a provider with an API key is the active one.',
+          }),
+        )
+      : null,
     // Chrome hands out `suggested_key` first-come-first-served: if another
     // extension already held the combination when ProofKey was installed, this
     // command is left unbound with no error anywhere. The key then reaches the
@@ -1322,7 +1513,9 @@ async function save(status: HTMLElement): Promise<void> {
 
   try {
     await saveSettings(settings);
-    const usable = connectionChain(settings).some((c) => validateConnection(c) === null);
+    const usable = connectionChain(settings).some(
+      (c) => validateConnection(c) === null && builtinCardProblem(c) === null,
+    );
     status.className = usable && shortcutsGranted ? 'status status--ok' : 'status status--error';
     status.textContent = !usable
       ? 'Saved, but no provider is usable yet — check the warnings above.'
