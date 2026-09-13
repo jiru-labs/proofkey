@@ -13,13 +13,14 @@
  *
  * Three things about getting there that each cost a cycle to find:
  *
- *   - Branded Chrome ignores `--load-extension` (removed in Chrome 137), so the
- *     worker is loaded with `Extensions.loadUnpacked` over
+ *   - Branded Chrome ignores `--load-extension` (Chrome 153 did, measured), so
+ *     the worker is loaded with `Extensions.loadUnpacked` over
  *     `--remote-debugging-pipe`.
- *   - Playwright's `launch` passes `--disable-component-update` and
- *     `--disable-background-networking`, and the model is delivered through
- *     exactly those: `availability()` answers `unavailable` under it and
- *     `downloadable` without it. Chrome is spawned here directly.
+ *   - Under Playwright's `launch`, the same binary and profile answer
+ *     `unavailable`; spawned plainly they answer `downloadable`. Its defaults
+ *     include `--disable-component-update`, `--disable-background-networking`
+ *     and `--disable-field-trial-config`, any of which could be the cause —
+ *     which one was not isolated. Chrome is spawned here directly.
  *   - Chrome wants 20 GB free on the volume holding the profile *before* it will
  *     start the ~4 GB download, and says so only in
  *     chrome://on-device-internals. A profile on a small tmpfs never downloads.

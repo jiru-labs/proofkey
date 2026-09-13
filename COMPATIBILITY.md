@@ -496,9 +496,10 @@ above:
   download is written to the system temp directory, not to the profile.
 - **Automation can make it look absent.** Chrome launched by Playwright answers
   `unavailable` for the same profile and binary that answer `downloadable` when
-  launched plainly: Playwright's defaults include `--disable-component-update`,
-  which is the channel the model arrives through. `tools/nano-bridge.mjs` spawns
-  Chrome itself for that reason.
+  launched plainly. Playwright's defaults include `--disable-component-update`,
+  `--disable-background-networking` and `--disable-field-trial-config`; which of
+  them does it was not isolated. `tools/nano-bridge.mjs` spawns Chrome itself for
+  that reason.
 - **It adds full stops.** At greedy decoding Nano appended a full stop to five of
   the six eval lines that lacked one, scoring 8.0/14 with a false alarm on every
   run.
