@@ -75,9 +75,9 @@ here, that alone is worth a report.
 | Gmail | `contenteditable` | `Verified` | Live check and apply, 2026-09-02, on the published 0.1.3 build: 9 underlines on a six-error sentence, `sentance`→`sentence` applied, field re-read exact, count fell to 8 |
 | Telegram Web | `contenteditable` | `Verified` | 2026-09-02, published build: 8 underlines in the message box, apply exact |
 | Outlook / Hotmail | Rooster (`contenteditable`) | `Verified` | 2026-09-02, published build: 4 underlines, `erors`→`errors` applied, count fell to 3. **Outlook's own autocorrect rewrote four of the six seeded errors before ProofKey saw the text**, and its native spelling popup renders underneath ProofKey's card — two correctors on one field |
-| Infomaniak Mail | `contenteditable` inside a **cross-origin iframe** | `Verified` — **requires a manual origin grant** | 2026-09-04, published 0.1.4 build. The whole app is one iframe at `mail.infomaniak.com` inside a `ksuite.infomaniak.com` shell. With `ksuite` alone the site did nothing (2026-09-02). After adding **`https://mail.infomaniak.com/`** to the origins list: 7 underlines, `sentance`→`sentence` applied, field re-read exact, count fell to 6. The product now offers that origin when the cursor lands in the frame — unreleased, measured against the `test:ext` fixture and not yet on this site; see *Editors in iframes* below |
+| Infomaniak Mail | `contenteditable` inside a **cross-origin iframe** | `Verified` — **one extra origin, offered in the page** | **2026-09-14, published 0.1.7 build:** with `mail.infomaniak.com` revoked and unlisted, clicking New message showed the toast *Allow mail.infomaniak.com*; Allow in the toast, then the browser's own prompt, granted it, and without a reload the frame carried `#proofkey-root` and 7 underlines (4 spelling, 3 style), `sentance`→`sentence` applied, field re-read exact, count fell to 6. Before that, 2026-09-04, published 0.1.4 build. The whole app is one iframe at `mail.infomaniak.com` inside a `ksuite.infomaniak.com` shell. With `ksuite` alone the site did nothing (2026-09-02). After adding **`https://mail.infomaniak.com/`** to the origins list: 7 underlines, `sentance`→`sentence` applied, field re-read exact, count fell to 6. See *Editors in iframes* below |
 | Tuta | `contenteditable` | `Verified` | 2026-09-02, published build: 8 underlines in the compose body, `sentance`→`sentence` applied and the field re-read exact. No iframes anywhere in the app, so the frame limitation below does not reach it |
-| iCloud Mail | `contenteditable` inside a **cross-origin iframe, two levels down** | `Verified` — **requires a manual origin grant** | 2026-09-04, published 0.1.4 build. The compose editor is not in the same-origin `mail2` frame; it is one level deeper, cross-origin at `www-mail.icloud-sandbox.com/…/mail2-rte/`. With `https://www.icloud.com` alone: six seeded errors, no underlines, no badge. After adding **`https://www-mail.icloud-sandbox.com/`** to the origins list: 6 underlines, `sentance`→`sentence` applied, field re-read exact, count fell to 5. The product now offers that origin when the cursor lands in the frame — unreleased, measured against the `test:ext` fixture and not yet on this site; see *Editors in iframes* below |
+| iCloud Mail | `contenteditable` inside a **cross-origin iframe, two levels down** | `Verified` — **one extra origin, offered in the page** | **2026-09-14, published 0.1.7 build:** with `www-mail.icloud-sandbox.com` revoked and unlisted, clicking into the compose body showed the toast *Allow www-mail.icloud-sandbox.com*; Allow in the toast, then the browser's own prompt, granted it, recorded under `www.icloud.com`, and without a reload the `mail2-rte` frame carried `#proofkey-root` and 7 underlines (4 spelling, 3 style), `sentance`→`sentence` applied, field re-read exact, count fell to 6. Before that, 2026-09-04, published 0.1.4 build. The compose editor is not in the same-origin `mail2` frame; it is one level deeper, cross-origin at `www-mail.icloud-sandbox.com/…/mail2-rte/`. With `https://www.icloud.com` alone: six seeded errors, no underlines, no badge. After adding **`https://www-mail.icloud-sandbox.com/`** to the origins list: 6 underlines, `sentance`→`sentence` applied, field re-read exact, count fell to 5. See *Editors in iframes* below |
 | Slack | Quill | `Untested` | — |
 | Notion | ProseMirror-like | `Untested` | — |
 | Discord | Slate | `Untested` | — |
@@ -173,7 +173,7 @@ all-sites grant in the UI, and a site that fails this way still fails **silently
 A user would have to open devtools and read the frame tree to find the string to
 type.
 
-**Fixed in the tree on 2026-09-10, unreleased, and not yet run on either site.**
+**Fixed on 2026-09-10, shipped in 0.1.7, and run on both sites on 2026-09-14.**
 The first plan was to offer the frame origins alongside the tab's, which needs the
 tab's frame list and a permission the manifest does not request. It turned out not
 to be needed. A frame on another origin is opaque, but focus moving into it is not:
@@ -205,9 +205,19 @@ Once granted, the frame origin follows the page: the toolbar toggle on
 user switched off does not keep spending the key. That is `frameOrigins` in the
 settings, page origin to frame origins.
 
-Both rows above keep `requires a manual origin grant` until this ships and is run
-on the real sites on a published build. The fixture is the same shape as they are;
-it is not them.
+The fixture is the same shape as the real sites; it is not them, so both rows kept
+`requires a manual origin grant` until the published 0.1.7 build was run on each,
+on 2026-09-14, in Brave Origin 153. The starting state was a user who had granted
+the page and never the frame: the frame origin removed from the browser's grants
+and from both lists, the page origin still granted and switched on. On each site,
+moving the cursor into the editor showed the toast naming the frame origin, the
+click on Allow raised the browser's own permission prompt, and a person accepted
+it — that prompt is browser chrome, which the automation cannot click, so that one
+step was a human's. The worker then did what the fixture said it would: the origin
+was granted, added to both lists and recorded under its page in `frameOrigins`, and
+the frame had the script without a reload. Typing a seven-error sentence gave seven
+underlines on each site, and an apply from the card changed exactly one word. What
+this does not cover: a toast declined at the prompt, and any browser but Brave.
 
 `npm run test:ext` reproduces the bug against a real frame tree — a served page
 with a same-origin iframe — rather than trusting the registration object, and the
