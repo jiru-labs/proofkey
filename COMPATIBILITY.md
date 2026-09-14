@@ -212,8 +212,8 @@ the page and never the frame: the frame origin removed from the browser's grants
 and from both lists, the page origin still granted and switched on. On each site,
 moving the cursor into the editor showed the toast naming the frame origin, the
 click on Allow raised the browser's own permission prompt, and a person accepted
-it — that prompt is browser chrome, which the automation cannot click, so that one
-step was a human's. The worker then did what the fixture said it would: the origin
+it — that prompt is browser chrome, outside the page the automation drives, so it
+was handed to a human rather than attempted. The worker then did what the fixture said it would: the origin
 was granted, added to both lists and recorded under its page in `frameOrigins`, and
 the frame had the script without a reload. Typing a seven-error sentence gave seven
 underlines on each site, and an apply from the card changed exactly one word. What
