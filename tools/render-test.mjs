@@ -185,7 +185,12 @@ async function run() {
   }
 
   await mkdir(SHOTS, { recursive: true });
-  const browser = await chromium.launch({ headless: !process.argv.includes('--headed') });
+  // PROOFKEY_BROWSER renders in another Chromium build, e.g. Microsoft Edge.
+  const executablePath = process.env['PROOFKEY_BROWSER'];
+  const browser = await chromium.launch({
+    headless: !process.argv.includes('--headed'),
+    ...(executablePath ? { executablePath } : {}),
+  });
   // Clipboard access so one case can paste for real. A synthetic ClipboardEvent
   // is not enough: Lexical ignores an untrusted one, and a test that cannot
   // paste quietly proves nothing about pasting.

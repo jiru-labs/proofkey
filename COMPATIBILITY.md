@@ -35,6 +35,21 @@ then the `Verified` rows stop meaning anything either.
 independent reports on the same editor are strong evidence, and a report is how
 almost every row here will eventually move.
 
+## Browsers
+
+ProofKey is a Chromium extension, so every Chromium browser runs the same code. What
+differs between them is whether the extension loads, how they rename browser pages,
+and whether Chrome's built-in model exists at all.
+
+| Browser | Status | Evidence |
+|---|---|---|
+| Chromium (Playwright's build) | `Tested` | `npm run test:ext` and `npm run test:render` run in it by default |
+| Microsoft Edge 153 (stable, Linux) | `Tested` | 2026-09-15, Edge 153.0.4234.32 headless: `PROOFKEY_BROWSER=<path to msedge> npm run test:ext` 78/78 and `npm run test:render` 95/95 against the stub provider. Edge honours `--load-extension`; its shortcuts page is `edge://extensions/shortcuts`. Not run against real sites or real providers in Edge, and not installed from the Web Store |
+| Microsoft Edge, built-in model | `Not supported` on stable Linux | Same run: `LanguageModel` is undefined on a web page, in the service worker and on the options page, so the card reads "This browser has no built-in model". Microsoft documents its Prompt API as a developer preview in Edge Canary and Dev behind a flag, on Windows and macOS only, backed by **Phi-4-mini** rather than Gemini Nano. ProofKey has never been measured on that model; with the flag on, it would run under the "Chrome built-in AI" card, and none of the Nano numbers apply |
+| Brave Origin 153 | `Verified` | 2026-09-14 on published 0.1.7: the frame-origin flow on iCloud Mail and Infomaniak, below. Its built-in model answers `unavailable`, see Providers |
+| Google Chrome 153 | `Verified` | 2026-09-13: `tools/builtin-test.mjs`, a fresh install of the real build, 11 checks |
+| Vivaldi, Opera, others | `Untested` | Same code path; nobody has loaded it |
+
 ## Editors
 
 This is the table that actually predicts behaviour. Whether ProofKey works on

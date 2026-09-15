@@ -194,8 +194,14 @@ async function run() {
   // MV3 service workers only run under Chromium's new headless mode, which
   // Playwright exposes as the `chromium` channel. The default headless build
   // loads no extensions at all and the worker never registers.
+  //
+  // PROOFKEY_BROWSER runs the same checks in another Chromium build instead.
+  // Microsoft Edge still honours --load-extension (Edge 153, 2026-09-15);
+  // branded Google Chrome does not, which is why tools/builtin-test.mjs loads
+  // over a debugging pipe.
+  const executablePath = process.env['PROOFKEY_BROWSER'];
   const context = await chromium.launchPersistentContext(PROFILE, {
-    channel: 'chromium',
+    ...(executablePath ? { executablePath } : { channel: 'chromium' }),
     headless: true,
     args: [`--disable-extensions-except=${TEST_EXT}`, `--load-extension=${TEST_EXT}`],
   });
@@ -795,9 +801,11 @@ async function run() {
       context.waitForEvent('page', { timeout: 5000 }).catch(() => null),
       openButton.click(),
     ]);
+    // Other Chromium builds rewrite the scheme: Edge 153 lands on
+    // edge://extensions/shortcuts, the same page under its own name.
     check(
-      'clicking it opens chrome://extensions/shortcuts',
-      !!shortcutsTab && shortcutsTab.url().startsWith('chrome://extensions/shortcuts'),
+      'clicking it opens the browser\'s extensions/shortcuts page',
+      !!shortcutsTab && /^[a-z]+:\/\/extensions\/shortcuts/.test(shortcutsTab.url()),
       shortcutsTab ? shortcutsTab.url() : 'no tab opened',
     );
 
