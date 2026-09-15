@@ -14,8 +14,6 @@ No backend, no account, no telemetry. Your text goes from your browser straight 
 
 > **[Install from the Chrome Web Store](https://chromewebstore.google.com/detail/loibjoemoahkajjnfioajcibcamhdafc)** — or [build it from source](#install-from-source) if you would rather read the code first.
 >
-> **Arriving with 0.1.8, in Chrome Web Store review since 2026-09-14.** Until the version badge above reads 0.1.8, the store build has no built-in model and needs a provider key; building from source gets it today.
->
 > **New here?** In Google Chrome it works as installed: [Chrome's built-in model](#no-api-key-at-all-chromes-built-in-model) checks your writing on your own computer — free, no account, one download. For every action rather than two, [start with Gemini](#no-api-key-yet-start-with-gemini): about two minutes to a key, and ordinary use usually costs nothing.
 >
 > **What is actually known to work is a much shorter list than what is built.** The table below is the whole of it — [reports](CONTRIBUTING.md) are the fastest way to grow it.
