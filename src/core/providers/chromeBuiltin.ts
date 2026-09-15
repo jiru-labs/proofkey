@@ -5,6 +5,9 @@ import {
   type CompletionRequest,
   type CompletionResult,
 } from './request';
+import { builtinProblem, type BuiltinAvailability } from './builtinProblem';
+
+export { builtinProblem, type BuiltinAvailability };
 
 /**
  * Chrome's own on-device model, reached through the Prompt API (`LanguageModel`).
@@ -56,13 +59,6 @@ export const BUILTIN_MODEL = 'gemini-nano';
  */
 export const ACTIONS_ON_BUILTIN_MODEL: ReadonlySet<string> = new Set(['fix-grammar']);
 
-export type BuiltinAvailability =
-  | 'no-api'
-  | 'unavailable'
-  | 'downloadable'
-  | 'downloading'
-  | 'available';
-
 interface Session {
   prompt(input: string, options?: { signal?: AbortSignal }): Promise<string>;
   destroy(): void;
@@ -99,23 +95,6 @@ export async function builtinAvailability(): Promise<BuiltinAvailability> {
     return await model.availability(IO);
   } catch {
     return 'unavailable';
-  }
-}
-
-/** What to tell the user for each state that is not `available`. */
-export function builtinProblem(state: BuiltinAvailability): string | null {
-  switch (state) {
-    case 'available':
-      return null;
-    case 'no-api':
-      return 'This browser has no built-in model. It works in Google Chrome on desktop; here, add a provider with an API key instead.';
-    case 'unavailable':
-      // Not a hardware verdict: Brave answers this on a machine Chrome runs it on.
-      return 'This browser says its built-in model is unavailable. Brave has answered that on a computer where Chrome runs it; in Google Chrome it usually means the computer is below Chrome\'s requirements (22 GB of free disk, and a GPU with more than 4 GB of memory or 16 GB of RAM). Add a provider with an API key instead.';
-    case 'downloadable':
-      return 'The built-in model is not downloaded yet. Open ProofKey settings and click "Download model".';
-    case 'downloading':
-      return 'Chrome is still downloading the built-in model. Try again when it finishes.';
   }
 }
 
