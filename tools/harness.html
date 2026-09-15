@@ -203,6 +203,8 @@ The quarterly report show that revenue have increased. Their is more work to do.
                 return { ok: true, value: { corrections: message.sentences.map(correct) } };
               case 'proofkey:explain':
                 return { ok: true, value: { text: 'Subject and verb must agree.', servedBy: 'harness', fallbackErrors: [] } };
+              case 'proofkey:frame-offer':
+                return { ok: true, value: { needed: !!window.__pkFrameNeeded } };
               default:
                 return { ok: true, value: null };
             }

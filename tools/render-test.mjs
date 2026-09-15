@@ -852,6 +852,68 @@ async function run() {
     await page.evaluate(() => { window.__pkEmptyReply = false; });
   }
 
+  // The offer to allow a frame's origin names the host twice, once in the
+  // message and once on the button, and real hosts are long. On iCloud Mail
+  // (`www-mail.icloud-sandbox.com`) the button took the width and the message
+  // wrapped to a word or two per line, worst in the narrow compose frame the
+  // toast is drawn in. The host here is longer still, and resolves to this
+  // server because Chrome sends every `*.localhost` name to loopback.
+  for (const width of [700, 360]) {
+    console.log(`\nframe offer toast, ${width}px wide:`);
+    await page.setViewportSize({ width, height: 820 });
+    await page.goto(`${BASE}?field=plain`, { waitUntil: 'load' });
+    await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+
+    await page.evaluate(() => {
+      window.__pkFrameNeeded = true;
+      const frame = document.createElement('iframe');
+      frame.src = 'http://www-mail.icloud-sandbox.localhost:8777/tools/no-such-page';
+      document.body.append(frame);
+      frame.focus();
+    });
+    await page.waitForTimeout(400);
+
+    const layout = await page.evaluate(() => {
+      const toast = document.getElementById('proofkey-root')?.shadowRoot?.querySelector('.pk-toast');
+      if (!toast) return null;
+      const box = (el) => {
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom };
+      };
+      const text = toast.querySelector('.pk-toast__text');
+      const action = toast.querySelector('.pk-toast__action');
+      const close = toast.querySelector('.pk-toast__close');
+      return {
+        toast: box(toast),
+        text: box(text),
+        action: action ? box(action) : null,
+        close: box(close),
+        lines: Math.round(text.getBoundingClientRect().height / parseFloat(getComputedStyle(text).lineHeight)),
+        label: action?.textContent ?? '',
+        viewport: innerWidth,
+      };
+    });
+    await page.screenshot({ path: `${SHOTS}frame-offer-${width}.png` });
+
+    check('the offer is shown with the host on its button',
+      !!layout?.action && layout.label.includes('www-mail.icloud-sandbox.localhost'),
+      layout ? JSON.stringify(layout.label) : 'no toast');
+    if (!layout?.action) continue;
+
+    const { toast, text, action, close } = layout;
+    check('the message keeps most of the toast\'s width', text.w >= toast.w * 0.6,
+      `message ${Math.round(text.w)}px of ${Math.round(toast.w)}px`);
+    check('and reads in a few lines, not a word per line', layout.lines <= 5, `${layout.lines} lines`);
+    check('the toast stays inside the viewport', toast.x >= 0 && toast.right <= layout.viewport,
+      `${Math.round(toast.x)}..${Math.round(toast.right)} of ${layout.viewport}`);
+    const inside = (el) => el.x >= toast.x && el.right <= toast.right && el.y >= toast.y && el.bottom <= toast.bottom;
+    check('the Allow button sits inside it', inside(action),
+      `button ${Math.round(action.x)}..${Math.round(action.right)}, toast ${Math.round(toast.x)}..${Math.round(toast.right)}`);
+    check('and so does the dismiss button', inside(close));
+
+    await page.evaluate(() => { window.__pkFrameNeeded = false; });
+  }
+
   await browser.close();
   console.log(failures === 0 ? '\nAll render checks passed.' : `\n${failures} check(s) FAILED`);
   process.exit(failures === 0 ? 0 : 1);

@@ -15,7 +15,7 @@ export function toast(root: ShadowRoot, options: ToastOptions): () => void {
   dismissCurrent();
 
   const node = document.createElement('div');
-  node.className = `pk-toast pk-toast--${options.kind}`;
+  node.className = `pk-toast pk-toast--${options.kind}${options.action ? ' pk-toast--with-action' : ''}`;
 
   if (options.kind === 'busy') {
     const spinner = document.createElement('span');
