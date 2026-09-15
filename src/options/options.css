@@ -113,6 +113,13 @@ body {
 }
 
 /* Only shown while Chrome is downloading its built-in model. */
+/* Every rule that sets `display` outranks the `hidden` attribute, and this page
+   toggles `hidden` from script. Without this an empty download bar showed under
+   the built-in model's card whenever nothing was downloading. */
+[hidden] {
+  display: none !important;
+}
+
 .field__progress {
   display: block;
   width: 100%;

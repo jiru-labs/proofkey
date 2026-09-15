@@ -282,6 +282,13 @@ async function run() {
       'the card is badged as needing setup when the model is unavailable',
       (await page.locator('.badge', { hasText: 'Needs setup' }).count()) > 0,
     );
+    // `.field__progress` sets `display`, which outranks the `hidden` attribute,
+    // so an empty bar showed under Model in every state but downloading.
+    // Seen in Microsoft Edge 153 on 2026-09-15; the stylesheet is the same everywhere.
+    check(
+      'no empty download bar is shown when nothing is downloading',
+      !(await page.locator('[data-builtin-progress]').isVisible()),
+    );
     await page.locator('button', { hasText: 'Save' }).last().click();
     await page.waitForTimeout(300);
     check(
