@@ -13,6 +13,8 @@ import type {
   FrameOffer,
   Result,
   RunResult,
+  SiteGrant,
+  SiteOffer,
   WorkerRequest,
 } from '../core/messages';
 import {
@@ -47,26 +49,26 @@ const SHORTCUT_SCRIPT_ID = 'proofkey-shortcuts';
 
 chrome.runtime.onInstalled.addListener((details) => {
   void rebuildContextMenus();
-  void syncShortcutOrigins();
+  void syncRegistration();
   // Nothing works until a provider exists, so send first-time users straight there.
   if (details.reason === 'install') void chrome.runtime.openOptionsPage();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  void syncShortcutOrigins();
+  void syncRegistration();
 });
 
 // Menu labels come from the user's actions, so they have to follow edits.
 chrome.storage.onChanged.addListener((_changes, area) => {
   if (area !== 'sync') return;
   void rebuildContextMenus();
-  void syncShortcutOrigins();
+  void syncRegistration();
 });
 
 // Host access can be revoked from chrome://extensions without ProofKey being
 // asked. Re-syncing here keeps the registration from outliving the permission.
-chrome.permissions.onRemoved.addListener(() => void syncShortcutOrigins());
-chrome.permissions.onAdded.addListener(() => void syncShortcutOrigins());
+chrome.permissions.onRemoved.addListener(() => void syncRegistration());
+chrome.permissions.onAdded.addListener(() => void syncRegistration());
 
 async function rebuildContextMenus(): Promise<void> {
   await chrome.contextMenus.removeAll();
@@ -135,11 +137,12 @@ chrome.commands.onCommand.addListener((command, tab) => {
 
 chrome.action.onClicked.addListener((tab) => {
   void (async () => {
-    if (!(await ensureContentScript(tab))) {
+    const reached = await ensureContentScript(tab);
+    if (!reached) {
       await chrome.runtime.openOptionsPage();
       return;
     }
-    await sendToTab(tab!.id!, { type: 'proofkey:toggle-live' });
+    await sendToTab(tab!.id!, { type: 'proofkey:toggle-live', injected: reached === 'injected' });
   })();
 });
 
@@ -156,24 +159,34 @@ async function invokeInTab(tab: chrome.tabs.Tab | undefined, actionId: string): 
   await sendToTab(tab!.id!, { type: 'proofkey:invoke', actionId });
 }
 
-// ------------------------------------------------------- shortcut origins
+// ------------------------------------------------------- registered origins
 
 /**
- * Registers the content script on the origins the user turned shortcuts on for.
+ * Registers the content script on the origins it has to be in before the user
+ * acts: those shortcuts are turned on for, and those live checking is on for.
  *
- * A key pressed on a page ProofKey is not in cannot reach it, and ProofKey is
- * not in any page by default — that is the whole point of shipping no static
- * `content_scripts` block. So per-action shortcuts need this, and only this:
- * the registration covers exactly the opted-in origins, and only those the
- * browser confirms access to, so a revoked permission takes the registration
- * with it rather than leaving a listener the user thinks they removed.
+ * A key pressed on a page ProofKey is not in cannot reach it, and underlines
+ * cannot appear in a page nobody loaded it into. ProofKey is not in any page by
+ * default — that is the whole point of shipping no static `content_scripts`
+ * block. The registration covers exactly the opted-in origins, minus the
+ * never-run list for live checking, and only those the browser confirms access
+ * to, so a revoked permission takes the registration with it rather than
+ * leaving a listener the user thinks they removed.
+ *
+ * Live checking was left out until 2026-09-16, so a site switched on from the
+ * toolbar lost it at the next page load: nothing loaded the script, and the
+ * toolbar click that did then read the switch as on and turned it off.
  */
-async function syncShortcutOrigins(): Promise<void> {
+async function syncRegistration(): Promise<void> {
   if (!hasDynamicContentScripts()) return;
 
   try {
     const settings = await loadSettings();
-    const wanted = [...new Set(settings.shortcutOrigins.map(originMatchPattern).filter(isPattern))];
+    const { enabledOrigins, blockedOrigins } = settings.liveCheck;
+    const liveOrigins = enabledOrigins.filter((origin) => !blockedOrigins.includes(origin));
+    const wanted = [
+      ...new Set([...settings.shortcutOrigins, ...liveOrigins].map(originMatchPattern).filter(isPattern)),
+    ];
 
     const granted: string[] = [];
     for (const pattern of wanted) {
@@ -227,7 +240,10 @@ function isPattern(value: string | null): value is string {
 
 // -------------------------------------------------------------- injection
 
-async function ensureContentScript(tab: chrome.tabs.Tab | undefined): Promise<boolean> {
+/** Whether the script was already in the tab, had to be injected, or cannot be. */
+async function ensureContentScript(
+  tab: chrome.tabs.Tab | undefined,
+): Promise<false | 'present' | 'injected'> {
   if (!tab?.id || !isInjectableUrl(tab.url)) return false;
 
   // Already there? Cheaper than injecting twice and losing in-page state.
@@ -235,14 +251,14 @@ async function ensureContentScript(tab: chrome.tabs.Tab | undefined): Promise<bo
     const pong = await chrome.tabs.sendMessage(tab.id, {
       type: 'proofkey:ping',
     } satisfies WorkerRequest);
-    if (pong) return true;
+    if (pong) return 'present';
   } catch {
     // No receiver yet — expected on the first invocation for a tab.
   }
 
   try {
     await injectFiles(tab.id, [CONTENT_SCRIPT]);
-    return true;
+    return 'injected';
   } catch (error) {
     console.warn('[ProofKey] injection failed', error);
     return false;
@@ -306,6 +322,12 @@ async function handle(
     case 'proofkey:add-word':
       return addWord(message.word);
 
+    case 'proofkey:site-offer':
+      return siteOffer(sender);
+
+    case 'proofkey:site-grant':
+      return siteGrant(sender);
+
     case 'proofkey:frame-offer':
       return frameOffer(sender, message.origin);
 
@@ -314,7 +336,52 @@ async function handle(
   }
 }
 
-// ---------------------------------------------------------- frame origins
+// ------------------------------------------------------------ site origins
+
+/**
+ * Whether live checking, just switched on for the page that asked, would be
+ * gone at the next visit: the browser has not granted the page's origin, so the
+ * registration cannot cover it and nothing loads the script there.
+ */
+async function siteOffer(sender: chrome.runtime.MessageSender): Promise<Result<SiteOffer>> {
+  const origin = originOf(sender.url ?? sender.tab?.url);
+  const pattern = origin ? originMatchPattern(origin) : null;
+  if (!origin || !pattern) return { ok: true, value: { needed: false } };
+
+  const settings = await loadSettings();
+  const { enabledOrigins, blockedOrigins } = settings.liveCheck;
+  if (!enabledOrigins.includes(origin) || blockedOrigins.includes(origin)) {
+    return { ok: true, value: { needed: false } };
+  }
+  return { ok: true, value: { needed: !(await chrome.permissions.contains({ origins: [pattern] })) } };
+}
+
+/**
+ * Asks the browser for the page's own origin, from the click on Allow in the
+ * page. As in `frameGrant`, the request goes out before anything is awaited:
+ * the gesture that lets the browser show its prompt does not survive a wait.
+ * Once granted, `permissions.onAdded` re-syncs the registration, and live
+ * checking — already on for the origin — loads with the page from then on.
+ */
+async function siteGrant(sender: chrome.runtime.MessageSender): Promise<Result<SiteGrant>> {
+  const origin = originOf(sender.url ?? sender.tab?.url);
+  const pattern = origin ? originMatchPattern(origin) : null;
+  if (!origin || !pattern) {
+    return { ok: false, error: 'This page has no address ProofKey can be allowed on.' };
+  }
+
+  try {
+    return { ok: true, value: { granted: await chrome.permissions.request({ origins: [pattern] }) } };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      error: `The browser would not ask about ${new URL(origin).host} (${reason}). Save Settings once with the site under "Enabled on"; that click can ask.`,
+    };
+  }
+}
+
+// ----------------------------------------------------------- frame origins
 
 /**
  * Whether a frame on `origin`, inside the page that asked, still needs setting
@@ -356,7 +423,7 @@ async function frameOffer(
  * that got this far — it does not survive being made to wait.
  *
  * Once granted, the origin is registered the same way a hand-typed one is:
- * added to the shortcut origins, which `syncShortcutOrigins` turns into a
+ * added to the shortcut origins, which `syncRegistration` turns into a
  * registration on the next settings change, and switched on for live checking
  * if the page around it is. It is also remembered as belonging to this page,
  * so the toolbar toggle on the page carries it. Then the script is injected

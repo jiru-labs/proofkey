@@ -209,7 +209,9 @@ Which model you pick matters more than any of that — the cost spread across cu
 
 There is no static `content_scripts` block, so ProofKey does not run on pages you have not turned it on for.
 
-Per-action shortcuts are the one feature that needs ProofKey loaded in a page before you act, rather than after — a key pressed in a page it is not in cannot reach it. So for each origin you list under **Shortcuts run on**, and only those, it asks for access and registers its content script there. Revoking that access from `chrome://extensions` unregisters it; ProofKey re-checks on every permission change rather than assuming the grant it was given still holds.
+Two features need ProofKey loaded in a page before you act, rather than after: per-action shortcuts, because a key pressed in a page it is not in cannot reach it, and live checking, because nothing can be underlined in a page nothing loaded it into. So for each origin you list under **Shortcuts run on** or live checking's **Enabled on**, and only those, it asks for access when you save and registers its content script there. Turning live checking on from the toolbar button works on the page at once; if the browser has not granted that site yet, the page offers **Allow** so it is still on after a reload. Revoking access from `chrome://extensions` unregisters it; ProofKey re-checks on every permission change rather than assuming the grant it was given still holds.
+
+Up to 0.1.9 only shortcut origins were registered, so live checking switched on for a site did not come back after the page reloaded, and the toolbar click meant to bring it back turned it off instead.
 
 ## Development
 

@@ -18,6 +18,10 @@ export type ContentRequest =
   | { type: 'proofkey:set-live'; enabled: boolean }
   | { type: 'proofkey:add-word'; word: string }
   | { type: 'proofkey:get-state' }
+  /** Live checking was switched on here; is the page's origin granted, so it survives a reload? */
+  | { type: 'proofkey:site-offer' }
+  /** The user clicked Allow on that offer. Carries the click's user gesture. */
+  | { type: 'proofkey:site-grant' }
   /** Focus went into a frame on another origin; does that origin need setting up? */
   | { type: 'proofkey:frame-offer'; origin: string }
   /** The user clicked Allow on that offer. Must be sent from the click itself. */
@@ -28,7 +32,12 @@ export type WorkerRequest =
   | { type: 'proofkey:ping' }
   /** Menu or shortcut fired; the content script decides what text that means. */
   | { type: 'proofkey:invoke'; actionId: string }
-  | { type: 'proofkey:toggle-live' };
+  /**
+   * The toolbar button. `injected` is true when the click had to bring the
+   * script into the page, which means live checking was not running here
+   * whatever the stored switch says.
+   */
+  | { type: 'proofkey:toggle-live'; injected: boolean };
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -52,6 +61,16 @@ export interface FrameOffer {
    * live checking is on for the page around it but not for the frame.
    */
   needed: boolean;
+}
+
+export interface SiteOffer {
+  /** True when the browser has not granted the page's origin, so nothing loads the script on the next visit. */
+  needed: boolean;
+}
+
+export interface SiteGrant {
+  /** Whether the browser granted the origin. False when the user declined. */
+  granted: boolean;
 }
 
 export interface FrameGrant {

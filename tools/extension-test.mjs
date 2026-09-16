@@ -594,6 +594,17 @@ async function run() {
       await xPage.close();
     }
 
+    // Live checking registers the script too now, and the frame block above
+    // switched it on for two origins, so both lists are emptied here.
+    const setLiveOrigins = (enabled, blocked = []) =>
+      page.evaluate(async ([enabledOrigins, blockedOrigins]) => {
+        const all = await chrome.storage.sync.get('proofkey:settings');
+        const settings = all['proofkey:settings'] ?? {};
+        settings.liveCheck = { ...(settings.liveCheck ?? {}), enabledOrigins, blockedOrigins };
+        settings.frameOrigins = {};
+        await chrome.storage.sync.set({ 'proofkey:settings': settings });
+      }, [enabled, blocked]);
+    await setLiveOrigins([]);
     await setOrigins([]);
     await page.waitForTimeout(900);
     check(
@@ -601,6 +612,77 @@ async function run() {
       !(await registeredIds()).some((entry) => entry.id === 'proofkey-shortcuts'),
       'a listener the user thinks they removed must not survive',
     );
+
+    // Live checking switched on for a site has to still be on at the next visit.
+    // Only shortcut origins were ever registered, so a reload left a page with
+    // live checking "on" and no script in it; the toolbar button then injected
+    // the script and flipped the switch — off. Measured 2026-09-16 on the 0.1.9
+    // code: no script after load, and one click answered "Live checking is off
+    // for this site" and dropped the origin. The README had promised access is
+    // requested for sites where inline checking is on; nothing asked for it.
+    {
+      console.log('\nlive checking across a reload:');
+      const liveOrigin = `http://localhost:${ALT_PORT}`;
+      await setLiveOrigins([liveOrigin]);
+      await page.waitForTimeout(900);
+      const registration = (await registeredIds()).find((entry) => entry.id === 'proofkey-shortcuts');
+      check(
+        'an origin with live checking on is registered, with no shortcut listed',
+        !!registration && registration.matches.includes(`${liveOrigin}/*`),
+        registration ? registration.matches.join(', ') : 'nothing registered',
+      );
+
+      const livePage = await context.newPage();
+      await livePage.goto(`${liveOrigin}/frame-child`);
+      await livePage.waitForTimeout(1200);
+      check('so a fresh load of that site carries the script', await marker(livePage.mainFrame()));
+      await livePage.close();
+
+      await setLiveOrigins([liveOrigin], [liveOrigin]);
+      await page.waitForTimeout(900);
+      check(
+        'an origin on the never-run list is not registered, even with live checking on',
+        !(await registeredIds()).some((entry) => entry.id === 'proofkey-shortcuts'),
+      );
+
+      // The toolbar button on a page that was open before the switch went on,
+      // so nothing loaded the script into it. A test cannot click the toolbar,
+      // so the worker is made to do what its onClicked handler does: ping,
+      // inject when nothing answers, send toggle-live saying which it was.
+      await setLiveOrigins([]);
+      await page.waitForTimeout(900);
+      const barePage = await context.newPage();
+      await barePage.goto(`${liveOrigin}/frame-child`);
+      await barePage.waitForTimeout(800);
+      check('the control: a page opened with the switch off has no script', !(await marker(barePage.mainFrame())));
+      await setLiveOrigins([liveOrigin]);
+      await page.waitForTimeout(900);
+
+      const liveWorker = context.serviceWorkers()[0] ?? worker;
+      await liveWorker.evaluate(async (url) => {
+        const [tab] = (await chrome.tabs.query({})).filter((t) => t.url?.startsWith(url));
+        let pong = false;
+        try {
+          pong = await chrome.tabs.sendMessage(tab.id, { type: 'proofkey:ping' });
+        } catch {}
+        if (!pong) await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: ['content.js'] });
+        await chrome.tabs.sendMessage(tab.id, { type: 'proofkey:toggle-live', injected: !pong });
+      }, `${liveOrigin}/frame-child`);
+      await barePage.waitForTimeout(1500);
+      const clicked = await barePage.evaluate(() =>
+        document.getElementById('proofkey-root')?.shadowRoot?.querySelector('.pk-toast')?.textContent ?? '');
+      check('the click that loads the script leaves live checking on', /is on/.test(clicked), JSON.stringify(clicked));
+      check(
+        'and the site stays switched on in storage',
+        (await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings'].liveCheck.enabledOrigins))
+          .includes(liveOrigin),
+      );
+      check('no offer to allow a site the browser already granted', !/Allow/.test(clicked), JSON.stringify(clicked));
+      await barePage.close();
+
+      await setLiveOrigins([]);
+      await page.waitForTimeout(900);
+    }
   }
 
   for (const transport of ['chat_completions', 'anthropic_messages']) {

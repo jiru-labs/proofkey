@@ -899,6 +899,51 @@ async function run() {
     await page.evaluate(() => { window.__pkEmptyReply = false; });
   }
 
+  // The toolbar button on a page it had to load the script into. The stored
+  // switch said on, nothing was running, and a plain toggle turned it off —
+  // "Live checking is off for this site" in answer to a click meant to start
+  // it. Measured 2026-09-16 on the 0.1.9 code through the real worker. Here the
+  // harness plays the worker, so this is the content script's half.
+  {
+    console.log('\ntoolbar button, live checking on for the site:');
+    const lastToast = () => page.evaluate(() =>
+      [...(document.getElementById('proofkey-root')?.shadowRoot?.querySelectorAll('.pk-toast') ?? [])]
+        .map((t) => t.textContent).pop() ?? '');
+    const fresh = async () => {
+      await page.goto(`${BASE}?field=plain`, { waitUntil: 'load' });
+      await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    };
+
+    await fresh();
+    await page.evaluate(() => window.__pkToggleLive(true));
+    await page.waitForTimeout(400);
+    const started = await lastToast();
+    check('a click that brought the script in turns it on, not off', /is on/.test(started), JSON.stringify(started));
+    check('and does not store the switch as off', await page.evaluate(() =>
+      window.__pkState.liveEnabled === true && !window.__pkSent.includes('proofkey:set-live')));
+
+    await page.evaluate(() => window.__pkToggleLive(false));
+    await page.waitForTimeout(400);
+    const stopped = await lastToast();
+    check('a click with the script already running still turns it off', /is off/.test(stopped), JSON.stringify(stopped));
+
+    await fresh();
+    await page.evaluate(() => { window.__pkSiteNeeded = true; window.__pkState.liveEnabled = true; });
+    await page.evaluate(() => window.__pkToggleLive(true));
+    await page.waitForTimeout(400);
+    const offer = await lastToast();
+    check('with the site not granted, it offers to keep it on across reloads',
+      offer.includes('Allow localhost:8777') && /reloads/.test(offer), JSON.stringify(offer));
+    const allow = page.locator('#proofkey-root .pk-toast__action');
+    if (await allow.count()) await allow.click();
+    await page.waitForTimeout(400);
+    const granted = await lastToast();
+    check('and Allow asks the worker for the site', await page.evaluate(() => window.__pkSent.includes('proofkey:site-grant')));
+    check('then says it stays on', /stays on/.test(granted), JSON.stringify(granted));
+    await page.evaluate(() => { window.__pkSiteNeeded = false; });
+  }
+
   // An error toast has to stay long enough to read, and to reach its button.
   // Every toast used to go after 4.5 s, hovered or not; Brave's built-in-model
   // message is 41 words with an "Open settings" button, and in Brave 153 on

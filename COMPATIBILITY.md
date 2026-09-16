@@ -117,6 +117,19 @@ setting the two sites did not share. What settled it was the extension's own
 stored settings read off disk, and a quick action succeeding in the same composer
 on 2026-09-10. Check the origin lists before calling a site broken.
 
+**Why a click meant to make sure it was on turned it off** (found 2026-09-16, fixed
+for 0.1.10). Up to 0.1.9 the content script was registered on shortcut origins only,
+so a site with live checking on got no script at the next page load. The toolbar
+button then injected it and flipped the stored switch, which still read on — so the
+click that should have started it switched it off. Measured on the 0.1.9 code
+through the real service worker: no script after a load with the site switched on,
+and one click answered "Live checking is off for this site" and dropped the origin.
+Now live-check origins are registered too once the browser grants them (Save asks,
+and the toolbar path offers **Allow** in the page), and a click that has to inject
+the script leaves live checking on. `test:ext` "live checking across a reload" and
+`test:render` "toolbar button, live checking on for the site" cover both halves;
+neither has been run on a real site yet.
+
 Everything marked 2026-09-02 was run against the published 0.1.3 build, the
 2026-09-04 rows against the published 0.1.4 build, and 2026-09-10 against 0.1.5.
 

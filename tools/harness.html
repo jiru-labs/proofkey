@@ -164,6 +164,16 @@ The quarterly report show that revenue have increased. Their is more work to do.
         }
       };
 
+      // The toolbar button: `injected` says whether its click had to bring the
+      // script into the page.
+      window.__pkToggleLive = (injected) => {
+        for (const listener of workerListeners) {
+          listener({ type: 'proofkey:toggle-live', injected }, {}, () => {});
+        }
+      };
+      // Every message the stub worker was sent, for tests that assert one went out.
+      window.__pkSent = [];
+
       // What `proofkey:get-state` answers. Mutable so a test can rebind a key
       // and then fire a storage change, the way the options page does.
       window.__pkState = {
@@ -185,6 +195,7 @@ The quarterly report show that revenue have increased. Their is more work to do.
       window.chrome = {
         runtime: {
           sendMessage: async (message) => {
+            window.__pkSent.push(message.type);
             switch (message.type) {
               case 'proofkey:run':
                 // A provider answering with nothing is a real shape: an empty
@@ -215,6 +226,13 @@ The quarterly report show that revenue have increased. Their is more work to do.
                 return { ok: true, value: { text: 'Subject and verb must agree.', servedBy: 'harness', fallbackErrors: [] } };
               case 'proofkey:frame-offer':
                 return { ok: true, value: { needed: !!window.__pkFrameNeeded } };
+              case 'proofkey:set-live':
+                window.__pkState.liveEnabled = message.enabled;
+                return { ok: true, value: message.enabled };
+              case 'proofkey:site-offer':
+                return { ok: true, value: { needed: !!window.__pkSiteNeeded } };
+              case 'proofkey:site-grant':
+                return { ok: true, value: { granted: true } };
               default:
                 return { ok: true, value: null };
             }

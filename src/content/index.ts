@@ -1,4 +1,11 @@
-import { askWorker, type ContentState, type RunResult, type WorkerRequest } from '../core/messages';
+import {
+  askWorker,
+  type ContentState,
+  type RunResult,
+  type SiteGrant,
+  type SiteOffer,
+  type WorkerRequest,
+} from '../core/messages';
 import { createFrameWatcher } from './frames';
 import { createShortcuts } from './keys';
 import { createLive, type LiveController } from './live';
@@ -47,7 +54,7 @@ chrome.runtime.onMessage.addListener((message: WorkerRequest, _sender, sendRespo
       return false;
 
     case 'proofkey:toggle-live':
-      void toggleLive();
+      void toggleLive(message.injected);
       sendResponse(true);
       return false;
   }
@@ -95,23 +102,74 @@ chrome.storage.onChanged.addListener((_changes, area) => {
   if (area === 'sync') void refreshState();
 });
 
-async function toggleLive(): Promise<void> {
+async function toggleLive(injected: boolean): Promise<void> {
   if (!live) await refreshState();
   if (!live) return;
 
-  const next = !live.isEnabled();
-  const saved = await askWorker<boolean>({ type: 'proofkey:set-live', enabled: next });
-  if (!saved.ok) {
-    toast(ui(), { kind: 'error', text: saved.error });
-    return;
+  // A click that had to bring the script in was made on a page where live
+  // checking was not running, whatever the stored switch said. Flipping that
+  // switch turned it off: the user saw nothing, clicked to get it back, and
+  // was told "off". A click means "the thing I see changes", so here it runs.
+  const next = injected && live.isEnabled() ? true : !live.isEnabled();
+  if (next !== live.isEnabled()) {
+    const saved = await askWorker<boolean>({ type: 'proofkey:set-live', enabled: next });
+    if (!saved.ok) {
+      toast(ui(), { kind: 'error', text: saved.error });
+      return;
+    }
   }
 
   live.setEnabled(next);
+  if (next && window === window.top && (await offerSite())) return;
   toast(ui(), {
     kind: 'ok',
     text: next
       ? 'Live checking is on for this site. Click into a text field to start.'
       : 'Live checking is off for this site.',
+  });
+}
+
+/**
+ * Offers the grant that keeps live checking on past this page load, when the
+ * browser has not given ProofKey this site yet. Without it the toolbar click
+ * reaches this one page only, and the next visit starts with nothing loaded.
+ * Returns whether the offer was shown.
+ */
+async function offerSite(): Promise<boolean> {
+  const answer = await askWorker<SiteOffer>({ type: 'proofkey:site-offer' });
+  if (!answer.ok || !answer.value.needed) return false;
+
+  const host = location.host;
+  toast(ui(), {
+    kind: 'info',
+    sticky: true,
+    text: `Live checking is on for this page. Allow ${host} to keep it on after the page reloads.`,
+    action: { label: `Allow ${host}`, run: () => void grantSite(host) },
+  });
+  return true;
+}
+
+async function grantSite(host: string): Promise<void> {
+  // No await before the request leaves: the click that ran this is the gesture
+  // the permission prompt needs, and it does not wait for anything.
+  const pending = askWorker<SiteGrant>({ type: 'proofkey:site-grant' });
+  const dismiss = toast(ui(), { kind: 'busy', text: `Asking the browser about ${host}…`, sticky: true });
+  const result = await pending;
+  dismiss();
+
+  if (!result.ok) {
+    toast(ui(), {
+      kind: 'error',
+      text: result.error,
+      action: { label: 'Open settings', run: () => void askWorker({ type: 'proofkey:open-options' }) },
+    });
+    return;
+  }
+  toast(ui(), {
+    kind: result.value.granted ? 'ok' : 'info',
+    text: result.value.granted
+      ? `${host} is allowed. Live checking stays on here from now on.`
+      : `${host} was not allowed, so live checking lasts until this page reloads.`,
   });
 }
 

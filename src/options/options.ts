@@ -1480,6 +1480,16 @@ async function save(status: HTMLElement): Promise<void> {
   settings.shortcutOrigins = [
     ...new Set(settings.shortcutOrigins.map(normalizeOrigin).filter((o): o is string => !!o)),
   ];
+  // Live checking compares these with the page's origin exactly, so a trailing
+  // slash or a missing scheme typed here would never match a page.
+  const { liveCheck } = settings;
+  liveCheck.enabledOrigins = [
+    ...new Set(liveCheck.enabledOrigins.map(normalizeOrigin).filter((o): o is string => !!o)),
+  ];
+  liveCheck.blockedOrigins = [
+    ...new Set(liveCheck.blockedOrigins.map(normalizeOrigin).filter((o): o is string => !!o)),
+  ];
+  const liveOrigins = liveCheck.enabledOrigins.filter((o) => !liveCheck.blockedOrigins.includes(o));
 
   // Requested before any await, while the click that authorises the prompt is
   // still in scope. Origins already granted resolve without a dialog.
@@ -1487,9 +1497,10 @@ async function save(status: HTMLElement): Promise<void> {
     ...new Set([
       ...settings.connections.map(originPattern),
       ...settings.shortcutOrigins.map(originMatchPattern),
+      ...liveOrigins.map(originMatchPattern),
     ].filter((p): p is string => !!p)),
   ];
-  let shortcutsGranted = true;
+  let sitesGranted = true;
   if (patterns.length > 0) {
     try {
       await chrome.permissions.request({ origins: patterns });
@@ -1502,12 +1513,14 @@ async function save(status: HTMLElement): Promise<void> {
   // API endpoints too, so a `false` there does not say which half was refused —
   // and saying "shortcuts are on" when the listener could not be registered is
   // exactly the kind of claim that leaves a user pressing a dead key.
-  const shortcutPatterns = settings.shortcutOrigins
+  // Sites, not endpoints: the script has to be registered on each of these to
+  // be in the page before the user acts.
+  const sitePatterns = [...settings.shortcutOrigins, ...liveOrigins]
     .map(originMatchPattern)
     .filter((p): p is string => !!p);
-  if (shortcutPatterns.length > 0) {
-    shortcutsGranted = await chrome.permissions
-      .contains({ origins: shortcutPatterns })
+  if (sitePatterns.length > 0) {
+    sitesGranted = await chrome.permissions
+      .contains({ origins: sitePatterns })
       .catch(() => false);
   }
 
@@ -1516,12 +1529,12 @@ async function save(status: HTMLElement): Promise<void> {
     const usable = connectionChain(settings).some(
       (c) => validateConnection(c) === null && builtinCardProblem(c) === null,
     );
-    status.className = usable && shortcutsGranted ? 'status status--ok' : 'status status--error';
+    status.className = usable && sitesGranted ? 'status status--ok' : 'status status--error';
     status.textContent = !usable
       ? 'Saved, but no provider is usable yet — check the warnings above.'
-      : shortcutsGranted
+      : sitesGranted
         ? 'Saved.'
-        : 'Saved, but access to some shortcut sites was not granted, so the keys will not work there.';
+        : 'Saved, but access to some sites was not granted, so shortcuts and live checking will not start there on their own.';
   } catch (error) {
     status.className = 'status status--error';
     // storage.sync rejects items over its per-item quota; long prompts get there.
