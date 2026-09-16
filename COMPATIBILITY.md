@@ -44,10 +44,10 @@ and whether Chrome's built-in model exists at all.
 | Browser | Status | Evidence |
 |---|---|---|
 | Chromium (Playwright's build) | `Tested` | `npm run test:ext` and `npm run test:render` run in it by default |
-| Microsoft Edge 153 (stable, Linux) | `Tested` | 2026-09-15, Edge 153.0.4234.32 headless: `PROOFKEY_BROWSER=<path to msedge> npm run test:ext` 78/78 and `npm run test:render` 95/95 against the stub provider. Edge honours `--load-extension`; its shortcuts page is `edge://extensions/shortcuts`. Not run against real sites or real providers in Edge, and not installed from the Web Store |
+| Microsoft Edge 153 (stable, Linux) | `Tested` | 2026-09-15, Edge 153.0.4234.32 headless: `PROOFKEY_BROWSER=<path to msedge> npm run test:ext` 78/78 and `npm run test:render` 95/95 against the stub provider; 2026-09-16 on the tree at `684f358`, 91/91 and 112/112. Edge honours `--load-extension`; its shortcuts page is `edge://extensions/shortcuts`. Not run against real sites or real providers in Edge, and not installed from the Web Store |
 | Microsoft Edge, built-in model | `Not supported` on stable Linux | Same run: `LanguageModel` is undefined on a web page, in the service worker and on the options page, so the card reads "This browser has no built-in model". Microsoft documents its Prompt API as a developer preview in Edge Canary and Dev behind a flag, on Windows and macOS only, backed by **Phi-4-mini** rather than Gemini Nano. ProofKey has never been measured on that model; with the flag on, it would run under the "Chrome built-in AI" card, and none of the Nano numbers apply |
-| Brave Origin 153 | `Verified` | 2026-09-14 on published 0.1.7: the frame-origin flow on iCloud Mail and Infomaniak, below. Its built-in model answers `unavailable`, see Providers |
-| Google Chrome 153 | `Verified` | 2026-09-13: `tools/builtin-test.mjs`, a fresh install of the real build, 11 checks |
+| Brave Origin 153 | `Tested` + `Verified` | 2026-09-16, Brave Origin 153.1.95.101, the tree at `684f358`, under `xvfb-run` with `--headed` (it cannot run headless): `test:ext` 91/91, `test:render` 112/112, `test:provider` 33/33 against a local `Qwen3-4B-Instruct-2507`, and the five editor demos below. 2026-09-14 on published 0.1.7: the frame-origin flow on iCloud Mail and Infomaniak, below. Its built-in model answers `unavailable`, see Providers |
+| Google Chrome 153 | `Verified` | 2026-09-13: `tools/builtin-test.mjs`, a fresh install of the real build, 11 checks. 2026-09-16 on `684f358`: 12, the new one that no download bar is drawn once the model is ready |
 | Vivaldi, Opera, others | `Untested` | Same code path; nobody has loaded it |
 
 ## Editors
@@ -62,19 +62,35 @@ editors; engines are what the code branches on (`src/content/target.ts`).
 | `<input type=text>` | Same, single-line | `Tested` | `test:render` — `single` field |
 | Plain `contenteditable` | CSS Custom Highlight API for underlines, word-level diff to write | `Tested` | `test:render` — `rich` field, incl. bold surviving both a single apply and a whole-field rewrite. `blocks` field: an action run on a selected paragraph rewrites that paragraph and leaves the ones around it alone, asserted with the control that the selection really does have an element endpoint |
 | `contenteditable` that re-renders on every input | Same, edits bounded and awaited | `Tested` | `test:render` — `rerender` field |
-| **Lexical** (WhatsApp, Reddit) | `execCommand` through the browser's editing path; never a DOM mutation | `Tested` + `Verified` | `test:render` — `lexical` field, a real embedded Lexical instance (35a8351): whole-field rewrite, and live checking driven by a real clipboard paste. Verified against WhatsApp Web 2026-08-01 (e2ae3b1) |
-| **Quill** (Slack, LinkedIn) | Same path as Lexical | `Untested` | — |
-| **ProseMirror** (Notion-like, many CMSes) | Same path as Lexical | `Untested` | — |
-| **Slate** (Discord) | Same path as Lexical | `Untested` | — |
-| **Draft.js** (older X/Twitter) | Same path as Lexical | `Untested` | — |
+| **Lexical** (WhatsApp, Reddit) | `execCommand` through the browser's editing path; never a DOM mutation | `Tested` + `Verified` | `test:render` — `lexical` field, a real embedded Lexical instance (35a8351): whole-field rewrite, and live checking driven by a real clipboard paste. Verified against WhatsApp Web 2026-08-01 (e2ae3b1). **2026-09-16, playground.lexical.dev**, Brave Origin 153, `684f358`, local `Qwen3-4B-Instruct-2507`: live underline, Apply from the card with two reads agreeing, and `Alt+G` on the whole multi-paragraph document. Before `729c96a` that last one put the document in the field twice, see [MODELS.md](MODELS.md#text-in-one-language) |
+| **Quill** (Slack, LinkedIn) | Same path as Lexical | `Verified` on the public demo | 2026-09-16, the editor on quilljs.com: as the editor-demo run below |
+| **ProseMirror** (Notion-like, many CMSes) | Same path as Lexical | `Verified` on the public demo | 2026-09-16, prosemirror.net/examples/basic: as the editor-demo run below |
+| **Slate** (Discord) | Same path as Lexical | `Verified` on the public demo | 2026-09-16, slatejs.org/examples/richtext: as the editor-demo run below |
+| **Draft.js** (older X/Twitter) | Same path as Lexical | `Verified` on the public demo | 2026-09-16, draftjs.org: as the editor-demo run below |
 | CodeMirror / Monaco (code editors) | Out of scope; ProofKey is not a code assistant | `Untested` | — |
 | Canvas-rendered text (Google Docs) | There is no DOM text to underline or replace | `Not supported` | Docs paints text to a canvas |
 
 Quill, ProseMirror, Slate and Draft.js take the **same** code path as Lexical —
 the one that was fixed in e2ae3b1 and is covered by a real Lexical instance in
-`test:render`. So `Untested` there means "expected to work, nobody has run it",
-rather than "no idea". The
-failure mode to watch for is a framework that reconciles differently enough that
+`test:render`.
+
+**The editor-demo run, 2026-09-16.** The built extension at `684f358`, freshly
+installed in Brave Origin 153 with a local `Qwen3-4B-Instruct-2507`, on each
+engine's own public demo page: select all and delete (on Lexical's demo that
+clears only part of the page; the rest stays in the document), type two
+sentences with errors,
+wait for live underlines, open the first card and Apply it, re-read the editor
+twice a second and a half apart and require both reads to agree and to contain
+the correction, then `Alt+G` (Fix grammar on the whole field) with the same
+two-read check. 26 of 26 checks across Lexical, Quill, ProseMirror, Slate and
+Draft.js, and no page errors from ProofKey. Driven by a script, not by hand, and
+the script is not in the repo because it depends on five pages that change
+without notice. A demo page is the engine, not the product: Slack, Notion or
+Discord wrap it in their own code, and none of those was run. So `Verified on
+the public demo` there means the engine takes ProofKey's writes, not that the
+site does.
+
+The failure mode to watch for is a framework that reconciles differently enough that
 an awaited `execCommand` still loses characters. That is exactly what the
 WhatsApp bug was, and exactly what a report should describe.
 
@@ -416,7 +432,7 @@ agrees with whatever you send it. That is the gap this table exists to close.
 | llama.cpp (self-hosted) | CORS and host permission | — | `Verified` | 2026-08-13 — `llama-server` echoes `chrome-extension://<id>` into `Access-Control-Allow-Origin` with `Access-Control-Allow-Headers: *`, so unlike Ollama it needs no origin flag. `http://127.0.0.1:8080/*` is a valid match pattern — ports are accepted by `chrome.permissions.contains` in a real browser, so `originPattern` (`src/core/providers/index.ts:109`) grants correctly for a local server |
 | llama.cpp (self-hosted) | **Fetch models** | — | `Partly verified` | Observed 2026-08-13: `GET /v1/models` answers **200 without a key** while `POST /chat/completions` answers 401 `Invalid API Key`. On a server started with `--api-key-file` the list therefore populates and the connection looks configured while every request fails. **Test** is what catches it, and the preset ships `authStyle: 'none'` — labelled *"Not sent (local server)"* — which must be switched to Bearer before a typed key is sent at all (`src/core/providers/request.ts:59`) |
 | Chrome built-in AI | Gemini Nano (`nano_v3_gpu_component` 2025.8.8.1141), in Google Chrome 153 | `chrome_builtin` | `Verified` — **live checking and Fix grammar only** | 2026-09-13, one machine: Ryzen 7840U / Radeon 780M laptop. `npm run eval` through `tools/nano-bridge.mjs`, 10 runs: **13.0/14 on every run, 0.0 false alarms, contract held 10/10** with ProofKey's greedy sampling; Chrome's default sampling gave 12.8/14 (12–13). `tools/action-eval.ts --actions all`, 3 runs: Fix grammar kept mixed-language text in 21/24 checks; the rewrites translated borrowed words (9–18/24) and Translate obeyed the injection fixture 3/3, so ProofKey does not offer them while this model is active. Through the real extension, three runs: 8-sentence live check 8.6–8.8s, Fix grammar 4.8–4.9s. See [MODELS.md](MODELS.md#results--chromes-built-in-model) |
-| Brave | Chrome built-in AI | `chrome_builtin` | `Not supported` | Measured 2026-09-13 on Brave Origin 153, on the same laptop Chrome runs it on: `LanguageModel` exists and `availability()` answers `unavailable`. Up to 0.1.9 the message for that state named Brave only as a possibility beside Chrome's hardware floor, and on 2026-09-15 a Brave user read it as a hardware problem and asked what it meant. On `main`, unreleased, it names Brave outright when `navigator.userAgentData.brands` lists Brave or `navigator.brave` exists — both signals measured 2026-09-15 in Brave 153 on the options page and in the service worker. The new wording is checked by `tools/builtin-check.ts` with stubbed browsers and has not been seen in Brave yet |
+| Brave | Chrome built-in AI | `chrome_builtin` | `Not supported` | Measured 2026-09-13 on Brave Origin 153, on the same laptop Chrome runs it on: `LanguageModel` exists and `availability()` answers `unavailable`. Up to 0.1.9 the message for that state named Brave only as a possibility beside Chrome's hardware floor, and on 2026-09-15 a Brave user read it as a hardware problem and asked what it meant. On `main`, unreleased, it names Brave outright when `navigator.userAgentData.brands` lists Brave or `navigator.brave` exists — both signals measured 2026-09-15 in Brave 153 on the options page and in the service worker. The new wording is checked by `tools/builtin-check.ts` with stubbed browsers, and on 2026-09-16 was seen in Brave Origin 153.1.95.101 itself: the real service worker returned it to Fix grammar (`test:ext` run in Brave), and the options card and the in-page error toast showed it in full at 1000 px and 360 px wide |
 | Any provider | free tiers and `:free` model variants | — | `Not tested` | Project rule, not an outcome: free endpoints are deliberately not measured or recommended. They are rate-limited, silently rerouted and withdrawn, so publishing a score would imply a durability the tier does not have |
 | OpenCode Go | `minimax-m3`, `deepseek-v4-pro`, `qwen3.6-plus` | `chat_completions` | `Not recommended` | Project rule, applied to a measurement: `minimax-m3` scores 0.0/14 by writing its reasoning into the reply; `deepseek-v4-pro` and `qwen3.6-plus` average 98s and 73s against a 60s timeout, so they fail rather than arrive late. Out of scope for every workload. See [MODELS.md](MODELS.md#forced-reasoning) |
 | xAI, Gemini, OpenCode Go | `grok-4.5`, `grok-build-0.1`, `grok-4.20-0309-reasoning`, `gemini-2.5-pro`, `gemini-3.5-flash`, `gemini-3.6-flash`, and OpenCode Go apart from `gpt-5.6-luna` / `glm-5.1` / `glm-5.2` | `chat_completions` | `Not recommended` | Project rule, applied to a measurement: thinking cannot be turned off and costs 14.7s–48s per check, against ~1s on a flash-lite. Excluded from **live checking only** — fine for quick actions, where you wait on purpose. Note the rule keys on measured harm, not on forced thinking: `gemini-3.1-flash-lite` also cannot be turned off, and stays recommended at 918ms. See [MODELS.md](MODELS.md#forced-reasoning) |
