@@ -193,6 +193,8 @@ The quarterly report show that revenue have increased. Their is more work to do.
                 if (window.__pkEmptyReply) {
                   return { ok: true, value: { text: '', servedBy: 'harness', fallbackErrors: [] } };
                 }
+                // A worker refusal, worded however the case needs it.
+                if (window.__pkRunError) return { ok: false, error: window.__pkRunError };
                 return {
                   ok: true,
                   value: { text: correct(message.text), servedBy: 'harness', fallbackErrors: [] },

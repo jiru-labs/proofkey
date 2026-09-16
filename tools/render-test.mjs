@@ -857,6 +857,49 @@ async function run() {
     await page.evaluate(() => { window.__pkEmptyReply = false; });
   }
 
+  // An error toast has to stay long enough to read, and to reach its button.
+  // Every toast used to go after 4.5 s, hovered or not; Brave's built-in-model
+  // message is 41 words with an "Open settings" button, and in Brave 153 on
+  // 2026-09-16 it was gone between 4 and 6 s with the pointer resting on it.
+  {
+    console.log('\nerror toasts stay until they can be read:');
+    const BRAVE = "Brave reports Chrome's built-in model as unavailable, even on a computer where Google Chrome runs it. To use ProofKey with no key, use Google Chrome. In Brave, add a provider with an API key, or a self-hosted server such as llama.cpp.";
+    const shown = () => page.evaluate(() =>
+      !!document.getElementById('proofkey-root')?.shadowRoot?.querySelector('.pk-toast--error'));
+    const failWith = async (message) => {
+      await page.goto(`${BASE}?field=plain`, { waitUntil: 'load' });
+      await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+      await page.evaluate((error) => { window.__pkRunError = error; }, message);
+      await page.focus('#plain');
+      await page.evaluate(() => window.__pkInvoke('fix-grammar'));
+      await page.waitForTimeout(300);
+      return shown();
+    };
+
+    check('a long error is shown', await failWith(BRAVE));
+    await page.mouse.move(5, 5);
+    await page.waitForTimeout(6500);
+    check('and is still there at 7 s, untouched', await shown());
+    await page.waitForTimeout(8000);
+    check('but still goes on its own once there was time to read it', !(await shown()));
+
+    check('a short error is shown', await failWith('Nothing to work on.'));
+    await page.waitForTimeout(5000);
+    check('and still goes on its own', !(await shown()));
+
+    await failWith('Nothing to work on.');
+    const box = await page.evaluate(() =>
+      document.getElementById('proofkey-root').shadowRoot.querySelector('.pk-toast--error').getBoundingClientRect().toJSON());
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(6000);
+    check('a toast under the pointer stays', await shown());
+    await page.mouse.move(5, 5);
+    await page.waitForTimeout(5000);
+    check('and goes once the pointer leaves', !(await shown()));
+
+    await page.evaluate(() => { window.__pkRunError = null; });
+  }
+
   // The offer to allow a frame's origin names the host twice, once in the
   // message and once on the button, and real hosts are long. On iCloud Mail
   // (`www-mail.icloud-sandbox.com`) the button took the width and the message

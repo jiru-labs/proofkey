@@ -6,7 +6,22 @@ export interface ToastOptions {
   action?: { label: string; run: () => void };
 }
 
+/** How long a short message stays; nothing goes sooner. */
 const AUTO_DISMISS_MS = 4500;
+/**
+ * Reading time per word. Adults read English silently at about 240 words a
+ * minute; 300 ms a word is a slower pace, for readers in a second language and
+ * for a message that turns up while they were looking at their own text.
+ * Brave's built-in-model message is 41 words and went after the flat 4.5 s.
+ */
+const MS_PER_WORD = 300;
+/** What is left once the pointer or focus leaves: they have seen it by then. */
+const AFTER_HOLD_MS = 3000;
+
+function readingTime(text: string): number {
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(AUTO_DISMISS_MS, 1500 + words * MS_PER_WORD);
+}
 
 let current: { node: HTMLElement; timer: number | undefined } | null = null;
 
@@ -53,10 +68,43 @@ export function toast(root: ShadowRoot, options: ToastOptions): () => void {
 
   root.append(node);
 
-  const timer = options.sticky
-    ? undefined
-    : window.setTimeout(dismissCurrent, AUTO_DISMISS_MS);
-  current = { node, timer };
+  const entry: { node: HTMLElement; timer: number | undefined } = { node, timer: undefined };
+  current = entry;
+
+  if (!options.sticky) {
+    const schedule = (ms: number): void => {
+      clearTimeout(entry.timer);
+      entry.timer = window.setTimeout(dismissCurrent, ms);
+    };
+    // Held while the pointer rests on it or focus is inside it, so a message can
+    // be finished and its button reached, whatever its length.
+    let hovered = false;
+    let focused = false;
+    const hold = (): void => {
+      clearTimeout(entry.timer);
+      entry.timer = undefined;
+    };
+    const release = (): void => {
+      if (!hovered && !focused && current === entry) schedule(AFTER_HOLD_MS);
+    };
+    node.addEventListener('pointerenter', () => {
+      hovered = true;
+      hold();
+    });
+    node.addEventListener('pointerleave', () => {
+      hovered = false;
+      release();
+    });
+    node.addEventListener('focusin', () => {
+      focused = true;
+      hold();
+    });
+    node.addEventListener('focusout', () => {
+      focused = false;
+      release();
+    });
+    schedule(readingTime(options.text));
+  }
 
   return dismissCurrent;
 }
