@@ -57,13 +57,24 @@ not the one being measured. `npm run verify` orders it that way.
 `test:render` takes `--headed` if you want to watch it. Screenshots land in
 `.test-shots/`.
 
-Two more tools sit outside `verify`, because one is arithmetic and the other
-spends money:
+Three more tools sit outside `verify`, because one is arithmetic and the others
+need a real model:
 
 | Command | What it does |
 |---|---|
 | `npm run cost` | Estimates cost per 1,000 operations per model, from prompt sizes measured out of `src/core/prompts.ts`. `-- --markdown` regenerates the tables in [MODELS.md](MODELS.md) |
 | `npm run eval` | Scores a real model on ProofKey's real prompts — contract failures, false alarms, corrections. Needs `PROOFKEY_EVAL_KEY` and costs cents |
+| `npm run test:provider` | The built extension against a real OpenAI-compatible provider, end to end: every action and a custom one, a live check, explain, the dictionary, a rejected key and the fallback chain, then underline, Apply and a per-action shortcut on a real page. Prints what the model wrote rather than scoring it. `-- --base <url>/v1 --model <id> [--temperature 0]` with `PROOFKEY_EVAL_KEY`; a local llama.cpp server costs nothing |
+
+Before a release, `verify` plus `test:provider` is the floor.
+
+`test:ext`, `test:render` and `test:provider` also run in another Chromium build:
+set `PROOFKEY_BROWSER` to its binary. Brave Origin cannot run headless at all, so
+give it `--headed` and a virtual display:
+
+```bash
+PROOFKEY_BROWSER=/usr/bin/brave-origin-stable xvfb-run -a node tools/extension-test.mjs --headed
+```
 
 If you edit the prompts, `npm run cost` output changes and MODELS.md needs
 regenerating. If you add an `npm run eval` fixture, add it because a model got

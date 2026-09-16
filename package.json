@@ -28,6 +28,7 @@
     "test:render": "vite build --config vite.harness.config.ts && node tools/render-test.mjs",
     "serve": "python3 -m http.server 8777 --bind 127.0.0.1",
     "test:ext": "node tools/extension-test.mjs",
+    "test:provider": "node tools/provider-test.mjs",
     "shots": "node tools/store-shots.mjs",
     "gif": "node tools/demo-gif.mjs",
     "token": "node --experimental-strip-types tools/get-refresh-token.ts",

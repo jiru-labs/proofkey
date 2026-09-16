@@ -199,10 +199,13 @@ async function run() {
   // Microsoft Edge still honours --load-extension (Edge 153, 2026-09-15);
   // branded Google Chrome does not, which is why tools/builtin-test.mjs loads
   // over a debugging pipe.
+  //
+  // --headed is for browsers that cannot run headless at all, such as Brave
+  // Origin; with no display, run it under `xvfb-run -a`.
   const executablePath = process.env['PROOFKEY_BROWSER'];
   const context = await chromium.launchPersistentContext(PROFILE, {
     ...(executablePath ? { executablePath } : { channel: 'chromium' }),
-    headless: true,
+    headless: !process.argv.includes('--headed'),
     args: [`--disable-extensions-except=${TEST_EXT}`, `--load-extension=${TEST_EXT}`],
   });
 

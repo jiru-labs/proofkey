@@ -65,9 +65,16 @@ async function applyEachInTurn(page, probeArgs, limit = 8) {
   let state = await page.evaluate(probe, probeArgs);
   const started = underlineCount(state);
 
+  // Why the loop ended, when it ended early. A run in Brave 153 on 2026-09-16
+  // stopped at 2 of 4 once, and in none of the four Brave runs after it;
+  // without the reason there was no telling a lost click from a missing underline.
+  let stopped = '';
   while (underlineCount(state) > 0 && rounds < limit) {
     const rect = await firstUnderline(page, state);
-    if (!rect) break;
+    if (!rect) {
+      stopped = 'no rect for the first underline';
+      break;
+    }
     await page.mouse.click(rect.x + rect.w / 2, rect.y + rect.h / 2);
     await page.waitForTimeout(200);
 
@@ -78,7 +85,10 @@ async function applyEachInTurn(page, probeArgs, limit = 8) {
       const button = shadow.querySelector('.pk-btn--primary').getBoundingClientRect();
       return { x: button.x + button.width / 2, y: button.y + button.height / 2 };
     });
-    if (!applyAt) break;
+    if (!applyAt) {
+      stopped = `no card 200 ms after clicking the underline at ${Math.round(rect.x)},${Math.round(rect.y)}`;
+      break;
+    }
 
     await page.mouse.click(applyAt.x, applyAt.y);
     await page.waitForTimeout(300);
@@ -86,7 +96,7 @@ async function applyEachInTurn(page, probeArgs, limit = 8) {
     state = await page.evaluate(probe, probeArgs);
   }
 
-  return { started, rounds, state };
+  return { started, rounds, state, stopped };
 }
 
 /** What the suggestion card is showing, or null when it is closed. */
@@ -330,10 +340,10 @@ async function run() {
       window.__pkCorrect(document.getElementById('chat').value),
     );
 
-    const { started, rounds, state } = await applyEachInTurn(page, ['chat', MIRRORED]);
+    const { started, rounds, state, stopped } = await applyEachInTurn(page, ['chat', MIRRORED]);
 
     check('every suggestion could be applied in turn', rounds === started,
-      `${started} found, ${rounds} applied, ${state.marks.length} left`);
+      `${started} found, ${rounds} applied, ${state.marks.length} left${stopped ? `; ${stopped}` : ''}`);
     check('text matches a single-pass correction',
       state.fieldText.trim() === expected.trim(),
       `got ${JSON.stringify(state.fieldText.trim())}`);
@@ -376,9 +386,9 @@ async function run() {
       field,
     );
 
-    const { started, rounds, state } = await applyEachInTurn(page, [field, MIRRORED]);
+    const { started, rounds, state, stopped } = await applyEachInTurn(page, [field, MIRRORED]);
     check('field was corrected before the paste', started > 0 && rounds === started,
-      `${started} found, ${rounds} applied, badge reads ${JSON.stringify(state.badge?.text ?? '(hidden)')}`);
+      `${started} found, ${rounds} applied, badge reads ${JSON.stringify(state.badge?.text ?? '(hidden)')}${stopped ? `; ${stopped}` : ''}`);
 
     await page.evaluate(paste, [field, original]);
     await page.waitForTimeout(1600);
@@ -440,9 +450,9 @@ async function run() {
     const read = () => page.evaluate(() => window.__pkLexicalText());
     const original = await read();
 
-    const { started, rounds, state } = await applyEachInTurn(page, ['lexical', MIRRORED], 12);
+    const { started, rounds, state, stopped } = await applyEachInTurn(page, ['lexical', MIRRORED], 12);
     check('the editor was corrected before the paste', started > 0 && rounds === started,
-      `${started} found, ${rounds} applied, badge reads ${JSON.stringify(state.badge?.text ?? '(hidden)')}`);
+      `${started} found, ${rounds} applied, badge reads ${JSON.stringify(state.badge?.text ?? '(hidden)')}${stopped ? `; ${stopped}` : ''}`);
     check('and reads clean afterwards', state.badge?.text === '✓',
       `badge reads ${JSON.stringify(state.badge?.text ?? '(hidden)')}`);
 
