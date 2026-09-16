@@ -197,7 +197,15 @@ The quarterly report show that revenue have increased. Their is more work to do.
                 if (window.__pkRunError) return { ok: false, error: window.__pkRunError };
                 return {
                   ok: true,
-                  value: { text: correct(message.text), servedBy: 'harness', fallbackErrors: [] },
+                  value: {
+                    // A model that ends every line with two spaces, Markdown's hard
+                    // break, as Qwen3-4B-Instruct-2507 did on 2026-09-16.
+                    text: window.__pkTrailingSpaces
+                      ? correct(message.text).replace(/\n/g, '  \n')
+                      : correct(message.text),
+                    servedBy: 'harness',
+                    fallbackErrors: [],
+                  },
                 };
               case 'proofkey:get-state':
                 return { ok: true, value: window.__pkState };

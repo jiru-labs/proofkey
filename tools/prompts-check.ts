@@ -53,6 +53,7 @@ import {
   BUILT_IN_ACTIONS,
   composeSystemPrompt,
   dropAddedFullStops,
+  dropAddedTrailingSpaces,
   emptyProfile,
   parseCheckReply,
   resolveTargetLanguage,
@@ -295,6 +296,34 @@ equal(
   'each line is judged against its own original',
   dropAddedFullStops(['Todo esta bien', 'Ya está.'], ['Todo está bien.', 'Ya está.']),
   ['Todo está bien', 'Ya está.'],
+);
+
+console.log('\ndropAddedTrailingSpaces — an action reply written into an editor:');
+
+equal(
+  'two spaces before each line break are taken off',
+  dropAddedTrailingSpaces('The meeting is Thursday.\nBring notes.', 'The meeting is Thursday.  \nBring your notes.  '),
+  'The meeting is Thursday.\nBring your notes.',
+);
+equal(
+  'tabs and CRLF line ends too',
+  dropAddedTrailingSpaces('One.\r\nTwo.', 'One.\t\r\nTwo.'),
+  'One.\r\nTwo.',
+);
+equal(
+  'spaces inside a line are not touched',
+  dropAddedTrailingSpaces('a  b', 'a  b'),
+  'a  b',
+);
+equal(
+  'an author who ends lines with spaces keeps what the model returned',
+  dropAddedTrailingSpaces('Line one  \nLine two', 'Line one  \nLine 2  '),
+  'Line one  \nLine 2  ',
+);
+equal(
+  'a one-line reply loses nothing but its trailing spaces',
+  dropAddedTrailingSpaces('their is', 'There is  '),
+  'There is',
 );
 
 console.log(failures === 0 ? '\nPrompt checks passed.' : `\n${failures} FAILED`);

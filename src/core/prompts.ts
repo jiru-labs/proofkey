@@ -462,6 +462,22 @@ export function dropAddedFullStops(sentences: string[], corrections: string[]): 
 }
 
 /**
+ * Takes back the spaces a model puts at the ends of lines the author did not end
+ * with spaces. Two spaces before a line break is Markdown's hard break, and
+ * `Qwen3-4B-Instruct-2507` put it on every line of a multi-paragraph Fix grammar
+ * on 2026-09-16. Written into a Lexical editor, they moved every line break to
+ * the end of the field; a rewrite has no business adding whitespace nobody sees.
+ * Live checking has its own version of this in `parseCheckReply`.
+ *
+ * All or nothing, judged on the original: if the author ended any line with a
+ * space or tab, the reply is left exactly as it came.
+ */
+export function dropAddedTrailingSpaces(original: string, rewrite: string): string {
+  if (/[ \t]\r?\n|[ \t]$/.test(original)) return rewrite;
+  return rewrite.replace(/[ \t]+(?=\r?\n|$)/g, '');
+}
+
+/**
  * Parses the numbered reply back into per-sentence corrections. Returns null
  * when the model broke the contract, so the caller can fall back rather than
  * silently mis-attributing a correction to the wrong sentence.

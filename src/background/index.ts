@@ -21,6 +21,7 @@ import {
   composeSystemPrompt,
   formatCheckPayload,
   dropAddedFullStops,
+  dropAddedTrailingSpaces,
   parseCheckReply,
   resolveTargetLanguage,
   TARGET_LANGUAGE,
@@ -555,7 +556,7 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
     return {
       ok: true,
       value: {
-        text: result.text.trim(),
+        text: dropAddedTrailingSpaces(text, result.text.trim()),
         servedBy: result.connection.label,
         fallbackErrors: result.fallbackErrors,
       },

@@ -519,6 +519,7 @@ async function replaceEverything(
   text: string,
 ): Promise<boolean> {
   node.focus();
+  const before = flatten(node).text;
 
   if (!document.execCommand('selectAll')) {
     const range = document.createRange();
@@ -535,7 +536,18 @@ async function replaceEverything(
 
   if (document.execCommand('insertText', false, text)) {
     await settle();
-    if (flatten(node).text.trim() === text.trim()) return true;
+    const after = flatten(node).text;
+    if (sameContent(after, text)) return true;
+
+    // The editor took the insert and wrote something else. Pasting now lands on
+    // top of what it wrote: on playground.lexical.dev on 2026-09-16 a model's
+    // two trailing spaces per line moved every line break, the comparison
+    // failed, and the paste put the whole document in the field a second time.
+    // So stop here and report it; the caller tells the user to look the text
+    // over. Not `execCommand('undo')`: tried the same day on the harness's
+    // Lexical, it left the field as it was, and nothing says which entry of an
+    // editor's history an undo takes back.
+    if (after !== before) return false;
   }
 
   // Editors that block execCommand still have to accept a paste, since a user
@@ -547,5 +559,16 @@ async function replaceEverything(
   );
   await settle();
 
-  return flatten(node).text.trim() === text.trim();
+  return sameContent(flatten(node).text, text);
+}
+
+/**
+ * Equal once spaces at the ends of lines are set aside. Editors drop them —
+ * Lexical does — and a reader sees the same text either way; everything else,
+ * line breaks included, still has to match.
+ */
+function sameContent(a: string, b: string): boolean {
+  const tidy = (text: string): string =>
+    text.replace(/\u00a0/g, ' ').replace(/[ \t]+(?=\n|$)/g, '').trim();
+  return tidy(a) === tidy(b);
 }

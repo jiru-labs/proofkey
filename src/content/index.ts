@@ -198,9 +198,14 @@ async function invoke(actionId: string): Promise<void> {
     if (!applied) {
       // Rather than lose the result, hand it over so it can still be pasted.
       await navigator.clipboard.writeText(result.value.text).catch(() => undefined);
+      // Said only when it is true: an editor can take part of a write and refuse
+      // to take it back, and "would not accept" over a changed field sends the
+      // user off believing their text is untouched.
       toast(ui(), {
         kind: 'error',
-        text: 'This editor would not accept the text, so it was copied to your clipboard instead.',
+        text: targetIsCurrent(target)
+          ? 'This editor would not accept the text, so it was copied to your clipboard instead.'
+          : 'This editor changed the text in a way ProofKey could not check. Look it over before you send it; the result is on your clipboard.',
       });
       return;
     }

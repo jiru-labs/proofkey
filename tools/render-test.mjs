@@ -670,6 +670,48 @@ async function run() {
     }
   }
 
+  // A rewrite the editor takes but writes differently must not be written again.
+  // On playground.lexical.dev on 2026-09-16 a model ended every line with two
+  // spaces; Lexical took the atomic insert and dropped them, the exact comparison
+  // failed, and the paste fallback then pasted the whole document on top — the
+  // field held it twice, under a toast saying the editor would not accept it.
+  {
+    console.log('\nlexical — a rewrite with trailing spaces on every line lands once:');
+    const TEXT = 'The meating is on thursday.\n\nWe should of finish the projet by then.\n\nPlease bring you notes.';
+    await page.goto(`${BASE}?field=lexical`, { waitUntil: 'load' });
+    await page.waitForTimeout(500);
+    await page.evaluate((text) => navigator.clipboard.writeText(text), TEXT);
+    await page.click('#lexical');
+    await page.keyboard.press('Control+A');
+    await page.keyboard.press('Control+V');
+    await page.waitForTimeout(1500);
+
+    const read = () => page.evaluate(() => window.__pkLexicalText());
+    const normalize = (text) => text.replace(/\s+/g, ' ').replace(/\u00a0/g, ' ').trim();
+    const before = await read();
+    check('the three paragraphs are in the editor', normalize(before) === normalize(TEXT),
+      JSON.stringify(normalize(before).slice(0, 80)));
+    const expected = await page.evaluate((text) => window.__pkCorrect(text), before);
+
+    await page.evaluate(() => { window.__pkTrailingSpaces = true; });
+    await page.evaluate(() => window.__pkInvoke('fix-grammar'));
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => { window.__pkTrailingSpaces = false; });
+
+    const after = await read();
+    const copies = after.split('meeting is on').length - 1;
+    check('the rewrite is in the field once, not twice', copies === 1, `${copies} copies: ${JSON.stringify(normalize(after).slice(0, 120))}`);
+    check('and it is the rewrite', normalize(after) === normalize(expected), JSON.stringify(normalize(after).slice(0, 120)));
+    const toastText = await page.evaluate(() =>
+      [...(document.getElementById('proofkey-root')?.shadowRoot?.querySelectorAll('.pk-toast') ?? [])].map((t) => t.textContent).join(' | '));
+    // Lexical takes the insert and moves the line breaks, so the write is not
+    // what was asked for even with the words right; saying it was refused would
+    // be false, and so would promising one Ctrl+Z undoes it — measured, it takes
+    // several presses and undoes it in pieces.
+    check('and the toast says to look the text over, not that it was refused',
+      !/would not accept/.test(toastText) && /Look it over/.test(toastText), JSON.stringify(toastText));
+  }
+
   // The reported case, on the real Lexical instance: a short plain message with
   // a few word-level fixes, which is what a WhatsApp message is.
   //
