@@ -324,6 +324,64 @@ async function run() {
     await page.waitForTimeout(500);
   }
 
+  // The other half of the hidden-bar fix: while a download runs, the bar has to
+  // show. No browser here can download the model, so `LanguageModel` is stubbed
+  // on this page: downloadable until `create` has reported its progress, then
+  // available, which is the order Chrome goes through.
+  {
+    console.log('\nbuilt-in model download, stubbed:');
+    const downloadPage = await context.newPage();
+    await downloadPage.addInitScript(() => {
+      let ready = false;
+      globalThis.LanguageModel = {
+        availability: async () => (ready ? 'available' : 'downloadable'),
+        create: (options) =>
+          new Promise((resolve) => {
+            const monitor = new EventTarget();
+            options?.monitor?.(monitor);
+            let loaded = 0;
+            const tick = () => {
+              loaded = Math.round((loaded + 0.25) * 100) / 100;
+              const event = new Event('downloadprogress');
+              event.loaded = loaded;
+              monitor.dispatchEvent(event);
+              if (loaded < 1) setTimeout(tick, 400);
+              else {
+                ready = true;
+                resolve({ destroy() {} });
+              }
+            };
+            setTimeout(tick, 400);
+          }),
+      };
+    });
+    await downloadPage.goto(`chrome-extension://${extensionId}/options/index.html`);
+    await downloadPage.waitForTimeout(600);
+    const bar = downloadPage.locator('[data-builtin-progress]');
+    const downloadButton = downloadPage.getByRole('button', { name: 'Download model' });
+    check('a downloadable model offers the Download button', await downloadButton.isVisible());
+    check('and draws no bar before anything downloads', !(await bar.isVisible()));
+
+    await downloadButton.click();
+    await downloadPage.waitForTimeout(700);
+    const during = await bar.evaluate((node) => node.value).catch(() => null);
+    check('the bar shows while the model downloads', await bar.isVisible(), `value ${during}`);
+    check(
+      'and the card says how far it got',
+      (await downloadPage.locator('[data-builtin-state]').textContent())?.startsWith('Downloading…'),
+      await downloadPage.locator('[data-builtin-state]').textContent(),
+    );
+
+    await downloadPage.waitForTimeout(2000);
+    check('the bar goes away when the download ends', !(await bar.isVisible()));
+    check(
+      'and the card reports the model ready',
+      (await downloadPage.locator('[data-builtin-state]').textContent())?.startsWith('Ready.'),
+      await downloadPage.locator('[data-builtin-state]').textContent(),
+    );
+    await downloadPage.close();
+  }
+
   // Translate is the first action whose prompt carries a token that has to be
   // filled in before it can run, and the only one that can be configured into a
   // dead end. Both halves are checked against the real options page rather than

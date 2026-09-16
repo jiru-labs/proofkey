@@ -116,6 +116,12 @@ const text = await page(`(async () => {
 })()`);
 check('the provider card is Chrome built-in AI', text.includes('Chrome built-in AI'));
 check('it reports the model ready, with no key asked for', text.includes('Ready.'));
+// `.field__progress` set `display`, which outranks `hidden`: an empty bar sat under
+// the card in every state but downloading, "Ready." included.
+check(
+  'no download bar is drawn once the model is ready',
+  (await page(`(() => { const bar = document.querySelector('[data-builtin-progress]'); return !!bar && bar.getBoundingClientRect().height === 0; })()`)) === true,
+);
 check("the Actions section says only Fix grammar is offered", text.includes('offers Fix grammar and your own actions only'));
 
 console.log('\nFix grammar, through the real worker:');
