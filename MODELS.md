@@ -1254,8 +1254,73 @@ is the evidence that it was right to.
 
 Not measured here, and it should be read as that rather than as an oversight:
 `improve-writing`, `make-professional`, `make-friendly`, `simplify` and
-`expand`; every model besides `gemini-2.5-flash`; every provider besides
-Google Gemini.
+`expand` on mixed-language text; every model besides `gemini-2.5-flash` on
+mixed-language text, apart from the two local models below; every provider
+besides Google Gemini and a local llama.cpp server.
+
+### Text in one language
+
+Every fixture above mixes two languages, so nothing had ever sent a quick action
+a message in one language. The gap showed on 2026-09-16, before release 0.1.10,
+when `tools/provider-test.mjs` ran each action through the real extension
+against a local `Qwen3-4B-Instruct-2507`: Summarize answered an English message
+in Spanish, at temperature 0, with an empty profile. `--fixtures monolingual`
+adds four messages that each stay in one language — two English, one French, one
+German — and scores the same way:
+
+```bash
+node --experimental-strip-types tools/action-eval.ts --fixtures monolingual \
+  --actions fix-grammar,improve-writing,make-professional,make-friendly,simplify,summarize,expand,bullet-points
+```
+
+| Model | Where | Runs | Kept the language | Translated |
+|---|---|---|---|---|
+| `gemini-2.5-flash`, `reasoning_effort: "none"` | Google Gemini | 5 per fixture | **160/160** | none |
+| `Qwen3-4B-Instruct-2507` Q4_K_M | llama.cpp, temperature 0 | 1 per fixture | 30/32 | Summarize, both English messages, into Spanish |
+| `gemma-3-12b-it` Q4_K_M | llama.cpp, temperature 0 | 1 per fixture | 29/32 | Summarize, both English messages, into Spanish; Make professional, the long English one |
+
+Gemini's outputs were read, not only scored: English stayed English, French
+French, German German. The French and German messages were never translated on
+any of the three.
+
+One run per fixture on the local models is a reading, not a rate. It is a
+repeatable one for the short English message: `Qwen3-4B-Instruct-2507` returned
+the identical Spanish summary all five times it was sent the shipped prompt,
+through three tools. It is not exact on the mixed set: on the identical prompt,
+`action-eval.ts` scored Qwen's Summarize 5/8 and the variant script below 6/8, so
+read a one-point difference there as noise. The same day `gemma-3-12b-it` held
+mixed-language text in Summarize and Bullet points 16/16 (`--fixtures mixed`,
+one run each).
+
+**Why, as far as it was measured.** The shared language rule carries its worked
+example in Spanish, and the voice rules name `pt-BR/pt-PT` and `tú/vos/usted`.
+Three variants of the composed Summarize and Make professional prompts were
+sent to both local models, 4 monolingual and 8 mixed fixtures each, temperature 0:
+
+| Variant | Qwen3-4B Summarize | Gemma-12B Summarize | Gemma-12B Make professional |
+|---|---|---|---|
+| as shipped | 2/4 one language, 6/8 mixed | 2/4, 8/8 | 3/4, 7/8 |
+| Spanish example removed | 3/4, 6/8 | 2/4 — **into Portuguese**, 5/8 | 3/4, 5/8 |
+| a second example, in English | 4/4, 5/8 | 3/4, 8/8 | 4/4, 6/8 |
+
+Removing the example does not help and costs the mixed case; without it Gemma
+translated the English messages into Portuguese instead. A second, English
+example helps the one-language case on both models and is noise-level either
+way on the mixed one. It is **not shipped**: it changes the rule every action
+shares, and the 160/160 on `gemini-2.5-flash` that rule was tuned to has not been
+re-measured with it. Until then, on these two local models, check a Summarize of
+an English message before you use it. The variant script was a one-off and is
+not in the repo; the fixtures are.
+
+**A second finding from the same runs, fixed.** On a multi-paragraph Fix grammar,
+`Qwen3-4B-Instruct-2507` ended every line with two spaces — Markdown's hard line
+break. Written into a Lexical editor, those spaces moved every line break to the
+end of the field, the check that the text went in failed, and the fallback then
+pasted the whole document a second time. Since 0.1.10 an action's reply loses
+trailing spaces the author did not have (`dropAddedTrailingSpaces`, checked by
+`tools/prompts-check.ts`), and a write the editor took but changed is never
+pasted over (`test:render`, "a rewrite with trailing spaces on every line lands
+once").
 
 ### Caveats
 

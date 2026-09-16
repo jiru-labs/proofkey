@@ -156,6 +156,8 @@ OLLAMA_ORIGINS="chrome-extension://*" ollama serve
 
 **LM Studio**: start the local server from the Developer tab, then hit **Fetch models**.
 
+**Small local models are less careful about language in rewrites.** Measured 2026-09-16 on llama.cpp: Summarize answered English messages in Spanish on both `Qwen3-4B-Instruct-2507` and `gemma-3-12b-it` (two English test messages out of two, on each), where `gemini-2.5-flash` kept the language 160 times out of 160 across every rewrite. Check a summary before you use it; the numbers are in [MODELS.md](MODELS.md#text-in-one-language).
+
 ### Anything not on the list
 
 Use **Custom**. Paste the base URL up to and including `/v1` — ProofKey appends `/chat/completions`. If the endpoint has quirks, the connection editor exposes escape hatches for them: extra headers, extra body fields, extra query parameters, and the auth style (`Bearer`, `x-api-key`, a custom header name, or a URL parameter). Between those, most gateways and proxies work without code changes.

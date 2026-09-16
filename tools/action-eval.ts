@@ -7,6 +7,7 @@
  *     node --experimental-strip-types tools/action-eval.ts --models gemini-2.5-flash --actions all
  *     node --experimental-strip-types tools/action-eval.ts --base https://api.x.ai/v1 --models grok-4.3 --reasoning off
  *     node --experimental-strip-types tools/action-eval.ts --actions translate --target-language French
+ *     node --experimental-strip-types tools/action-eval.ts --fixtures monolingual --actions all --base http://127.0.0.1:8080/v1 --models qwen3-4b-instruct --reasoning off --temperature 0
  *
  * `tools/eval.ts` sends `composeCheckPrompt` and measures the live underline
  * pass. It has never sent an action prompt, and MODELS.md says so out loud:
@@ -149,6 +150,45 @@ const FIXTURES: Fixture[] = [
     mustSurvive: ['we will ship it on Friday'],
     mustNotAppear: ['lo enviaremos', 'viernes'],
     tests: 'A quoted English sentence inside Spanish — a quote is not the author’s to translate',
+  },
+];
+
+/**
+ * One language each, with `--fixtures monolingual`. The mixed set above never
+ * sends a message in a single language, and that turned out to be the gap: on
+ * 2026-09-16 `Qwen3-4B-Instruct-2507` on llama.cpp answered Summarize on an
+ * English-only message in Spanish, at temperature 0, with an empty profile.
+ * `SAME_LANGUAGE_RULES` carries a worked example in Spanish, and a small model
+ * can read an example as the language to answer in.
+ *
+ * `mustNotAppear` holds the Spanish a translation would reach for, plus the
+ * English one for the non-English fixtures; `mustSurvive` holds words a faithful
+ * result in the right language keeps, a summary included.
+ */
+const MONOLINGUAL_FIXTURES: Fixture[] = [
+  {
+    input: 'Their is alot of things we needs to discuss in the meeting tomorow, so please come prepared and bring you notes.',
+    mustSurvive: ['meeting'],
+    mustNotAppear: ['reunión', 'mañana', 'notas', 'apuntes', 'preparado'],
+    tests: 'English only, with errors — the message Summarize translated',
+  },
+  {
+    input: 'Hi team, quick update on the launch. The store review took fifteen hours this time, which is faster than last week. We still need to fix the toast that disappears too quickly, and Ana will check the Brave message on her laptop tomorrow. Please send me your notes before Friday so I can prepare the release summary.',
+    mustSurvive: ['Friday'],
+    mustNotAppear: ['viernes', 'lanzamiento', 'notas', 'revisión', 'equipo'],
+    tests: 'A longer English message with a deadline in it',
+  },
+  {
+    input: 'Merci pour ton retour, je regarde le document demain matin et je te réponds avant midi.',
+    mustSurvive: ['demain'],
+    mustNotAppear: ['mañana', 'gracias', 'tomorrow', 'thanks'],
+    tests: 'French only — neither Spanish nor English may take it over',
+  },
+  {
+    input: 'Ich schicke dir die Unterlagen morgen früh, dann koennen wir am Freitag darüber sprechen.',
+    mustSurvive: ['Freitag'],
+    mustNotAppear: ['viernes', 'mañana', 'Friday', 'tomorrow'],
+    tests: 'German only, with a transliterated umlaut to fix',
   },
 ];
 
@@ -303,8 +343,10 @@ function isTranslating(action: WritingAction): boolean {
   return action.systemPrompt.includes(TARGET_LANGUAGE);
 }
 
-function fixturesFor(action: WritingAction): Fixture[] {
-  return isTranslating(action) ? TRANSLATE_FIXTURES : FIXTURES;
+/** `--fixtures mixed` (the default, so earlier numbers stay comparable) or `monolingual`. */
+function fixturesFor(action: WritingAction, set: string): Fixture[] {
+  if (isTranslating(action)) return TRANSLATE_FIXTURES;
+  return set === 'monolingual' ? MONOLINGUAL_FIXTURES : FIXTURES;
 }
 
 async function runOne(
@@ -405,6 +447,11 @@ async function main(): Promise<void> {
   const temperatureArg = arg('temperature');
   const temperature = temperatureArg === undefined ? undefined : Number(temperatureArg);
   const targetLanguage = arg('target-language') ?? DEFAULT_TARGET_LANGUAGE;
+  const fixtureSet = arg('fixtures') ?? 'mixed';
+  if (fixtureSet !== 'mixed' && fixtureSet !== 'monolingual') {
+    console.error(`Unknown --fixtures "${fixtureSet}". Use mixed or monolingual.`);
+    process.exit(1);
+  }
 
   const actions = resolveActions(actionIds);
 
@@ -412,7 +459,9 @@ async function main(): Promise<void> {
   console.log(`Models:   ${models.join(', ')}`);
   console.log(`Actions:  ${actions.map((a) => a.id).join(', ')}`);
   if (actions.some((action) => !isTranslating(action))) {
-    console.log(`Fixtures: ${FIXTURES.length} mixed-language, ${runs} run(s) each`);
+    console.log(fixtureSet === 'monolingual'
+      ? `Fixtures: ${MONOLINGUAL_FIXTURES.length} monolingual, ${runs} run(s) each`
+      : `Fixtures: ${FIXTURES.length} mixed-language, ${runs} run(s) each`);
   }
   if (actions.some(isTranslating)) {
     console.log(`Target:   ${targetLanguage} (translating actions use ${TRANSLATE_FIXTURES.length} fixtures of their own)`);
@@ -436,7 +485,7 @@ async function main(): Promise<void> {
       let attempted = 0;
       const failures = new Map<string, number>();
 
-      const fixtures = fixturesFor(action);
+      const fixtures = fixturesFor(action, fixtureSet);
       const profile: WritingProfile = isTranslating(action)
         ? { ...BASE_PROFILE, translateLanguage: targetLanguage }
         : BASE_PROFILE;
