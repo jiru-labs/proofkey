@@ -133,9 +133,13 @@ setting the two sites did not share. What settled it was the extension's own
 stored settings read off disk, and a quick action succeeding in the same composer
 on 2026-09-10. Check the origin lists before calling a site broken.
 
-**Why a click meant to make sure it was on turned it off** (found 2026-09-16, fixed
-for 0.1.10). Up to 0.1.9 the content script was registered on shortcut origins only,
-so a site with live checking on got no script at the next page load. The toolbar
+**A toolbar click could also turn live checking off where it was meant to start it**
+(found 2026-09-16, fixed for 0.1.10). Whether this is what happened on WhatsApp on
+2026-09-04 is not known: the settings log no longer holds that day's shortcut
+origins, and with WhatsApp listed there the script would have loaded and the click
+was an ordinary toggle. Up to 0.1.9 the content script was registered on shortcut
+origins only, so a site with live checking on and no shortcuts got no script at the
+next page load. The toolbar
 button then injected it and flipped the stored switch, which still read on — so the
 click that should have started it switched it off. Measured on the 0.1.9 code
 through the real service worker: no script after a load with the site switched on,

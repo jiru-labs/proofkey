@@ -1285,8 +1285,8 @@ any of the three.
 
 One run per fixture on the local models is a reading, not a rate. It is a
 repeatable one for the short English message: `Qwen3-4B-Instruct-2507` returned
-the identical Spanish summary all five times it was sent the shipped prompt,
-through three tools. It is not exact on the mixed set: on the identical prompt,
+the same Spanish summary, word for word, all seven times its whole output was
+printed, through three tools. It is not exact on the mixed set: on the identical prompt,
 `action-eval.ts` scored Qwen's Summarize 5/8 and the variant script below 6/8, so
 read a one-point difference there as noise. The same day `gemma-3-12b-it` held
 mixed-language text in Summarize and Bullet points 16/16 (`--fixtures mixed`,
