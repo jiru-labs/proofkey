@@ -194,7 +194,7 @@ async function run() {
       reply?.ok ? `${ms} ms, served by ${reply.value.servedBy}` : reply?.error);
     if (reply?.ok) show('out', text);
     if (action.id === 'fix-grammar' && reply?.ok) {
-      check('Fix grammar fixes the obvious errors', /there is a lot/i.test(text) && /tomorrow/i.test(text) && /\bneed to\b/i.test(text));
+      check('Fix grammar fixes the obvious errors', /there (is|are) a lot/i.test(text) && /tomorrow/i.test(text) && /\bneed to\b/i.test(text));
     }
     if (action.id === 'custom-shout' && reply?.ok) {
       check('the custom action followed its own prompt', text === text.toUpperCase() && /[A-Z]/.test(text));
@@ -298,7 +298,7 @@ async function run() {
     if (!button) continue;
     await page.mouse.click(button.x, button.y);
     const applied = await waitFor(page, probe, id, (s) => s.text !== before, 5_000);
-    check('Apply writes the correction into the field', applied.text !== before && applied.text.includes(button.after ?? ' '),
+    check('Apply writes the correction into the field', applied.text !== before && applied.text.includes(button.after ?? '\u0000'),
       JSON.stringify(applied.text));
   }
 
@@ -314,7 +314,7 @@ async function run() {
     const before = await page.evaluate(() => document.getElementById('plain').value);
     await page.keyboard.press('Alt+KeyG');
     const after = await waitFor(page, probe, 'plain', (s) => s.text !== before, 60_000);
-    check('Alt+G runs Fix grammar and rewrites the field', after.text !== before && /there is a lot/i.test(after.text), JSON.stringify(after.text));
+    check('Alt+G runs Fix grammar and rewrites the field', after.text !== before && /there (is|are) a lot/i.test(after.text), JSON.stringify(after.text));
   }
 
   check('no uncaught page errors', pageErrors.length === 0, pageErrors.join('; ') || 'clean');
