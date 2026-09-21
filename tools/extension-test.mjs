@@ -492,6 +492,72 @@ async function run() {
       'storage.sync has a per-item quota; empty objects are not worth any of it',
     );
 
+    // Save has to ask the browser for the sites live checking was switched on
+    // for, and until now nothing covered it: the check was done by hand in the
+    // user's own Brave, once per release. The prompt itself is browser chrome
+    // and no automation can accept it, so what is asserted here is the CALL —
+    // which is where the regression lives. If Save stops asking, the settings
+    // still save, the UI still says saved, and the user is left with a site
+    // that will never underline anything and no clue why.
+    //
+    // `permissions.request` is replaced rather than wrapped: an origin the test
+    // manifest does not hold would otherwise open a real dialog and hang.
+    {
+      console.log('\nSave asks the browser for the live-check sites:');
+      const listed = 'https://live-check-listed.example';
+      const overridden = 'https://live-check-blocked.example';
+
+      await page.evaluate(() => {
+        globalThis.__askedFor = [];
+        chrome.permissions.request = (request) => {
+          globalThis.__askedFor.push(...(request?.origins ?? []));
+          return Promise.resolve(true);
+        };
+      });
+
+      // By label, not by placeholder: "Shortcuts run on" carries mail.google.com
+      // in its placeholder too, and matched both.
+      const enabledOn = page.getByRole('textbox', { name: 'Enabled on' });
+      const neverOn = page.getByRole('textbox', { name: 'Never run on' });
+      check('the live-checking fields are on the page', (await enabledOn.count()) === 1 && (await neverOn.count()) === 1);
+
+      await enabledOn.fill(`${listed}\n${overridden}`);
+      await neverOn.fill(overridden);
+      await page.locator('button', { hasText: 'Save' }).last().click();
+      await page.waitForTimeout(600);
+
+      const asked = await page.evaluate(() => globalThis.__askedFor ?? []);
+      check(
+        'Save asks for a site switched on for live checking',
+        asked.includes(`${listed}/*`),
+        JSON.stringify(asked),
+      );
+      // A conjunction, because on its own this passes when Save asked for
+      // NOTHING — which is the very bug above. "It left X out" is only a claim
+      // worth making once something was actually asked for.
+      check(
+        'and not for one the Never-run-on list overrides',
+        asked.includes(`${listed}/*`) && !asked.includes(`${overridden}/*`),
+        'a prompt for a site that will never be checked spends the user\'s one click on nothing',
+      );
+
+      const live = await page.evaluate(async () => {
+        const all = await chrome.storage.sync.get('proofkey:settings');
+        return all['proofkey:settings']?.liveCheck ?? null;
+      });
+      check(
+        'the origin reached storage normalised',
+        live?.enabledOrigins?.includes(listed) === true,
+        JSON.stringify(live?.enabledOrigins ?? null),
+      );
+
+      // Put the lists back; everything below sets its own origins.
+      await enabledOn.fill('');
+      await neverOn.fill('');
+      await page.locator('button', { hasText: 'Save' }).last().click();
+      await page.waitForTimeout(600);
+    }
+
     // The registration itself, in the real service worker. Everything above can
     // pass with this broken, and the result would be a key that works only
     // after the user has right-clicked the page once — which is precisely the
