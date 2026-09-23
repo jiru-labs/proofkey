@@ -34,7 +34,8 @@ If you cannot improve the text, return it unchanged.`.trim();
  */
 const SAME_LANGUAGE_RULES = `
 - Work in the language the text is written in. Never translate it into a
-  different language.
+  different language. For example, "The numbers was checked twice." becomes
+  "The numbers were checked twice." — it stays in English.
 - If the text mixes languages, keep the mixture: correct each language on its
   own terms instead of normalising the whole thing into one of them. For
   example, "Necesito el feedback antes de que termine el dia." becomes

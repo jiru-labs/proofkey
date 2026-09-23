@@ -1346,7 +1346,7 @@ example helps the one-language case on both models and is noise-level either
 way on the mixed one. The variant script was a one-off and is not in the repo;
 the fixtures are.
 
-**Re-measured 2026-09-23, still not shipped.** An English example written
+**Re-measured 2026-09-23, and on `main` since.** An English example written
 afresh — `"The numbers was checked twice." becomes "The numbers were checked
 twice." — it stays in English.`, added to the first bullet of the shared rule —
 was run through `action-eval.ts` itself. On `Qwen3-4B-Instruct-2507` Q4_K_M
@@ -1357,10 +1357,13 @@ mixed set it changed nothing (33/64 against 35/64). On `gemini-2.5-flash` it
 held monolingual text **640/640**, the same as the shipped prompt, and the
 mixed set 494/640 against 483/640 — but inside that, Fix grammar dropped to
 **77/80 against 80/80**, translating "Hola team" three times. Fix grammar is
-the action that had exactly this bug, so three misses in one session is a
-reason to re-run it at 20 runs before shipping, not a result to average away.
-Until then, on these two local models, check a Summarize of an English message
-before you use it.
+the action that had exactly this bug, so it was re-run at 20 runs the same day
+before shipping, through OpenRouter (`google/gemini-2.5-flash`, served by
+Google, `reasoning_effort: "none"`, 0 reasoning tokens): **159/160 against
+157/160** for the shipped prompt. The 77/80 was the run-to-run spread this page
+already warns about. The example is in the shared rule from the release after
+0.1.10; until that is live, on these two local models, check a Summarize of an
+English message before you use it.
 
 **A second finding from the same runs, fixed.** On a multi-paragraph Fix grammar,
 `Qwen3-4B-Instruct-2507` ended every line with two spaces — Markdown's hard line
