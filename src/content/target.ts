@@ -82,6 +82,12 @@ export function flatten(root: HTMLElement): FlatText {
 
     const element = node as Element;
     if (element.tagName === 'BR') {
+      // Lexical ends a paragraph whose last child is a line break with a second,
+      // placeholder <br> so the empty line has height. It is not in the editor's
+      // text; counting it put a phantom newline at the end of every WhatsApp
+      // message that ended on Shift+Enter, and edits mapped against that phantom
+      // landed a stray copy of a corrected word on the empty line.
+      if (element.hasAttribute('data-lexical-managed-linebreak')) continue;
       text += '\n';
     } else if (BLOCK_TAGS.has(element.tagName) && text.length > 0 && !text.endsWith('\n')) {
       text += '\n';
@@ -347,24 +353,28 @@ async function applyToContentEditable(
   if (sameText(original, replacement)) return true;
 
   const changes = diffWords(original, replacement);
+  // What the whole field must read afterwards. The surgical paths are judged
+  // against all of it, not only the span they touched: an editor can put text
+  // somewhere nobody asked it to, and a check that only reads the span misses it.
+  const expected = before.slice(0, start) + replacement + before.slice(end);
 
   if (changes && changes.length > 0) {
     const span = changedSpan(changes, original, replacement);
     const flat = flatten(node);
 
     if (span && spanIsFlat(flat, start + span.start, start + span.end)) {
-      if (await applyOneEdit(node, selection, start, original, replacement, span)) return true;
+      if (await applyOneEdit(node, selection, start, original, span, expected)) return true;
     } else if (changes.length <= MAX_SURGICAL_EDITS) {
       // Each surgical edit is a chance for an editor to place text somewhere we
       // did not ask for. A handful is worth the formatting it preserves; fifteen
       // is not, and a rewrite that large has usually restructured the text anyway.
-      if (await applyChanges(node, selection, start, original, replacement, changes)) return true;
+      if (await applyChanges(node, selection, start, original, changes, expected)) return true;
     }
   }
 
   // Recomputed from the original text, so it is correct no matter how far the
   // surgical attempt got before it was abandoned.
-  return replaceEverything(node, selection, before.slice(0, start) + replacement + before.slice(end));
+  return replaceEverything(node, selection, expected);
 }
 
 const MAX_SURGICAL_EDITS = 4;
@@ -435,8 +445,8 @@ async function applyOneEdit(
   selection: Selection,
   start: number,
   original: string,
-  replacement: string,
   span: EditSpan,
+  expected: string,
 ): Promise<boolean> {
   const flat = flatten(node);
   const from = start + span.start;
@@ -464,7 +474,7 @@ async function applyOneEdit(
   // Without this the check below reads pre-edit DOM and passes vacuously.
   await settle();
 
-  return sameText(flatten(node).text.slice(start, start + replacement.length), replacement);
+  return sameText(flatten(node).text, expected);
 }
 
 /** Returns false the moment the document stops matching what we expect. */
@@ -473,8 +483,8 @@ async function applyChanges(
   selection: Selection,
   start: number,
   original: string,
-  replacement: string,
   changes: Change[],
+  expected: string,
 ): Promise<boolean> {
   let delta = 0;
 
@@ -504,7 +514,11 @@ async function applyChanges(
     delta += change.replacement.length - (change.end - change.start);
   }
 
-  return sameText(flatten(node).text.slice(start, start + replacement.length), replacement);
+  // The whole field, because this is where Lexical goes wrong: in a message
+  // ending on Shift+Enter, the second of two edits also wrote the first one's
+  // text onto the empty last line. Every span read back correctly, so the old
+  // check — the span alone — passed with a stray word at the end.
+  return sameText(flatten(node).text, expected);
 }
 
 /**
@@ -533,6 +547,32 @@ async function replaceEverything(
   // immediately means it still believes the caret is where it last left it,
   // and the replacement lands there instead of over the selection.
   await settle();
+
+  // Line breaks do not survive `execCommand('insertText')` in Lexical: it took
+  // "one\ntwo" and wrote "onetwo", so a rewrite of a multi-line WhatsApp message
+  // came back as one run-on line. Offered as the `beforeinput` a browser's own
+  // spelling replacement sends, Lexical builds real line breaks in its model.
+  // (As `insertText` it kept the text but put the newlines inside one text node;
+  // as `insertFromPaste` it claimed the event and wrote nothing.) An editor that
+  // ignores the event leaves it unhandled, and the paths below still run.
+  if (text.includes('\n')) {
+    const transfer = new DataTransfer();
+    transfer.setData('text/plain', text);
+    const offer = new InputEvent('beforeinput', {
+      inputType: 'insertReplacementText',
+      dataTransfer: transfer,
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+    });
+    node.dispatchEvent(offer);
+    if (offer.defaultPrevented) {
+      await settle();
+      const after = flatten(node).text;
+      if (sameContent(after, text)) return true;
+      if (after !== before) return false;
+    }
+  }
 
   if (document.execCommand('insertText', false, text)) {
     await settle();

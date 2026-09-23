@@ -479,6 +479,18 @@ export function dropAddedTrailingSpaces(original: string, rewrite: string): stri
 }
 
 /**
+ * Gives a rewrite back the whitespace the author had around the text. The reply
+ * is trimmed because models pad it, and trimming also took what the author
+ * wrote: a WhatsApp message ending on Shift+Enter lost its last line break to
+ * every correction, and a selected word lost the space after it.
+ */
+export function keepOuterWhitespace(original: string, rewrite: string): string {
+  const leading = /^\s*/.exec(original)![0];
+  const trailing = original.trim() ? /\s*$/.exec(original)![0] : '';
+  return leading + rewrite.trim() + trailing;
+}
+
+/**
  * Parses the numbered reply back into per-sentence corrections. Returns null
  * when the model broke the contract, so the caller can fall back rather than
  * silently mis-attributing a correction to the wrong sentence.

@@ -55,6 +55,7 @@ import {
   dropAddedFullStops,
   dropAddedTrailingSpaces,
   emptyProfile,
+  keepOuterWhitespace,
   parseCheckReply,
   resolveTargetLanguage,
   TARGET_LANGUAGE,
@@ -296,6 +297,29 @@ equal(
   'each line is judged against its own original',
   dropAddedFullStops(['Todo esta bien', 'Ya está.'], ['Todo está bien.', 'Ya está.']),
   ['Todo está bien', 'Ya está.'],
+);
+
+console.log('\nkeepOuterWhitespace — the author keeps what surrounded the text:');
+
+equal(
+  'a message ending on Shift+Enter keeps its last line break',
+  keepOuterWhitespace('Their is a problem.\nPlease dont be late.\n', 'There is a problem.\nPlease don\'t be late.'),
+  'There is a problem.\nPlease don\'t be late.\n',
+);
+equal(
+  'a selected word keeps the space after it',
+  keepOuterWhitespace('teh ', 'the'),
+  'the ',
+);
+equal(
+  'padding the model added around the reply is still dropped',
+  keepOuterWhitespace('Their is.', '\n\nThere is.\n'),
+  'There is.',
+);
+equal(
+  'leading whitespace comes back too',
+  keepOuterWhitespace('\n  teh cat', 'the cat'),
+  '\n  the cat',
 );
 
 console.log('\ndropAddedTrailingSpaces — an action reply written into an editor:');

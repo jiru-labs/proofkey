@@ -56,7 +56,13 @@ const show = (label, text) => console.log(`        ${label}: ${JSON.stringify(te
 const PAGE = `<!doctype html><meta charset="utf-8"><title>provider test</title>
 <style>body{font:16px system-ui;margin:40px;width:600px} textarea,div[contenteditable]{display:block;width:560px;height:90px;margin:0 0 40px;font:16px system-ui;padding:8px;border:1px solid #888}</style>
 <textarea id="plain"></textarea>
-<div id="rich" contenteditable="true"></div>`;
+<div id="rich" contenteditable="true"></div>
+<div id="lexical" contenteditable="true"></div>
+<script src="/lexical-editor.js"></script>`;
+
+// The same Lexical bundle `test:render` builds (`vite.harness.config.ts`):
+// WhatsApp Web's editor, so multi-line text meets the real thing.
+const LEXICAL = `${ROOT}tools/lexical-editor.js`;
 
 function connection(id, label, apiKey) {
   return {
@@ -129,7 +135,17 @@ async function waitFor(page, fn, arg, predicate, timeout) {
 }
 
 async function run() {
-  const server = createServer((_request, response) => {
+  const lexical = await readFile(LEXICAL, 'utf8').catch(() => null);
+  if (!lexical) {
+    console.error(`No ${LEXICAL}. Run \`npx vite build --config vite.harness.config.ts\` first.`);
+    process.exit(1);
+  }
+  const server = createServer((request, response) => {
+    if (request.url === '/lexical-editor.js') {
+      response.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' });
+      response.end(lexical);
+      return;
+    }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     response.end(PAGE);
   });
@@ -315,6 +331,71 @@ async function run() {
     await page.keyboard.press('Alt+KeyG');
     const after = await waitFor(page, probe, 'plain', (s) => s.text !== before, 60_000);
     check('Alt+G runs Fix grammar and rewrites the field', after.text !== before && /there (is|are) a lot/i.test(after.text), JSON.stringify(after.text));
+  }
+
+  // WhatsApp Web: Enter sends, Shift+Enter breaks the line, and Lexical keeps
+  // the lines as <br> inside one paragraph. The stub in `test:render` hands back
+  // exactly the line breaks it was given; a real model may not.
+  for (const trailing of [false, true]) {
+    console.log(`\nreal page, Lexical: three lines typed with Shift+Enter${trailing ? ', and one more at the end' : ''}`);
+    const LINES = ['Their is a problem here.', 'The projet needs alot of work.', 'Please dont be late.'];
+    const lexicalText = () => window.__pkLexicalText?.() ?? null;
+    const typeLines = async () => {
+      await page.click('#lexical');
+      await page.keyboard.press('Control+A');
+      await page.keyboard.press('Delete');
+      for (let i = 0; i < LINES.length; i++) {
+        if (i) await page.keyboard.press('Shift+Enter');
+        await page.keyboard.type(LINES[i], { delay: 15 });
+      }
+      // Where the reported bug lived: Lexical adds a placeholder <br> after it.
+      if (trailing) await page.keyboard.press('Shift+Enter');
+    };
+    // Lexical's own text: a trailing Shift+Enter is one "\n" there, while the
+    // page's innerText also counts the placeholder <br>.
+    const expectedEnd = (text) => (trailing ? text.endsWith('\n') : !text.endsWith('\n'));
+    const lines = (text) => text.replace(/\n+$/, '').split('\n');
+
+    await typeLines();
+    const found = await waitFor(page, probe, 'lexical', (s) => s.rects.length > 0, 60_000);
+    check('the errors are underlined', found.rects.length > 0, `${found.rects.length} underline(s), badge ${JSON.stringify(found.badge)}`);
+    if (found.rects.length) {
+      const before = found.text;
+      const rect = found.rects[0];
+      await page.mouse.click(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      await page.waitForTimeout(400);
+      const button = await page.evaluate(() => {
+        const shadow = document.getElementById('proofkey-root').shadowRoot;
+        const card = shadow.querySelector('.pk-card');
+        if (!card || card.hidden) return null;
+        const r = shadow.querySelector('.pk-btn--primary').getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2, before: shadow.querySelector('.pk-card__before')?.textContent, after: shadow.querySelector('.pk-card__after')?.textContent };
+      });
+      check('clicking an underline opens its card', !!button, button ? `${JSON.stringify(button.before)} → ${JSON.stringify(button.after)}` : 'no card');
+      if (button) {
+        await page.mouse.click(button.x, button.y);
+        const applied = await waitFor(page, probe, 'lexical', (s) => s.text !== before, 5_000);
+        await page.waitForTimeout(500);
+        const model = await page.evaluate(lexicalText);
+        show('after Apply', applied.text);
+        check('Apply keeps three lines', lines(applied.text).length === 3, `${lines(applied.text).length} line(s)`);
+        check('Lexical keeps three lines and the break at the end', lines(model).length === 3 && expectedEnd(model), JSON.stringify(model));
+      }
+    }
+
+    await typeLines();
+    await page.waitForTimeout(300);
+    const before = await page.evaluate(probe, 'lexical');
+    await page.keyboard.press('Alt+KeyG');
+    const after = await waitFor(page, probe, 'lexical', (s) => s.text !== before.text, 60_000);
+    await page.waitForTimeout(800);
+    const settled = await page.evaluate(probe, 'lexical');
+    const model = await page.evaluate(lexicalText);
+    show('after Fix grammar', settled.text);
+    check('Fix grammar rewrote the field', after.text !== before.text);
+    check('Fix grammar keeps three lines', lines(settled.text).length === 3, `${lines(settled.text).length} line(s)`);
+    check('nothing is written twice', settled.text.length < before.text.length * 1.5, `${before.text.length} → ${settled.text.length} chars`);
+    check('Lexical keeps three lines and the break at the end', lines(model).length === 3 && expectedEnd(model), JSON.stringify(model));
   }
 
   check('no uncaught page errors', pageErrors.length === 0, pageErrors.join('; ') || 'clean');

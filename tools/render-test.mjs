@@ -714,12 +714,54 @@ async function run() {
     check('and it is the rewrite', normalize(after) === normalize(expected), JSON.stringify(normalize(after).slice(0, 120)));
     const toastText = await page.evaluate(() =>
       [...(document.getElementById('proofkey-root')?.shadowRoot?.querySelectorAll('.pk-toast') ?? [])].map((t) => t.textContent).join(' | '));
-    // Lexical takes the insert and moves the line breaks, so the write is not
-    // what was asked for even with the words right; saying it was refused would
-    // be false, and so would promising one Ctrl+Z undoes it — measured, it takes
-    // several presses and undoes it in pieces.
-    check('and the toast says to look the text over, not that it was refused',
-      !/would not accept/.test(toastText) && /Look it over/.test(toastText), JSON.stringify(toastText));
+    // Until 2026-09-23 Lexical took this insert and moved the line breaks, so the
+    // write came out wrong with the words right and the toast asked the user to
+    // look it over. The multi-line insert now goes in as `insertReplacementText`,
+    // which Lexical builds line breaks from, so the rewrite lands exactly and says
+    // so — with the paragraphs where they were, not merely the same words. The
+    // stub stands in for the worker, which in the product takes those spaces off
+    // first (`dropAddedTrailingSpaces`); here they arrive, so the field has to
+    // hold exactly what the content script was handed.
+    const handed = expected.replace(/\n/g, '  \n');
+    check('and it is exactly what was handed over, line breaks included', after === handed, JSON.stringify(after.slice(0, 120)));
+    check('and the toast says it was applied', /Applied/.test(toastText), JSON.stringify(toastText));
+  }
+
+  // Reported 2026-09-23 on WhatsApp Web: correcting a message of several lines
+  // wrecked it. WhatsApp breaks lines with Shift+Enter, which Lexical keeps as
+  // <br> inside one paragraph, and a message that ends on Shift+Enter gets a
+  // second, placeholder <br>. Two faults stacked: the second surgical edit also
+  // wrote the first edit's text onto that empty last line, and the fallback
+  // then inserted the whole rewrite with `insertText`, which drops every line
+  // break in Lexical — three lines came back as one run-on line.
+  {
+    console.log('\nlexical — lines typed with Shift+Enter survive a whole-field rewrite:');
+    for (const trailing of [false, true]) {
+      await page.goto(`${BASE}?field=lexical`, { waitUntil: 'load' });
+      await page.waitForTimeout(500);
+      await page.click('#lexical');
+      await page.keyboard.press('Control+A');
+      await page.keyboard.press('Delete');
+      const LINES = ['Their is a problem here.', 'The projet needs alot of work.', 'Please dont be late.'];
+      for (let i = 0; i < LINES.length; i++) {
+        if (i) await page.keyboard.press('Shift+Enter');
+        await page.keyboard.type(LINES[i]);
+      }
+      if (trailing) await page.keyboard.press('Shift+Enter');
+      await page.waitForTimeout(300);
+
+      const read = () => page.evaluate(() => window.__pkLexicalText());
+      const before = await read();
+      const expected = await page.evaluate((text) => window.__pkCorrect(text), before);
+      await page.evaluate(() => window.__pkInvoke('fix-grammar'));
+      await page.waitForTimeout(1500);
+      const after = await read();
+      const label = trailing ? 'ending on Shift+Enter' : 'no break at the end';
+      check(`${label}: the field is exactly the rewrite`, after === expected, JSON.stringify(after));
+      const inside = await page.evaluate(() =>
+        [...document.querySelectorAll('#lexical span')].some((span) => span.textContent.includes('\n')));
+      check(`${label}: the line breaks are Lexical's own, not newlines inside a text node`, !inside);
+    }
   }
 
   // The reported case, on the real Lexical instance: a short plain message with
