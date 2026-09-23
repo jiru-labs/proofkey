@@ -621,20 +621,28 @@ any number from this section.
 | `summarize` | Yes | `Verified` (gemini-2.5-flash) | `tools/action-eval.ts`, 2026-09-09 (38168f8) — **50/50 before the wording change and 50/50 after**. It never translated once in 100 checks either way; see the note below on why that mattered |
 | `bullet-points` | Yes | `Verified` (gemini-2.5-flash) | Same measurement, same result as `summarize`: 50/50 before, 50/50 after |
 | `translate` | Yes, harness only | `Partly verified` (gemini-2.5-flash) | `tools/action-eval.ts`, 2026-09-09 (75d51fd). Ships at **80/80** over 20 runs on 4 fixtures of its own, after two prompt bullets fixed two failures the harness only saw once its own fixtures were corrected. Before those bullets, the same corrected fixtures scored the old prompt **53/80**: one run in ten obeyed an injected instruction instead of translating it, and `#urgente` came back as `#urgent` though hashtags are promised to survive unchanged. The harness's very first reading had been a false **40/40** — its injection fixture then only checked that the Spanish was gone, and a bare `"OK"` satisfied that. **None of this ran through the extension.** No context menu, no keyboard shortcut, no field written into — every number above is a direct API call, and nobody has run Translate on a real site |
-| `improve-writing` | No | `Untested` | Composes `PRESERVATION_RULES`, the same shared text `fix-grammar` was measured against, but has not itself been sent to a model by this harness or any other |
-| `make-professional` | No | `Untested` | Same as above |
-| `make-friendly` | No | `Untested` | Same as above |
-| `simplify` | No | `Untested` | Same as above |
-| `expand` | No | `Untested` | Same as above |
+| `improve-writing` | Yes | `Broken` for mixed-language text (gemini-2.5-flash) | [#1](https://github.com/jiru-labs/proofkey/issues/1). `tools/action-eval.ts --fixtures mixed --runs 10`, 2026-09-23, prompts as shipped in 0.1.10: **kept the mixture 59/80** — the two Spanish-base fixtures lose their English nouns (`el deadline`→`el plazo`, `el draft`→`el borrador`, `team`→`equipo`) and the English-base one loses its Spanish (`mañana`→`tomorrow`). Text in one language is fine: all eight actions 640/640 over `--fixtures monolingual --runs 20` the same day |
+| `make-professional` | Yes | `Broken` for mixed-language text (gemini-2.5-flash) | [#1](https://github.com/jiru-labs/proofkey/issues/1). `tools/action-eval.ts --fixtures mixed --runs 10`, 2026-09-23, prompts as shipped in 0.1.10: **kept the mixture 48/80** — the same three fixtures, plus a quoted English sentence inside Spanish translated (`"we will ship it on Friday"`→`viernes`). Text in one language is fine: all eight actions 640/640 over `--fixtures monolingual --runs 20` the same day |
+| `make-friendly` | Yes | `Broken` for mixed-language text (gemini-2.5-flash) | [#1](https://github.com/jiru-labs/proofkey/issues/1). `tools/action-eval.ts --fixtures mixed --runs 10`, 2026-09-23, prompts as shipped in 0.1.10: **kept the mixture 46/80** — the same three fixtures, plus the French/English one (`numbers`→`chiffres`). Text in one language is fine: all eight actions 640/640 over `--fixtures monolingual --runs 20` the same day |
+| `simplify` | Yes | `Broken` for mixed-language text (gemini-2.5-flash) | [#1](https://github.com/jiru-labs/proofkey/issues/1). `tools/action-eval.ts --fixtures mixed --runs 10`, 2026-09-23, prompts as shipped in 0.1.10: **kept the mixture 58/80** — the same three fixtures as `improve-writing`. Text in one language is fine: all eight actions 640/640 over `--fixtures monolingual --runs 20` the same day |
+| `expand` | Yes | `Broken` for mixed-language text (gemini-2.5-flash) | [#1](https://github.com/jiru-labs/proofkey/issues/1). `tools/action-eval.ts --fixtures mixed --runs 10`, 2026-09-23, prompts as shipped in 0.1.10: **kept the mixture 32/80** — six of the eight fixtures, including the quoted sentence and the Portuguese/English one (`deploy`→`implantação`, `rollback`→`reversão`). Text in one language is fine: all eight actions 640/640 over `--fixtures monolingual --runs 20` the same day |
 
 `fix-grammar`, `summarize` and `bullet-points` are marked `Verified` on the same
 looser basis the Providers section above already uses that tier on: a script
 talking to the real endpoint over `gemini-2.5-flash`, not a maintainer's hands
-on a real page. The five `Untested` rows are not weaker guesses than that —
-they run the identical shared prompt text, they are simply the ones nobody has
-pointed the harness at yet. Doing so is the same one-minute job the Providers
-section describes for a new model: `node --experimental-strip-types
-tools/action-eval.ts --action improve-writing`.
+on a real page. The five rewrite rows were `Untested` until 2026-09-23, on the
+reasoning that they run the identical shared prompt text. Pointed at the
+harness, they showed that reasoning was wrong: the same `PRESERVATION_RULES`
+that holds 80/80 in `fix-grammar` gives way in all five. Why is not
+established. What separates them from `fix-grammar` is not where the rule
+sits — it sits in the same place in all six — but what they are asked to do:
+reword ("remove slang", "roughly double the length"), where `fix-grammar` is
+told not to touch anything correct, and a borrowed word is easy to read as
+something to reword. The first thing to try is still moving the rule after the
+action's own instructions, since position was as strong a lever as wording when
+`fix-grammar` had this bug; not measured for these actions yet. Ten runs per
+fixture on one model, one session; details in
+[#1](https://github.com/jiru-labs/proofkey/issues/1).
 
 `translate` is marked down to `Partly verified` for a reason specific to it.
 This whole file is otherwise a record of what happens in a real editor on a

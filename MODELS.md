@@ -381,12 +381,12 @@ Four of the nine actions now have a number of their own, from a second harness
 built to answer exactly that — [Measuring quick
 actions](#measuring-quick-actions) below. On `gemini-2.5-flash`: `fix-grammar`
 scores 160/160, `translate` scores 80/80, and `summarize` and `bullet-points`
-score 50/50 each. The other five actions — `improve-writing`,
-`make-professional`, `make-friendly`, `simplify`, `expand` — are still
-unmeasured, on this model and every other one, and none of the four numbers
-above has been checked on any model besides this one or any provider besides
-Google Gemini. Most of the original caveat still stands; do not read four
-measured actions as the other five.
+score 50/50 each. The other five — `improve-writing`, `make-professional`,
+`make-friendly`, `simplify`, `expand` — were measured on 2026-09-23 and **do
+not hold mixed-language text on this model**: 32–59 of 80 checks, where the
+three above scored 80/80 the same day ("Rewrites and mixed-language text",
+below; [#1](https://github.com/jiru-labs/proofkey/issues/1)). None of these numbers has been checked on a provider besides
+Google Gemini. Do not read the measured actions as the others.
 
 ### If you are on xAI
 
@@ -1129,9 +1129,11 @@ already shown to swing six points out of 25 between sessions, so 21 against 18
 is not a distinction worth shipping on. More runs could move it in.
 
 Two limits on all of this. It is one machine and one model version; the
-component is Chrome's to update, and a new version may score differently. And none of these actions except Fix grammar, Summarize, Bullet
-points and Translate has been measured on *any* other model either, so the
-table says what Nano does, not that it is worse than a cloud model at them.
+component is Chrome's to update, and a new version may score differently. And
+the rewrites are not a Nano-only weakness: measured on `gemini-2.5-flash` on
+2026-09-23, the same five translated borrowed words too (32–59 of 80 checks;
+[#1](https://github.com/jiru-labs/proofkey/issues/1)). What the table shows is that Nano is also weak at Summarize and
+Convert to bullet points, which Gemini holds 80/80.
 
 ### Measuring quick actions
 
@@ -1252,11 +1254,42 @@ same input, going from a clean pass to a clean fail. [The three-run warning
 below](#caveats) already said not to trust a small run count on this page; this
 is the evidence that it was right to.
 
+### Rewrites and mixed-language text
+
+Measured 2026-09-23 on `gemini-2.5-flash`, `reasoning_effort: "none"`, the
+prompts as shipped in 0.1.10, `--fixtures mixed --runs 10` (80 checks each):
+
+| Action | Kept the mixture |
+|---|---|
+| Fix grammar, Summarize, Convert to bullet points | 80/80 each |
+| Improve writing | 59/80 |
+| Simplify | 58/80 |
+| Make professional | 48/80 |
+| Make friendly | 46/80 |
+| Expand | 32/80 |
+
+The failures are the same shape as Fix grammar's old bug: `El deadline es
+mañana pero todavia no tengo el draft.` loses `deadline` and `draft`, `Hola
+team… kickoff meeting` loses `team` and `meeting`, and in the English-base
+fixture `mañana` becomes `tomorrow`. Make professional and Expand also
+translate a quoted English sentence inside Spanish (`"we will ship it on
+Friday"` → `viernes`), which no reading of "more professional" covers. A
+professional Spanish email might well say "fecha límite", but the prompt
+promises to keep the mixture, so one of the two has to change. The same
+session, with an English worked example added to the shared rule, scored
+69/53/52/49/34 on the five — the same picture, so that example is not the fix.
+
+Why is not established. The rule sits in the same place in these five prompts
+as in Fix grammar, so placement alone does not explain the difference; what
+does differ is that these actions are told to reword. Moving the rule after
+each action's own instructions is the first candidate, because position fixed
+Fix grammar as well as wording did; its measurement was cut short when the
+eval key's prepaid credit ran out. Tracked in [#1](https://github.com/jiru-labs/proofkey/issues/1).
+
 Not measured here, and it should be read as that rather than as an oversight:
-`improve-writing`, `make-professional`, `make-friendly`, `simplify` and
-`expand` on mixed-language text; every model besides `gemini-2.5-flash` on
-mixed-language text, apart from the two local models below; every provider
-besides Google Gemini and a local llama.cpp server.
+every model besides `gemini-2.5-flash` on mixed-language text, apart from the
+two local models below; every provider besides Google Gemini and a local
+llama.cpp server.
 
 ### Text in one language
 
