@@ -22,3 +22,7 @@ store-shots/
 # and a cloud session reads only the committed file.
 .claude/*
 !.claude/settings.json
+
+# Built by tools/build-webllm-probe.mjs
+tools/webllm-probe.html
+tools/.webllm-probe-build/
