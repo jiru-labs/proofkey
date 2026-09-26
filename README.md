@@ -102,7 +102,17 @@ What you get, and what you do not:
 - **Private by construction.** Every check runs on your computer. ProofKey makes no request, and no provider sees your text; what Chrome itself logs is Chrome's policy, not ours.
 - **Live checking and Fix grammar, and nothing else.** Measured inside an extension service worker, where ProofKey runs it, it scored 13.0/14 on `npm run eval` — the same on all ten runs — with no false alarms, and Fix grammar kept mixed-language text intact in 21 of 24 checks. The other rewrites did not: asked to improve or reword a message that mixes languages, it translated the borrowed words, and Translate obeyed an instruction hidden in the text. So those actions stay out of the menu while this model is active and come back the moment a provider with a key is. The numbers are in [MODELS.md](MODELS.md#results--chromes-built-in-model).
 - **Slower than a cloud model.** In three runs through the real extension, an eight-sentence live check took 8.6–8.8s and a Fix grammar 4.8–4.9s on a laptop with integrated graphics; Gemini answers the eval's larger request in about 1s.
-- **Google Chrome on a desktop, and a capable one.** Measured: Google Chrome 153 runs it, Brave reports it unavailable, and Microsoft Edge 153 on Linux has no such model at all. Edge's own preview on Windows and macOS uses a different model, Phi-4-mini, which ProofKey has not been measured on. Other browsers have not been tried. Chrome itself wants 22 GB of free disk and either a GPU with more than 4 GB of memory or 16 GB of RAM with 4 cores — its [own requirements](https://developer.chrome.com/docs/ai/prompt-api), not a ProofKey measurement. Where it cannot run, the card says so and the first request tells you to add a provider.
+- **Google Chrome on a desktop, and a capable one.** Which browsers have it, as measured:
+
+  | Browser | Built-in model | How it is known |
+  |---|---|---|
+  | Google Chrome 153 (desktop) | **Works** | 2026-09-13: the real extension, freshly installed, 11 checks through its service worker |
+  | Brave, on Linux and Windows | **Not available** — Brave switches the feature off | Linux 2026-09-13, on the laptop where Chrome runs it; Windows 2026-09-26 on an 8 GB GPU, where the console says *The feature flag gating model execution was disabled* |
+  | Microsoft Edge 153 (Linux) | **Not available** — no such model | 2026-09-15: `LanguageModel` is undefined |
+  | Microsoft Edge preview (Windows, macOS; Canary/Dev behind a flag) | Untested — a different model, Phi-4-mini | Microsoft's documentation; ProofKey has not been measured on it |
+  | Vivaldi, Opera, others | Untested | Nobody has loaded it there |
+
+  In every browser without it, a provider with a key — or a model on your own computer through Ollama or llama.cpp — does the same job. Details and the full record are in [COMPATIBILITY.md](COMPATIBILITY.md). Chrome itself wants 22 GB of free disk and either a GPU with more than 4 GB of memory or 16 GB of RAM with 4 cores — its [own requirements](https://developer.chrome.com/docs/ai/prompt-api), not a ProofKey measurement. Where it cannot run, the card says so and the first request tells you to add a provider.
 - **Five languages, officially.** Chrome documents English, Spanish, German, French and Japanese for this model. Others are untested.
 
 Measured on one machine so far — Chrome 153, a Ryzen 7840U laptop — so read the latency figures as that machine's.
