@@ -112,7 +112,7 @@ What you get, and what you do not:
   | Microsoft Edge preview (Windows, macOS; Canary/Dev behind a flag) | Untested — a different model, Phi-4-mini | Microsoft's documentation; ProofKey has not been measured on it |
   | Vivaldi, Opera, others | Untested | Nobody has loaded it there |
 
-  In every browser without it, a provider with a key — or a model on your own computer through Ollama or llama.cpp — does the same job. Details and the full record are in [COMPATIBILITY.md](COMPATIBILITY.md). Chrome itself wants 22 GB of free disk and either a GPU with more than 4 GB of memory or 16 GB of RAM with 4 cores — its [own requirements](https://developer.chrome.com/docs/ai/prompt-api), not a ProofKey measurement. Where it cannot run, the card says so and the first request tells you to add a provider.
+  In every browser without it, use a provider with a key, or a model on your own computer through Ollama or llama.cpp, instead. Details and the full record are in [COMPATIBILITY.md](COMPATIBILITY.md). Chrome itself wants 22 GB of free disk and either a GPU with more than 4 GB of memory or 16 GB of RAM with 4 cores — its [own requirements](https://developer.chrome.com/docs/ai/prompt-api), not a ProofKey measurement. Where it cannot run, the card says so and the first request tells you to add a provider.
 - **Five languages, officially.** Chrome documents English, Spanish, German, French and Japanese for this model. Others are untested.
 
 Measured on one machine so far — Chrome 153, a Ryzen 7840U laptop — so read the latency figures as that machine's.
