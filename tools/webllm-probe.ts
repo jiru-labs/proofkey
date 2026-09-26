@@ -34,12 +34,22 @@
  */
 
 import {
+  BUILT_IN_ACTIONS,
   composeCheckPrompt,
+  composeSystemPrompt,
   dropAddedFullStops,
   formatCheckPayload,
   parseCheckReply,
 } from '../src/core/prompts';
-import type { WritingProfile } from '../src/core/types';
+import type { WritingAction, WritingProfile } from '../src/core/types';
+import {
+  FIXTURES as ACTION_MIXED,
+  isTranslating,
+  MONOLINGUAL_FIXTURES as ACTION_MONOLINGUAL,
+  scoreOutput,
+  TRANSLATE_FIXTURES as ACTION_TRANSLATE,
+  type Fixture as ActionFixture,
+} from './action-eval-fixtures';
 import { FIXTURES } from './eval-fixtures';
 
 /** Pinned: a measurement names the version it was taken on. */
@@ -52,9 +62,10 @@ const WEBLLM_URL = `https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@${WEBLLM_VERSIO
  * original hybrid checkpoint — whether that one holds up is the question.
  */
 const MODELS = [
-  { id: 'Qwen3.5-2B-q4f16_1-MLC', checked: true },
   { id: 'Qwen3.5-4B-q4f16_1-MLC', checked: true },
-  { id: 'Qwen3-4B-q4f16_1-MLC', checked: true },
+  { id: 'Qwen3.5-2B-q4f16_1-MLC', checked: true },
+  // 7.0/14 on the RX 6600 (2026-09-26): it handed every error back unchanged.
+  { id: 'Qwen3-4B-q4f16_1-MLC', checked: false },
   { id: 'Qwen3-1.7B-q4f16_1-MLC', checked: false },
   { id: 'Llama-3.2-3B-Instruct-q4f16_1-MLC', checked: false },
   { id: 'Phi-4-mini-instruct-q4f16_1-MLC', checked: false },
@@ -88,11 +99,35 @@ interface RunResult {
   rawReply?: string;
 }
 
+interface ActionFixtureResult {
+  set: 'mixed' | 'monolingual' | 'translate';
+  input: string;
+  ok: number;
+  of: number;
+  translated: string[];
+  dropped: string[];
+  respelled: string[];
+  /** Every distinct output, for a human to read — the real result, as in action-eval.ts. */
+  outputs: string[];
+}
+
+interface ActionResult {
+  action: string;
+  ok: number;
+  of: number;
+  mixed: string;
+  monolingual: string;
+  translate: string;
+  meanSeconds: number;
+  fixtures: ActionFixtureResult[];
+}
+
 interface ModelResult {
   model: string;
   loadSeconds?: number;
   error?: string;
   runs: RunResult[];
+  actions?: ActionResult[];
 }
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -110,6 +145,7 @@ const report: {
   brands?: string;
   webgpu: Record<string, unknown>;
   runsPerModel: number;
+  actionRunsPerFixture?: number;
   results: ModelResult[];
 } = {
   tool: 'proofkey webllm-probe',
@@ -122,7 +158,7 @@ const report: {
 };
 
 function showReport(): void {
-  $<HTMLTextAreaElement>('result').value = JSON.stringify(report, null, 2);
+  $<HTMLTextAreaElement>('result').value = JSON.stringify(report);
 }
 
 async function probeWebGpu(): Promise<boolean> {
@@ -189,10 +225,91 @@ function score(reply: string): Omit<RunResult, 'ms'> {
   return { contractBroken: false, thoughtOutLoud, correct, falseAlarms, wrong };
 }
 
+type Engine = { chat: { completions: { create: (r: unknown) => Promise<any> } }; unload: () => Promise<void> };
+
+/**
+ * The quick actions, scored like `tools/action-eval.ts`: every enabled built-in
+ * action on the mixed-language and the one-language fixtures, and Translate on
+ * its own four, into English. Greedy, like the live check.
+ */
+async function measureActions(engine: Engine, model: string, runs: number): Promise<ActionResult[]> {
+  const results: ActionResult[] = [];
+  const actions: WritingAction[] = BUILT_IN_ACTIONS.filter((a) => a.enabled).map((a) => ({ ...a }));
+  for (const action of actions) {
+    const translating = isTranslating(action);
+    const profile: WritingProfile = translating
+      ? { ...EMPTY_PROFILE, translateLanguage: 'English' }
+      : EMPTY_PROFILE;
+    const sets: [ActionFixtureResult['set'], ActionFixture[]][] = translating
+      ? [['translate', ACTION_TRANSLATE]]
+      : [['mixed', ACTION_MIXED], ['monolingual', ACTION_MONOLINGUAL]];
+    const perFixture: ActionFixtureResult[] = [];
+    let spent = 0;
+    let calls = 0;
+    for (const [set, fixtures] of sets) {
+      for (const fixture of fixtures) {
+        const row: ActionFixtureResult = { set, input: fixture.input, ok: 0, of: 0, translated: [], dropped: [], respelled: [], outputs: [] };
+        for (let i = 0; i < runs; i++) {
+          const started = performance.now();
+          const reply = await engine.chat.completions.create({
+            messages: [
+              { role: 'system', content: composeSystemPrompt(action, profile) },
+              { role: 'user', content: fixture.input },
+            ],
+            temperature: 0,
+            max_tokens: 1024,
+            ...(model.startsWith('Qwen3') ? { extra_body: { enable_thinking: false } } : {}),
+          });
+          spent += performance.now() - started;
+          calls++;
+          const raw: string = reply?.choices?.[0]?.message?.content ?? '';
+          // The worker strips nothing, so neither does this; an empty think block
+          // is taken off only for the reader, not for the score.
+          const score = scoreOutput(action, fixture, raw);
+          row.of++;
+          if (score.ok) row.ok++;
+          for (const w of score.appeared) if (!row.translated.includes(w)) row.translated.push(w);
+          if (score.dropped) for (const w of score.lost) if (!row.dropped.includes(w)) row.dropped.push(w);
+          if (score.respelled) for (const w of score.lost) if (!row.respelled.includes(w)) row.respelled.push(w);
+          const shown = raw.replace(/<think>\s*<\/think>\s*/i, '').trim().slice(0, 600);
+          if (!row.outputs.includes(shown)) row.outputs.push(shown);
+        }
+        perFixture.push(row);
+      }
+    }
+    const tally = (set: ActionFixtureResult['set']): string => {
+      const rows = perFixture.filter((r) => r.set === set);
+      return rows.length ? `${rows.reduce((a, r) => a + r.ok, 0)}/${rows.reduce((a, r) => a + r.of, 0)}` : '';
+    };
+    const result: ActionResult = {
+      action: action.id,
+      ok: perFixture.reduce((a, r) => a + r.ok, 0),
+      of: perFixture.reduce((a, r) => a + r.of, 0),
+      mixed: tally('mixed'),
+      monolingual: tally('monolingual'),
+      translate: tally('translate'),
+      meanSeconds: Math.round(spent / Math.max(1, calls) / 100) / 10,
+      fixtures: perFixture,
+    };
+    results.push(result);
+    const parts = translating
+      ? `traducción ${result.translate}`
+      : `mezcla ${result.mixed} · un idioma ${result.monolingual}`;
+    const bad = perFixture.filter((r) => r.ok < r.of).map((r) => [...r.translated, ...r.dropped].join('/') || '?');
+    log(`  ${action.id}: ${parts} · ${result.meanSeconds} s de media${bad.length ? ` · fallos: ${bad.join(', ')}` : ''}`);
+    showReport();
+  }
+  return results;
+}
+
 async function measure(): Promise<void> {
   $<HTMLButtonElement>('start').disabled = true;
-  const runs = Math.max(1, Number($<HTMLInputElement>('runs').value) || 10);
+  const doLive = $<HTMLInputElement>('do-live').checked;
+  const doActions = $<HTMLInputElement>('do-actions').checked;
+  const runs = doLive ? Math.max(1, Number($<HTMLInputElement>('runs').value) || 10) : 0;
+  const actionRuns = Math.max(1, Number($<HTMLInputElement>('action-runs').value) || 1);
   report.runsPerModel = runs;
+  if (doActions) report.actionRunsPerFixture = actionRuns;
   const chosen = MODELS.filter((m) => $<HTMLInputElement>(`m-${m.id}`).checked).map((m) => m.id);
 
   if (!(await probeWebGpu())) {
@@ -213,7 +330,7 @@ async function measure(): Promise<void> {
     const result: ModelResult = { model, runs: [] };
     report.results.push(result);
     log(`\n== ${model} ==`);
-    let engine: { chat: { completions: { create: (r: unknown) => Promise<any> } }; unload: () => Promise<void> } | undefined;
+    let engine: Engine | undefined;
     try {
       const t0 = performance.now();
       let lastShown = -1;
@@ -256,9 +373,15 @@ async function measure(): Promise<void> {
         );
         showReport();
       }
-      const ok = result.runs.filter((r) => !r.contractBroken);
-      const mean = ok.length ? ok.reduce((a, r) => a + r.correct, 0) / ok.length : 0;
-      log(`  MEDIA ${mean.toFixed(1)}/${FIXTURES.length} en ${ok.length}/${runs} runs con contrato válido`);
+      if (runs > 0) {
+        const ok = result.runs.filter((r) => !r.contractBroken);
+        const mean = ok.length ? ok.reduce((a, r) => a + r.correct, 0) / ok.length : 0;
+        log(`  MEDIA ${mean.toFixed(1)}/${FIXTURES.length} en ${ok.length}/${runs} runs con contrato válido`);
+      }
+      if (doActions) {
+        log('  acciones rápidas (casos de tools/action-eval.ts):');
+        result.actions = await measureActions(engine!, model, actionRuns);
+      }
     } catch (error) {
       result.error = String((error as Error)?.message ?? error);
       log(`  ERROR: ${result.error}`);
@@ -278,6 +401,9 @@ function init(): void {
   const override = params.get('models')?.split(',').filter(Boolean);
   if (override?.length) MODELS.splice(0, MODELS.length, ...override.map((id) => ({ id, checked: true })));
   if (params.get('runs')) $<HTMLInputElement>('runs').value = params.get('runs')!;
+  if (params.get('live')) $<HTMLInputElement>('do-live').checked = params.get('live') === '1';
+  if (params.get('actions')) $<HTMLInputElement>('do-actions').checked = params.get('actions') === '1';
+  if (params.get('arun')) $<HTMLInputElement>('action-runs').value = params.get('arun')!;
   $('models').innerHTML = MODELS.map(
     (m) =>
       `<label><input type="checkbox" id="m-${m.id}" ${m.checked ? 'checked' : ''}> ${m.id}</label>`,

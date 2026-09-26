@@ -53,11 +53,13 @@ const html = `<!doctype html>
 <p class="note">Esto es una <b>herramienta de medición</b>, no la extensión. Al pulsar «Empezar» descarga
 WebLLM desde <code>cdn.jsdelivr.net</code>, la librería WebGPU de cada modelo desde
 <code>raw.githubusercontent.com</code> y sus pesos desde <code>huggingface.co</code> (unos 1,3–2,5 GB por
-modelo, se guardan en la caché del navegador). No envía ningún texto a ningún sitio: los 14 casos de prueba
-se corrigen en tu GPU.</p>
+modelo, se guardan en la caché del navegador). No envía ningún texto a ningún sitio: los casos de prueba se
+procesan en tu GPU. Si ya mediste antes, los modelos siguen en la caché y no se vuelven a descargar.</p>
 <p>Modelos a medir:</p>
 <div id="models"></div>
-<p>Repeticiones por modelo: <input id="runs" type="number" value="10" min="1" max="50" style="width:4em"></p>
+<p>Qué medir:</p>
+<label><input type="checkbox" id="do-live"> Revisión en vivo (14 casos) — repeticiones: <input id="runs" type="number" value="10" min="1" max="50" style="width:4em"></label><br>
+<label><input type="checkbox" id="do-actions" checked> Acciones rápidas (9 acciones: casos con idiomas mezclados, de un idioma y de traducción) — repeticiones por caso: <input id="action-runs" type="number" value="1" min="1" max="10" style="width:4em"></label>
 <p><button id="gpu">Solo comprobar WebGPU</button><button id="start">Empezar</button><button id="copy">Copiar resultado</button></p>
 <pre id="log"></pre>
 <p>Resultado (JSON):</p>
