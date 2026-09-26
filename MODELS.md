@@ -1231,9 +1231,10 @@ Read, not just counted:
 - Every `キャンセル` for `cancel` is scored as respelling, as in `action-eval.ts`
   — katakana is how Japanese writes the loanword.
 
-Latency is dominated by prefill: an action's system prompt is long, and at
-~142 tok/s the 4B spends most of its 4.5–7 s reading it. Nano's Fix grammar took
-4.8–4.9 s on the other machine.
+Most of that latency is probably prefill — an action's system prompt is long,
+and the live check measured the 4B reading at ~142 tok/s — but the action phase
+did not record prefill and decode separately, so that is inferred, not measured.
+Nano's Fix grammar took 4.8–4.9 s on the other machine.
 
 ### Measuring quick actions
 
