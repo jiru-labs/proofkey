@@ -28,7 +28,9 @@
  * `chatCompletions.ts` does none, so a reply is scored exactly as the extension
  * would score it. `parseCheckReply` tolerates a short `<think>` block ahead of
  * the numbered lines (measured with a stubbed engine, 2026-09-26), so thinking is
- * flagged separately: its cost is latency, which the project's policy excludes.
+ * flagged separately — only when the block has something in it, because Qwen3.5
+ * emits an empty one with thinking off. Its cost is latency, which the project's
+ * policy excludes.
  */
 
 import {
@@ -158,7 +160,9 @@ async function probeWebGpu(): Promise<boolean> {
 
 function score(reply: string): Omit<RunResult, 'ms'> {
   const inputs = FIXTURES.map((f) => f.input);
-  const thoughtOutLoud = /<think>/i.test(reply);
+  // Qwen3.5 in WebLLM 0.2.85 emits an empty `<think></think>` even with
+  // thinking off (measured on the RX 6600, 2026-09-26); only content counts.
+  const thoughtOutLoud = /<think>\s*\S[\s\S]*?<\/think>/i.test(reply) || /<think>(?![\s\S]*<\/think>)/i.test(reply);
   const lines = parseCheckReply(reply, inputs.length);
   const parsed = lines && dropAddedFullStops(inputs, lines);
   if (!parsed) {

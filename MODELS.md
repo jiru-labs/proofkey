@@ -1135,6 +1135,58 @@ the rewrites are not a Nano-only weakness: measured on `gemini-2.5-flash` on
 [#1](https://github.com/jiru-labs/proofkey/issues/1)). What the table shows is that Nano is also weak at Summarize and
 Convert to bullet points, which Gemini holds 80/80.
 
+### Results — a model inside the browser (WebLLM)
+
+Brave switches Chrome's built-in model off and Edge on Linux has none, so the
+question was whether a model could run *inside the browser page* instead, on the
+user's GPU through WebGPU, with no key and no server. `tools/webllm-probe.html`
+(built by `tools/build-webllm-probe.mjs`) answers it on the same 14 fixtures as
+`npm run eval`, with the real composed prompt and the real `parseCheckReply`,
+at temperature 0, through WebLLM 0.2.85.
+
+The user's own Brave (Chromium 154) on Windows 11, AMD Radeon RX 6600 8 GB,
+2026-09-26, 10 runs per model. WebGPU was available on that adapter
+(`amd` / `rdna-2`, `shader-f16` present, 2048 MB max buffer):
+
+| Model (WebLLM build) | Mean | Per run | False alarms | Contract | Time per check, runs 2–10 | Prefill / decode tok/s | First load, download included |
+|---|---|---|---|---|---|---|---|
+| `Qwen3.5-4B-q4f16_1-MLC` | **13.0/14** | 13 × 10 | 0 | 10/10 | 11.6–12.8 s | ~142 / 23–27 | 534.9 s |
+| `Qwen3.5-2B-q4f16_1-MLC` | 12.0/14 | 12 × 10 | 0 | 10/10 | 6.3–6.8 s | ~341 / 38–43 | 270.9 s |
+| `Qwen3-4B-q4f16_1-MLC` | 7.0/14 | 7 × 10 | 0 | 10/10 | 8.9–9.4 s | ~242 / 28–31 | 449.3 s |
+
+Run 1 of each model was slower (13.7–17.7 s): prefill ran at 76–95 tok/s
+before the GPU pipelines warmed. The prompt was 623–640 tokens and each reply
+188–195.
+
+What the fixtures show:
+
+- **`Qwen3.5-4B` matches Chrome's built-in model on this harness**, 13.0/14
+  with no false alarms and no spread. Its one miss is `Their is alot` →
+  `There is a lot`, the agreement `is` → `are` left alone. Every non-English
+  fixture passed, including the mixed ES/EN one with the English words kept.
+- `Qwen3.5-2B` misses that one too, and leaves the German adjective ending
+  (`sehr schön Tag`) alone. Twice as fast.
+- The original hybrid `Qwen3-4B` — the only Qwen3-4B WebLLM ships; the
+  `Instruct-2507` that scored 11.0/14 through llama.cpp is not in its catalogue —
+  **handed every erroneous sentence back unchanged**: its 7 are the 7 clean
+  fixtures. Unusable, whatever its latency.
+- Every reply carried a `<think>` tag even with `enable_thinking: false`, but at
+  188–195 completion tokens for 14 numbered lines there is no room for any
+  reasoning in it: the block was empty. `parseCheckReply` accepts a reply with
+  that block ahead of the numbered lines, so it cost nothing here. The probe now
+  flags only a block with something in it.
+
+Limits, all of them real. **One machine** — a desktop with an 8 GB discrete GPU;
+nothing here says what an integrated GPU does, and a June 2026 write-up reports
+Chromium blocklisting WebGPU on AMD with Mesa on Linux by default
+([gist](https://gist.github.com/arximus88/f8d93ae1568a5c49e4206250f323b178);
+reported, not measured here). The latency is **not comparable** with the Nano
+row above: different machine, and 14 sentences here against 8 there. Only the
+live check was measured — Fix grammar and the other actions have not been run
+in the browser yet. And the probe is a web page loading WebLLM from jsDelivr and
+the model's compiled `.wasm` from GitHub at run time; an extension cannot fetch
+code, so a shipped version would bundle both and download only the weights.
+
 ### Measuring quick actions
 
 `npm run eval` only ever sent the live-check prompt. Nothing measured whether a
