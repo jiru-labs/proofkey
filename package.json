@@ -21,7 +21,7 @@
     "build": "vite build && vite build --config vite.content.config.ts",
     "dev": "npm run build -- --watch",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types tools/diff-check.ts && node --experimental-strip-types tools/shortcut-check.ts && node --experimental-strip-types tools/prompts-check.ts && node --experimental-strip-types tools/errors-check.ts && node --experimental-strip-types tools/thinking-check.ts && node --experimental-strip-types tools/builtin-check.ts",
+    "test": "node --experimental-strip-types tools/diff-check.ts && node --experimental-strip-types tools/shortcut-check.ts && node --experimental-strip-types tools/prompts-check.ts && node --experimental-strip-types tools/errors-check.ts && node --experimental-strip-types tools/thinking-check.ts && node --experimental-strip-types tools/builtin-check.ts && node --experimental-strip-types tools/local-servers-check.ts",
     "cost": "node --experimental-strip-types tools/cost.ts",
     "eval": "node --experimental-strip-types tools/eval.ts",
     "nano-bridge": "node tools/nano-bridge.mjs",

@@ -42,6 +42,12 @@ check('Brave is named as the reason', /\bBrave\b/.test(brave), brave);
 check('Brave is pointed at Google Chrome for the no-key model', /Google Chrome/.test(brave), brave);
 check('Brave is not sent after disk space or GPU memory', !/GB/.test(brave), brave);
 check('Brave is still told what works here', /API key/.test(brave), brave);
+check('Brave is offered a model on this computer, with no key', /LM Studio, Ollama or llama\.cpp/.test(brave), brave);
+check(
+  'Brave\'s message fits the toast the render test holds it to (41 words)',
+  brave.trim().split(/\s+/).length <= 41,
+  `${brave.trim().split(/\s+/).length} words`,
+);
 
 const braveBrandsOnly = as({ userAgent: CHROME_UA, userAgentData: { brands: [{ brand: 'Brave', version: '153' }] } });
 check('the brand alone is enough', /\bBrave\b/.test(braveBrandsOnly) && !/GB/.test(braveBrandsOnly), braveBrandsOnly);
@@ -58,6 +64,12 @@ check('Google Chrome is not told about Brave', !/Brave/.test(chrome), chrome);
 
 const unknown = as({ userAgent: CHROME_UA });
 check('a browser that says nothing about itself gets the hardware requirements', /22 GB/.test(unknown) && !/Brave/.test(unknown), unknown);
+check('Google Chrome below the floor is offered a model on this computer too', /LM Studio, Ollama or llama\.cpp/.test(chrome), chrome);
+
+console.log('\nno built-in model at all:');
+const noApi = builtinProblem('no-api') ?? '';
+check('a browser with no model is offered one on this computer, with no key', /LM Studio, Ollama or llama\.cpp/.test(noApi), noApi);
+check('and still told a key works', /API key/.test(noApi), noApi);
 
 if (failures) {
   console.log(`\n${failures} built-in model check(s) failed.`);

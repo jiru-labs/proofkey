@@ -1002,7 +1002,7 @@ async function run() {
   // 2026-09-16 it was gone between 4 and 6 s with the pointer resting on it.
   {
     console.log('\nerror toasts stay until they can be read:');
-    const BRAVE = "Brave reports Chrome's built-in model as unavailable, even on a computer where Google Chrome runs it. To use ProofKey with no key, use Google Chrome. In Brave, add a provider with an API key, or a self-hosted server such as llama.cpp.";
+    const BRAVE = "Brave switches off Chrome's built-in model, even on computers where Google Chrome runs it. With no key, run a model on this computer with LM Studio, Ollama or llama.cpp, or use Google Chrome. Or add a provider with an API key.";
     const shown = () => page.evaluate(() =>
       !!document.getElementById('proofkey-root')?.shadowRoot?.querySelector('.pk-toast--error'));
     const failWith = async (message) => {

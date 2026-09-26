@@ -1,5 +1,11 @@
 import { normalizeOrigin, originMatchPattern } from '../core/browser';
 import { getPreset, normalizeBaseUrl, PRESETS, thinkingNote } from '../core/presets';
+import {
+  describeProbe,
+  findLocalServers,
+  localServerOrigins,
+  type LocalServerProbe,
+} from '../core/localServers';
 import { BUILT_IN_ACTIONS } from '../core/prompts';
 import { listModels, originPattern, runCompletion, validateConnection } from '../core/providers';
 import {
@@ -64,6 +70,11 @@ let expandedConnectionId: string | null = null;
 let builtinState: BuiltinAvailability | null = null;
 let builtinDownload: { fraction: number } | null = null;
 let builtinDownloadError: string | null = null;
+/**
+ * What the last "Find a model on this computer" click turned up. Kept outside the
+ * card because finding a server adds a connection and re-renders the page.
+ */
+let localFinder: { searching: boolean; lines: string[]; kind: 'ok' | 'error' | 'info' } | null = null;
 
 /**
  * Which action panels are open, so a re-render does not close the one the user
@@ -489,6 +500,98 @@ function builtinCardProblem(connection: Connection): string | null {
   return builtinProblem(builtinDownload ? 'downloading' : builtinState);
 }
 
+/**
+ * The no-key route where this browser has no built-in model: a model server on
+ * this computer. Probes the three usual ports only when clicked — each probe is
+ * a request, and ProofKey sends none the user did not ask for.
+ */
+function renderLocalFinder(): HTMLElement {
+  const status = el('div', { dataset: { localFinderStatus: '' } });
+  if (localFinder) {
+    status.className =
+      localFinder.kind === 'error' ? 'field__hint field__hint--error' : 'field__hint';
+    for (const line of localFinder.lines) status.append(el('p', { text: line }));
+  }
+  const find = button('Find a model on this computer', findLocalModel, 'primary');
+  find.disabled = !!localFinder?.searching;
+  return el(
+    'div',
+    { class: 'field', dataset: { localFinder: '' } },
+    el('label', { class: 'field__label', text: 'No key: a model on this computer' }),
+    el('p', {
+      class: 'field__hint',
+      text: 'LM Studio, Ollama or llama.cpp running here work the same way, with nothing sent off this computer.',
+    }),
+    el('div', { class: 'row' }, find),
+    status,
+  );
+}
+
+function findLocalModel(): void {
+  // Requested before any await: the prompt needs the click that is still in scope.
+  const granted = chrome.permissions.request({ origins: localServerOrigins() });
+  localFinder = { searching: true, lines: ['Looking on this computer…'], kind: 'info' };
+  render();
+  granted
+    .catch(() => false)
+    .then(async (ok) => {
+      if (!ok) {
+        localFinder = {
+          searching: false,
+          lines: ['Access to this computer\'s model servers was not granted, so nothing was checked.'],
+          kind: 'error',
+        };
+        return;
+      }
+      localFinder = { searching: false, ...adoptLocalServer(await findLocalServers()) };
+    })
+    .catch((error: unknown) => {
+      localFinder = { searching: false, lines: [String(error)], kind: 'error' };
+    })
+    .finally(render);
+}
+
+/**
+ * Adds the first server that has a model loaded — or reuses a connection already
+ * pointing at it — and makes it the one ProofKey tries first. Nothing is saved
+ * until the user clicks Save, like every other change on this page.
+ */
+function adoptLocalServer(probes: LocalServerProbe[]): { lines: string[]; kind: 'ok' | 'error' | 'info' } {
+  const seen = probes.map(describeProbe).filter((line): line is string => !!line);
+  const usable = probes.find(
+    (p): p is Extract<LocalServerProbe, { status: 'found' }> => p.status === 'found' && p.models.length > 0,
+  );
+  if (!usable) {
+    return {
+      kind: seen.length > 0 ? 'error' : 'info',
+      lines: [
+        ...(seen.length > 0 ? seen : ['Nothing is running on the usual ports (LM Studio 1234, Ollama 11434, llama.cpp 8080).']),
+        'Start a model server here, load a model, then click again. llama.cpp is the one measured with ProofKey: Qwen3-4B-Instruct-2507 scored 11.0 of 14 on its live check, against 13.0 for Chrome\'s built-in model. LM Studio and Ollama speak the same protocol but have not been measured here.',
+      ],
+    };
+  }
+  const { server, models } = usable;
+  let connection = settings.connections.find(
+    (c) => c.transport !== 'chrome_builtin' && normalizeBaseUrl(c.baseUrl) === normalizeBaseUrl(server.baseUrl),
+  );
+  if (!connection) {
+    connection = connectionFromPreset(server.presetId, server.label);
+    connection.baseUrl = server.baseUrl;
+    settings.connections.push(connection);
+  }
+  if (!models.includes(connection.model)) connection.model = models[0]!;
+  settings.activeConnectionId = connection.id;
+  // The card clicked stays open: it is where the result is written, and moving
+  // the user to the new card took the message away before it could be read.
+  return {
+    kind: 'ok',
+    lines: [
+      ...seen,
+      `Added ${server.label} with the model ${connection.model}, and made it the provider ProofKey tries first. Click Save to keep it.`,
+    ],
+  };
+}
+
 function startBuiltinDownload(): void {
   // Called before any await: Chrome only starts the download from a click.
   const running = downloadBuiltinModel((fraction) => {
@@ -540,11 +643,13 @@ function renderBuiltinBody(
     dataset: { builtinProgress: '' },
   });
   const download = button('Download model', startBuiltinDownload, 'primary');
+  const finder = renderLocalFinder();
 
   const paint = (): void => {
     const current = builtinDownload ? 'downloading' : builtinState;
     download.hidden = !!builtinDownload || current !== 'downloadable';
     progress.hidden = !builtinDownload;
+    finder.hidden = !!builtinDownload || (current !== 'no-api' && current !== 'unavailable');
     if (builtinDownload) {
       state.className = 'field__hint';
       paintBuiltinProgress();
@@ -611,6 +716,7 @@ function renderBuiltinBody(
       progress,
       state,
     ),
+    finder,
     testStatus,
     connectionActions(connection, testStatus),
   );

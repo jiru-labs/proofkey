@@ -321,6 +321,69 @@ async function run() {
       disabledDefault?.error ?? JSON.stringify(disabledDefault),
     );
 
+    // Where this browser has no model, the card offers the no-key route that is
+    // left: a server on this computer. A stand-in answers on LM Studio's port,
+    // the way LM Studio answers, and the click has to find it, add it as a
+    // provider and put it first — without Save being needed to see that.
+    {
+      console.log('\nno built-in model: finding a model on this computer:');
+      await page.reload();
+      await page.waitForTimeout(500);
+      const finder = page.locator('[data-local-finder]');
+      check('the card offers a model on this computer', await finder.isVisible());
+
+      const local = createServer((req, res) => {
+        res.setHeader('access-control-allow-origin', '*');
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ data: [{ id: 'local-test-model' }] }));
+      });
+      const listening = await new Promise((resolve) => {
+        local.once('error', (error) => resolve(error));
+        local.listen(1234, '127.0.0.1', () => resolve(true));
+      });
+      check('a stand-in LM Studio can listen on 127.0.0.1:1234', listening === true,
+        listening === true ? '' : `${listening} — stop whatever holds port 1234 to run this check`);
+
+      if (listening === true) {
+        await page.evaluate(() => {
+          globalThis.__askedFor = [];
+          chrome.permissions.request = (request) => {
+            globalThis.__askedFor.push(...(request?.origins ?? []));
+            return Promise.resolve(true);
+          };
+        });
+        await page.locator('button', { hasText: 'Find a model on this computer' }).click();
+        await page.waitForTimeout(3000);
+        const asked = await page.evaluate(() => globalThis.__askedFor);
+        check(
+          'it asks for the three local servers\' origins, and only those',
+          JSON.stringify(asked) === JSON.stringify(['http://127.0.0.1:1234/*', 'http://localhost:11434/*', 'http://127.0.0.1:8080/*']),
+          JSON.stringify(asked),
+        );
+        const said = (await page.locator('[data-local-finder-status]').textContent()) ?? '';
+        check('it says what it found and what it did', /LM Studio \(local\): running, with 1 model/.test(said) && /Added LM Studio \(local\) with the model local-test-model/.test(said), said);
+
+        // Clicking again must not stack a second copy of the same server. The
+        // card clicked is still open: that is where the result was written.
+        await page.locator('button', { hasText: 'Find a model on this computer' }).click();
+        await page.waitForTimeout(3000);
+        const cards = await page.locator('.conn__header', { hasText: 'LM Studio (local)' }).count();
+        check('a second click reuses the connection instead of adding another', cards === 1, `${cards} LM Studio card(s)`);
+
+        await page.locator('button', { hasText: 'Save' }).last().click();
+        await page.waitForTimeout(500);
+        const stored = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+        const first = stored?.connections?.find((c) => c.id === stored.activeConnectionId);
+        check(
+          'once saved, the local server is the provider tried first',
+          first?.baseUrl === 'http://127.0.0.1:1234/v1' && first?.model === 'local-test-model' && first?.presetId === 'lmstudio',
+          JSON.stringify(first),
+        );
+        check('and the built-in model is kept, not replaced', stored?.connections?.some((c) => c.transport === 'chrome_builtin'));
+      }
+      await new Promise((resolve) => local.close(resolve));
+    }
+
     // Leave the profile as the sections below expect to find it.
     await page.evaluate(() => chrome.storage.sync.clear());
     await page.reload();
