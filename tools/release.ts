@@ -7,7 +7,7 @@
 // The store rejects a package whose version is not strictly greater than the
 // published one, so the bump is the first thing checked and the first thing done.
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
-import { readFileSync, writeFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, writeFileSync, rmSync, statSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { readEnv, requireKeys } from './env.ts'
 
@@ -128,6 +128,22 @@ try {
   rollBack('verify failed, and nothing was sent')
 }
 stopServer()
+
+// The in-browser model needs its compiled WebGPU library inside the package,
+// and that library's source repository declares no licence (2026-09-27; see
+// tools/fetch-webllm-lib.mjs). Shipping it redistributes a binary without one;
+// shipping without it leaves a connection in settings that cannot load. Either
+// way it is not a release to make by default. Once the licence is settled —
+// or the model library is built here from Apache-2.0 sources — pass
+// --in-browser-cleared.
+if (!process.argv.includes('--in-browser-cleared') && readFileSync(`${ROOT}/src/core/presets.ts`, 'utf8').includes("id: 'in-browser'")) {
+  const bundled = existsSync(`${ROOT}/dist/webllm`) && readdirSync(`${ROOT}/dist/webllm`).some((f) => f.endsWith('.wasm'))
+  rollBack(
+    bundled
+      ? 'dist/ carries the in-browser model library, whose source declares no licence; not shipping it (--in-browser-cleared once that is settled)'
+      : 'the in-browser model connection is in this build but its model library is not, so it could not load; not shipping a broken option (--in-browser-cleared once the licence is settled)',
+  )
+}
 
 step('Packaging dist/')
 const zipPath = `${ROOT}/proofkey-${version}.zip`
