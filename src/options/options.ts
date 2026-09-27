@@ -7,6 +7,12 @@ import {
   type LocalServerProbe,
 } from '../core/localServers';
 import { BUILT_IN_ACTIONS } from '../core/prompts';
+import {
+  describeInBrowserState,
+  IN_BROWSER_DOWNLOAD_BYTES,
+  IN_BROWSER_DOWNLOAD_HOST,
+  type InBrowserState,
+} from '../core/providers/inBrowserModel';
 import { listModels, originPattern, runCompletion, validateConnection } from '../core/providers';
 import {
   builtinAvailability,
@@ -259,6 +265,9 @@ function renderConnectionBody(connection: Connection, problem: string | null): H
   if (connection.transport === 'chrome_builtin') {
     return renderBuiltinBody(connection, presetOptions);
   }
+  if (connection.transport === 'in_browser') {
+    return renderInBrowserBody(connection, presetOptions);
+  }
 
   const modelInput = input(connection.model, {
     placeholder: 'model name',
@@ -500,6 +509,97 @@ function builtinCardProblem(connection: Connection): string | null {
   return builtinProblem(builtinDownload ? 'downloading' : builtinState);
 }
 
+/** The in-browser model's last known state, and the poll that follows a download. */
+let inBrowserState: InBrowserState | null = null;
+let inBrowserPoll: ReturnType<typeof setTimeout> | undefined;
+
+async function askInBrowser(op: 'status' | 'download' | 'delete'): Promise<InBrowserState> {
+  const reply = (await chrome.runtime.sendMessage({ type: 'proofkey:in-browser', op })) as
+    | { ok: true; value: InBrowserState }
+    | { ok: false; error: string };
+  if (!reply?.ok) return { kind: 'error', message: reply?.error ?? 'The in-browser model did not answer.' };
+  return reply.value;
+}
+
+/**
+ * The in-browser model has no URL, key or model list either. Its card is its
+ * state, the one-time download — named with its size and host before the click
+ * — and a way to remove what was downloaded.
+ */
+function renderInBrowserBody(
+  connection: Connection,
+  presetOptions: { value: string; label: string; group: string }[],
+): HTMLElement {
+  const state = el('p', { class: 'field__hint', dataset: { inBrowserState: '' } });
+  const progress = el('progress', { class: 'field__progress', max: 1, value: 0, dataset: { inBrowserProgress: '' } });
+  const download = button(
+    `Download model (${(IN_BROWSER_DOWNLOAD_BYTES / 1e9).toFixed(1)} GB from ${IN_BROWSER_DOWNLOAD_HOST})`,
+    () => void act('download'),
+    'primary',
+  );
+  const remove = button('Remove the downloaded model', () => void act('delete'), 'danger');
+
+  const paint = (): void => {
+    const current = inBrowserState;
+    download.hidden = current?.kind !== 'not-downloaded' && current?.kind !== 'error';
+    remove.hidden = current?.kind !== 'ready';
+    progress.hidden = current?.kind !== 'downloading';
+    if (current?.kind === 'downloading') progress.value = current.fraction;
+    state.className =
+      current?.kind === 'no-webgpu' || current?.kind === 'error' ? 'field__hint field__hint--error' : 'field__hint';
+    state.textContent = current ? describeInBrowserState(current) : 'Checking this browser…';
+  };
+
+  // Re-read while a download runs; only the nodes of this card are touched, so
+  // typing elsewhere on the page keeps its caret. The poll ends once the card
+  // is replaced or the download is over.
+  const refresh = async (): Promise<void> => {
+    clearTimeout(inBrowserPoll);
+    if (!state.isConnected) return;
+    inBrowserState = await askInBrowser('status');
+    paint();
+    if (inBrowserState.kind === 'downloading') inBrowserPoll = setTimeout(() => void refresh(), 1000);
+  };
+  const act = async (op: 'download' | 'delete'): Promise<void> => {
+    download.disabled = remove.disabled = true;
+    inBrowserState = await askInBrowser(op);
+    download.disabled = remove.disabled = false;
+    paint();
+    void refresh();
+  };
+  paint();
+  queueMicrotask(() => void refresh());
+
+  const testStatus = el('p', { class: 'status' });
+  return el(
+    'div',
+    { class: 'conn__body' },
+    field(
+      'Name',
+      input(connection.label, {
+        on: { input: (e) => (connection.label = (e.target as HTMLInputElement).value) },
+      }),
+    ),
+    field(
+      'Provider',
+      select(presetOptions, connection.presetId, {
+        on: { change: (e) => applyPreset(connection, (e.target as HTMLSelectElement).value as PresetId) },
+      }),
+      getPreset(connection.presetId).hint,
+    ),
+    el(
+      'div',
+      { class: 'field' },
+      el('label', { class: 'field__label', text: 'Model' }),
+      el('div', { class: 'row' }, download, remove),
+      progress,
+      state,
+    ),
+    testStatus,
+    connectionActions(connection, testStatus),
+  );
+}
+
 /**
  * The no-key route where this browser has no built-in model: a model server on
  * this computer. Probes the three usual ports only when clicked — each probe is
@@ -514,17 +614,32 @@ function renderLocalFinder(): HTMLElement {
   }
   const find = button('Find a model on this computer', findLocalModel, 'primary');
   find.disabled = !!localFinder?.searching;
+  const inside = button('Run a model inside this browser', useInBrowserModel, 'secondary');
   return el(
     'div',
     { class: 'field', dataset: { localFinder: '' } },
     el('label', { class: 'field__label', text: 'No key: a model on this computer' }),
     el('p', {
       class: 'field__hint',
-      text: 'LM Studio, Ollama or llama.cpp running here work the same way, with nothing sent off this computer.',
+      text:
+        'LM Studio, Ollama or llama.cpp running here work the same way, with nothing sent off this computer. ' +
+        `Or ProofKey can run one inside this browser on the GPU: a ${(IN_BROWSER_DOWNLOAD_BYTES / 1e9).toFixed(1)} GB download, once, then nothing leaves.`,
     }),
-    el('div', { class: 'row' }, find),
+    el('div', { class: 'row' }, find, inside),
     status,
   );
+}
+
+/** Adds the in-browser model's connection — or reuses it — puts it first and opens it. Downloads nothing. */
+function useInBrowserModel(): void {
+  let connection = settings.connections.find((c) => c.transport === 'in_browser');
+  if (!connection) {
+    connection = connectionFromPreset('in-browser');
+    settings.connections.push(connection);
+  }
+  settings.activeConnectionId = connection.id;
+  expandedConnectionId = connection.id;
+  render();
 }
 
 function findLocalModel(): void {
@@ -1068,9 +1183,9 @@ function renderActions(): HTMLElement {
     );
   }
 
-  const onBuiltinModel =
-    settings.connections.find((c) => c.id === settings.activeConnectionId)?.transport ===
-    'chrome_builtin';
+  const activeTransport = settings.connections.find((c) => c.id === settings.activeConnectionId)?.transport;
+  const onBuiltinModel = activeTransport === 'chrome_builtin';
+  const onInBrowserModel = activeTransport === 'in_browser';
 
   return section(
     'Actions',
@@ -1087,7 +1202,19 @@ function renderActions(): HTMLElement {
               'They come back as soon as a provider with an API key is the active one.',
           }),
         )
-      : null,
+      : onInBrowserModel
+        ? el(
+            'div',
+            { class: 'notice' },
+            el('p', {
+              class: 'notice__text',
+              text:
+                'The in-browser model is active, so the menu offers Fix grammar, Convert to bullet points, Translate and your own actions. ' +
+                'Measured on it, the other built-in rewrites translated words borrowed from another language ("Hola team" became "Hola equipo"). ' +
+                'They come back as soon as a provider with an API key is the active one.',
+            }),
+          )
+        : null,
     // Chrome hands out `suggested_key` first-come-first-served: if another
     // extension already held the combination when ProofKey was installed, this
     // command is left unbound with no error anywhere. The key then reaches the

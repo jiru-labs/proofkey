@@ -30,7 +30,9 @@ import {
   TARGET_LANGUAGE,
 } from '../core/prompts';
 import { runCompletion, validateConnection } from '../core/providers';
+import { askOffscreen } from '../core/providers/inBrowser';
 import {
+  activeConnection,
   connectionChain,
   findAction,
   loadSettings,
@@ -334,6 +336,9 @@ async function handle(
 
     case 'proofkey:frame-grant':
       return frameGrant(sender, message.origin);
+
+    case 'proofkey:in-browser':
+      return { ok: true, value: await askOffscreen({ target: 'proofkey-offscreen', op: message.op }) };
   }
 }
 
@@ -598,9 +603,12 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
   // action the active connection does not offer — disabled or not. Say why
   // rather than run a prompt measured not to hold on this model.
   if (!runsOnActiveConnection(settings, action)) {
+    const inBrowser = activeConnection(settings)?.transport === 'in_browser';
     return {
       ok: false,
-      error: `"${action.label}" is not offered on Chrome's built-in model: measured on it, it did not do what its prompt promises. Fix grammar works there; for the rest, add a provider with an API key in settings.`,
+      error: inBrowser
+        ? `"${action.label}" is not offered on the in-browser model: measured on it, it did not do what its prompt promises. Fix grammar, bullet points and Translate work there; for the rest, add a provider with an API key in settings.`
+        : `"${action.label}" is not offered on Chrome's built-in model: measured on it, it did not do what its prompt promises. Fix grammar works there; for the rest, add a provider with an API key in settings.`,
     };
   }
 

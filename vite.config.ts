@@ -22,6 +22,7 @@ export default defineConfig({
       input: {
         background: at('./src/background/index.ts'),
         options: at('./src/options/index.html'),
+        offscreen: at('./src/offscreen/index.html'),
       },
       output: {
         // The service worker path is referenced verbatim by manifest.json, so

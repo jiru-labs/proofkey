@@ -133,6 +133,35 @@ async function buildTestExtension() {
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   manifest.host_permissions = [`http://localhost:${PORT}/*`, `http://localhost:${ALT_PORT}/*`];
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+
+  // No GPU here, so no model can run. The offscreen document uses this stand-in
+  // when its package carries one; a released build never does. It downloads in
+  // four steps, answers with the empty think block Qwen3.5 really opens with,
+  // and on "__params__" reports the request it was given.
+  await writeFile(`${TEST_EXT}/offscreen/test-engine.js`, `
+let cached = false;
+export async function hasModelInCache() { return cached; }
+export async function deleteModelAllInfoInCache() { cached = false; }
+export async function CreateMLCEngine(model, { initProgressCallback } = {}) {
+  if (!cached) {
+    for (const fraction of [0.25, 0.5, 0.75, 1]) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      initProgressCallback?.({ progress: fraction, text: 'stand-in ' + fraction });
+    }
+    cached = true;
+  }
+  return {
+    chat: { completions: { create: async (request) => {
+      const user = request.messages[1].content;
+      const content = user === '__params__'
+        ? JSON.stringify({ model, temperature: request.temperature, thinking: request.extra_body?.enable_thinking, max: request.max_tokens })
+        : user.replace('todavia', 'todavía');
+      return { choices: [{ message: { content: '<think>\\n\\n</think>\\n\\n' + content } }] };
+    } } },
+    unload: async () => {},
+  };
+}
+`);
 }
 
 function settingsFor(transport) {
@@ -206,7 +235,14 @@ async function run() {
   const context = await chromium.launchPersistentContext(PROFILE, {
     ...(executablePath ? { executablePath } : { channel: 'chromium' }),
     headless: !process.argv.includes('--headed'),
-    args: [`--disable-extensions-except=${TEST_EXT}`, `--load-extension=${TEST_EXT}`],
+    args: [
+      `--disable-extensions-except=${TEST_EXT}`,
+      `--load-extension=${TEST_EXT}`,
+      // A software WebGPU adapter, so the in-browser model's WebGPU check passes
+      // here as it does on a real GPU. Only for Playwright's own Chromium: a
+      // browser under test with PROOFKEY_BROWSER keeps its real adapter.
+      ...(executablePath ? [] : ['--enable-unsafe-webgpu', '--enable-unsafe-swiftshader', '--use-webgpu-adapter=swiftshader']),
+    ],
   });
 
   const workerErrors = [];
@@ -382,6 +418,87 @@ async function run() {
         check('and the built-in model is kept, not replaced', stored?.connections?.some((c) => c.transport === 'chrome_builtin'));
       }
       await new Promise((resolve) => local.close(resolve));
+    }
+
+    // The other no-key route: a model inside the browser. Chosen from the same
+    // card, downloaded only from its own button, with its size and host said
+    // first; a request before that says so instead of starting 2.4 GB.
+    {
+      console.log('\nno built-in model: a model inside this browser (stand-in engine):');
+      await page.evaluate(() => chrome.storage.sync.clear());
+      await page.reload();
+      await page.waitForTimeout(500);
+      await page.evaluate(() => { chrome.permissions.request = async () => true; });
+      await page.locator('button', { hasText: 'Run a model inside this browser' }).click();
+      await page.waitForTimeout(1500);
+      const card = page.locator('[data-in-browser-state]');
+      const before = (await card.textContent()) ?? '';
+      check('the card says the size and the host before anything is fetched', /2\.4 GB/.test(before) && /huggingface\.co/.test(before), before);
+      const download = page.locator('button', { hasText: 'Download model (2.4 GB from huggingface.co)' });
+      check('and offers the download on a button that names both', await download.isVisible());
+
+      await page.locator('button', { hasText: 'Save' }).last().click();
+      await page.waitForTimeout(500);
+      const early = await page.evaluate(() =>
+        chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: 'Todo esta bien.' }),
+      );
+      check(
+        'a request before the download is refused, pointing at settings',
+        early?.ok === false && /not downloaded yet/.test(early?.error ?? ''),
+        early?.error ?? JSON.stringify(early),
+      );
+      // Asked of the offscreen document itself: the card on screen is not
+      // re-read by a request from elsewhere, so it would pass either way.
+      const after = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:in-browser', op: 'status' }));
+      check('and it did not start the download', after?.value?.kind === 'not-downloaded', JSON.stringify(after?.value));
+
+      await download.click();
+      await page.waitForTimeout(700);
+      const during = (await card.textContent()) ?? '';
+      check('the download shows its progress', /Downloading… \d+%/.test(during), during);
+      await page.waitForFunction(
+        () => document.querySelector('[data-in-browser-state]')?.textContent?.startsWith('Ready.'),
+        null,
+        { timeout: 15000 },
+      ).catch(() => {});
+      check('and ends ready', ((await card.textContent()) ?? '').startsWith('Ready.'), (await card.textContent()) ?? '');
+
+      const fixed = await page.evaluate(() =>
+        chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: 'Todo esta bien pero todavia no.' }),
+      );
+      check(
+        'Fix grammar runs on it, with no think block reaching the text',
+        fixed?.ok === true && fixed.value?.text === 'Todo esta bien pero todavía no.',
+        JSON.stringify(fixed),
+      );
+      const params = await page.evaluate(() =>
+        chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: '__params__' }),
+      );
+      let sent = {};
+      try { sent = JSON.parse(params?.value?.text ?? '{}'); } catch {}
+      check(
+        'greedy, thinking off, on the measured model',
+        sent.temperature === 0 && sent.thinking === false && sent.model === 'Qwen3.5-4B-q4f16_1-MLC',
+        JSON.stringify(sent),
+      );
+      const rewrite = await page.evaluate(() =>
+        chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'improve-writing', text: 'Hola team.' }),
+      );
+      check(
+        'a rewrite it measured badly on is refused, naming this model',
+        rewrite?.ok === false && /not offered on the in-browser model/.test(rewrite?.error ?? ''),
+        rewrite?.error ?? JSON.stringify(rewrite),
+      );
+      const offered = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:get-state' }));
+      check(
+        'the menu offers Fix grammar, bullet points and Translate',
+        JSON.stringify(offered?.value?.actions?.map((a) => a.id)) === '["fix-grammar","bullet-points","translate"]',
+        JSON.stringify(offered?.value?.actions?.map((a) => a.id)),
+      );
+
+      await page.locator('button', { hasText: 'Remove the downloaded model' }).click();
+      await page.waitForTimeout(800);
+      check('removing it goes back to not downloaded', /Not downloaded yet/.test((await card.textContent()) ?? ''), (await card.textContent()) ?? '');
     }
 
     // Leave the profile as the sections below expect to find it.

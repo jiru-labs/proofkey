@@ -1,5 +1,6 @@
 import { getPreset, PRESETS } from './presets';
 import { ACTIONS_ON_BUILTIN_MODEL } from './providers/chromeBuiltin';
+import { ACTIONS_ON_IN_BROWSER_MODEL } from './providers/inBrowserModel';
 import { BUILT_IN_ACTIONS, DEFAULT_ACTION_ID, emptyProfile } from './prompts';
 import { parseChord, type ShortcutBinding } from './shortcuts';
 import type { Connection, PresetId, Settings, WritingAction } from './types';
@@ -152,8 +153,14 @@ export function offeredActions(settings: Settings): WritingAction[] {
  * `Ctrl+Shift+K` — so the worker asks this, not `offeredActions`.
  */
 export function runsOnActiveConnection(settings: Settings, action: WritingAction): boolean {
-  if (activeConnection(settings)?.transport !== 'chrome_builtin') return true;
-  return !action.builtIn || ACTIONS_ON_BUILTIN_MODEL.has(action.id);
+  const transport = activeConnection(settings)?.transport;
+  const offered =
+    transport === 'chrome_builtin'
+      ? ACTIONS_ON_BUILTIN_MODEL
+      : transport === 'in_browser'
+        ? ACTIONS_ON_IN_BROWSER_MODEL
+        : null;
+  return !offered || !action.builtIn || offered.has(action.id);
 }
 
 export function findAction(settings: Settings, actionId: string): WritingAction | undefined {

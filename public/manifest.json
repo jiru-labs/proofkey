@@ -5,7 +5,7 @@
   "version": "0.1.10",
   "description": "Open-source Grammarly alternative. Fix grammar and rewrite text with your own LLM API key (BYOK) or a local model. No telemetry.",
   "minimum_chrome_version": "116",
-  "permissions": ["storage", "contextMenus", "activeTab", "scripting"],
+  "permissions": ["storage", "contextMenus", "activeTab", "scripting", "offscreen"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": {
     "service_worker": "background.js",
@@ -14,6 +14,9 @@
   "options_ui": {
     "page": "options/index.html",
     "open_in_tab": true
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
   },
   "action": {
     "default_title": "ProofKey",

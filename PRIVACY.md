@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated: 13 September 2026**
+**Last updated: 27 September 2026**
 
 ProofKey is a browser extension published by Jiru Labs. This policy describes
 what it does with your data. It is short because the extension does very little.
@@ -30,6 +30,16 @@ click **Download model**. What Chrome itself records about the download or about
 using its model is governed by Google's Chrome privacy notice, not by this
 policy.
 
+**A model inside the browser sends nothing either** (on `main`, not yet in the
+store version). For browsers without Chrome's model, such as Brave, ProofKey can
+run a language model itself, on your computer's GPU. Your text never leaves the
+browser for it. The model's files are downloaded once — 2.4 GB, from
+`huggingface.co`, pinned to one published revision — and only when you click **Download model** in
+settings; ProofKey says the size and the host on that button before anything is
+fetched. That download is a request from your browser to Hugging Face, which
+sees it as any website sees a visit, under Hugging Face's own privacy policy. No
+text you check is part of it, and nothing is fetched again after it.
+
 **Your text is then subject to that provider's privacy policy, not this one.**
 Providers differ enormously in whether they retain prompts or train on them.
 That is worth reading before you paste anything confidential into a field on a
@@ -42,7 +52,9 @@ Stored using the browser's own extension storage, on your device:
 - your API keys and connection settings (base URL, model, headers);
 - your actions and their prompts, including any you wrote;
 - your keyboard shortcuts and the list of origins they run on;
-- your writing profile: style guide, terms never to flag, first language.
+- your writing profile: style guide, terms never to flag, first language;
+- if you downloaded the in-browser model, its files, in the browser's storage
+  for the extension. **Remove the downloaded model** in settings deletes them.
 
 If you have Chrome Sync switched on, Chrome may sync some of this between your
 own signed-in browsers. That is Chrome's mechanism and Chrome's policy; ProofKey
@@ -65,6 +77,7 @@ Nothing is stored anywhere else. Uninstalling the extension removes it.
 | `contextMenus` | To put the actions on the right-click menu |
 | `activeTab` | To read the text you selected, on the tab you invoked it from |
 | `scripting` | To place the assistant into the field you are typing in |
+| `offscreen` | To run the in-browser model in a hidden extension page, if you choose that model. It reads no page and makes no request except the one download described above |
 | Host permissions | Requested **per site, by you**, and only for the sites where you want live checking or per-action shortcuts. Not requested up front and not granted for all sites |
 
 ## If this ever changes

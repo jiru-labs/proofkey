@@ -25,7 +25,9 @@ export type ContentRequest =
   /** Focus went into a frame on another origin; does that origin need setting up? */
   | { type: 'proofkey:frame-offer'; origin: string }
   /** The user clicked Allow on that offer. Must be sent from the click itself. */
-  | { type: 'proofkey:frame-grant'; origin: string };
+  | { type: 'proofkey:frame-grant'; origin: string }
+  /** Options page: the in-browser model's state, its one download, or removing it. */
+  | { type: 'proofkey:in-browser'; op: 'status' | 'download' | 'delete' };
 
 /** Service worker → content script. */
 export type WorkerRequest =

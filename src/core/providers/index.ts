@@ -3,6 +3,7 @@ import type { Connection } from '../types';
 import * as anthropic from './anthropic';
 import * as chatCompletions from './chatCompletions';
 import * as chromeBuiltin from './chromeBuiltin';
+import * as inBrowser from './inBrowser';
 import { ProviderError, type CompletionRequest, type CompletionResult } from './request';
 
 export { ProviderError } from './request';
@@ -22,6 +23,7 @@ const ADAPTERS: Record<Connection['transport'], Adapter> = {
   chat_completions: chatCompletions,
   anthropic_messages: anthropic,
   chrome_builtin: chromeBuiltin,
+  in_browser: inBrowser,
 };
 
 export interface ChainResult extends CompletionResult {
@@ -86,7 +88,7 @@ export function validateConnection(
 
   // Nothing to configure: whether this browser can run the model is only
   // known asynchronously, and the adapter reports it at request time.
-  if (connection.transport === 'chrome_builtin') return null;
+  if (connection.transport === 'chrome_builtin' || connection.transport === 'in_browser') return null;
 
   if (!connection.baseUrl.trim()) return 'No base URL set.';
   try {
@@ -114,7 +116,9 @@ export function validateConnection(
 
 /** Origin pattern to request host access for, e.g. `https://api.openai.com/*`. */
 export function originPattern(connection: Connection): string | null {
-  if (connection.transport === 'chrome_builtin') return null;
+  // No endpoint. The in-browser model's one download is a CORS fetch from the
+  // offscreen document and needs no host access.
+  if (connection.transport === 'chrome_builtin' || connection.transport === 'in_browser') return null;
   try {
     return `${new URL(connection.baseUrl).origin}/*`;
   } catch {

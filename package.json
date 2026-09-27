@@ -21,7 +21,7 @@
     "build": "vite build && vite build --config vite.content.config.ts",
     "dev": "npm run build -- --watch",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types tools/diff-check.ts && node --experimental-strip-types tools/shortcut-check.ts && node --experimental-strip-types tools/prompts-check.ts && node --experimental-strip-types tools/errors-check.ts && node --experimental-strip-types tools/thinking-check.ts && node --experimental-strip-types tools/builtin-check.ts && node --experimental-strip-types tools/local-servers-check.ts",
+    "test": "node --experimental-strip-types tools/diff-check.ts && node --experimental-strip-types tools/shortcut-check.ts && node --experimental-strip-types tools/prompts-check.ts && node --experimental-strip-types tools/errors-check.ts && node --experimental-strip-types tools/thinking-check.ts && node --experimental-strip-types tools/builtin-check.ts && node --experimental-strip-types tools/local-servers-check.ts && node --experimental-strip-types tools/in-browser-check.ts",
     "cost": "node --experimental-strip-types tools/cost.ts",
     "eval": "node --experimental-strip-types tools/eval.ts",
     "nano-bridge": "node tools/nano-bridge.mjs",
@@ -45,5 +45,8 @@
     "playwright": "^1.62.1",
     "typescript": "^7.0.2",
     "vite": "^8.2.0"
+  },
+  "dependencies": {
+    "@mlc-ai/web-llm": "0.2.85"
   }
 }

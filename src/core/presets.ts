@@ -81,6 +81,20 @@ export const PRESETS: readonly Preset[] = [
     hint: 'Runs on this computer through Chrome\'s own model: free, no account, and ProofKey sends your text nowhere. Works in Google Chrome on desktop; Brave reports it unavailable. Smaller than the cloud models, so ProofKey offers it live checking and Fix grammar only.',
     docsUrl: 'https://developer.chrome.com/docs/ai/prompt-api',
   },
+  // Second: the no-key route where the browser has no built-in model. Runs
+  // Qwen3.5 4B inside the extension on WebGPU; see `providers/inBrowserModel.ts`.
+  {
+    id: 'in-browser',
+    label: 'Model in this browser (Qwen3.5 4B, no key)',
+    transport: 'in_browser',
+    baseUrl: '',
+    defaultModel: 'Qwen3.5-4B-q4f16_1-MLC',
+    authStyle: 'none',
+    requiresApiKey: false,
+    group: 'primary',
+    hint: 'Runs inside the browser on this computer\'s GPU, for browsers without Chrome\'s built-in model, such as Brave. One 2.4 GB download from huggingface.co, then nothing you check leaves this computer. Needs WebGPU and about 4 GB of GPU memory. ProofKey offers it live checking, Fix grammar, bullet points and Translate — the ones it measured well on.',
+    docsUrl: 'https://github.com/mlc-ai/web-llm',
+  },
   openaiCompatible('custom', 'Custom (any OpenAI-compatible endpoint)', '', {
     requiresApiKey: false,
     group: 'primary',
