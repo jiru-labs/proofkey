@@ -63,7 +63,7 @@ const WEBLLM_URL = `https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@${WEBLLM_VERSIO
  */
 const MODELS = [
   { id: 'Qwen3.5-4B-q4f16_1-MLC', checked: true },
-  { id: 'Qwen3.5-2B-q4f16_1-MLC', checked: true },
+  { id: 'Qwen3.5-2B-q4f16_1-MLC', checked: false },
   // 7.0/14 on the RX 6600 (2026-09-26): it handed every error back unchanged.
   { id: 'Qwen3-4B-q4f16_1-MLC', checked: false },
   { id: 'Qwen3-1.7B-q4f16_1-MLC', checked: false },
@@ -122,8 +122,18 @@ interface ActionResult {
   fixtures: ActionFixtureResult[];
 }
 
+interface CustomRun {
+  task: 'fix-grammar' | 'live-check';
+  ms: number;
+  completionTokens?: number;
+  /** Exactly what the model returned, `<think>` and all. */
+  reply: string;
+}
+
 interface ModelResult {
   model: string;
+  /** Raw replies to the text typed into the page, through the real prompts. */
+  custom?: CustomRun[];
   loadSeconds?: number;
   error?: string;
   runs: RunResult[];
@@ -302,6 +312,44 @@ async function measureActions(engine: Engine, model: string, runs: number): Prom
   return results;
 }
 
+/**
+ * One text of the user's choosing through the two prompts the extension sends
+ * most — Fix grammar and the live check — with the raw reply kept. Built for
+ * "it did X on my sentence in browser Y": the same sentence, the same prompts,
+ * greedy, and nothing scored, so a human reads what came back.
+ */
+async function measureCustom(engine: Engine, model: string, text: string, runs: number): Promise<CustomRun[]> {
+  const fix = BUILT_IN_ACTIONS.find((a) => a.id === 'fix-grammar')!;
+  const tasks: { task: CustomRun['task']; system: string; user: string }[] = [
+    { task: 'fix-grammar', system: composeSystemPrompt({ ...fix }, EMPTY_PROFILE), user: text },
+    { task: 'live-check', system: composeCheckPrompt(EMPTY_PROFILE, 1), user: formatCheckPayload([text]) },
+  ];
+  const out: CustomRun[] = [];
+  for (const t of tasks) {
+    for (let i = 1; i <= runs; i++) {
+      const started = performance.now();
+      const reply = await engine.chat.completions.create({
+        messages: [
+          { role: 'system', content: t.system },
+          { role: 'user', content: t.user },
+        ],
+        temperature: 0,
+        max_tokens: 1024,
+        ...(model.startsWith('Qwen3') ? { extra_body: { enable_thinking: false } } : {}),
+      });
+      const run: CustomRun = {
+        task: t.task,
+        ms: Math.round(performance.now() - started),
+        completionTokens: reply?.usage?.completion_tokens,
+        reply: reply?.choices?.[0]?.message?.content ?? '',
+      };
+      out.push(run);
+      log(`  ${t.task} ${i}/${runs}: ${JSON.stringify(run.reply)}`);
+    }
+  }
+  return out;
+}
+
 async function measure(): Promise<void> {
   $<HTMLButtonElement>('start').disabled = true;
   const doLive = $<HTMLInputElement>('do-live').checked;
@@ -345,6 +393,13 @@ async function measure(): Promise<void> {
       });
       result.loadSeconds = Math.round((performance.now() - t0) / 100) / 10;
       log(`  cargado en ${result.loadSeconds} s`);
+
+      const customText = $<HTMLTextAreaElement>('custom-text').value.trim();
+      if ($<HTMLInputElement>('do-custom').checked && customText) {
+        log(`  texto propio: ${JSON.stringify(customText)}`);
+        result.custom = await measureCustom(engine!, model, customText, 3);
+        showReport();
+      }
 
       for (let i = 1; i <= runs; i++) {
         const started = performance.now();
@@ -400,6 +455,7 @@ function init(): void {
   const params = new URLSearchParams(location.search);
   const override = params.get('models')?.split(',').filter(Boolean);
   if (override?.length) MODELS.splice(0, MODELS.length, ...override.map((id) => ({ id, checked: true })));
+  if (params.get('custom')) $<HTMLTextAreaElement>('custom-text').value = params.get('custom')!;
   if (params.get('runs')) $<HTMLInputElement>('runs').value = params.get('runs')!;
   if (params.get('live')) $<HTMLInputElement>('do-live').checked = params.get('live') === '1';
   if (params.get('actions')) $<HTMLInputElement>('do-actions').checked = params.get('actions') === '1';
