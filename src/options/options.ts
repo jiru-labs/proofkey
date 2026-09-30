@@ -65,6 +65,17 @@ import {
 } from './dom';
 
 let settings: Settings;
+/**
+ * `settings` as last stored. Every handler on this page edits `settings` in
+ * place, so "has anything changed" is answered by comparing against this copy
+ * rather than by asking each handler to say so.
+ */
+let savedSnapshot = '';
+/** The footer's status line, and whether the text in it is the unsaved-changes notice. */
+let footerStatus: HTMLElement | null = null;
+let unsavedNoticeShown = false;
+const BASE_TITLE = document.title;
+const UNSAVED_NOTICE = 'Unsaved changes — click Save to keep them.';
 let expandedConnectionId: string | null = null;
 
 /**
@@ -110,6 +121,7 @@ void init();
 
 async function init(): Promise<void> {
   settings = await loadSettings();
+  savedSnapshot = JSON.stringify(settings);
   expandedConnectionId = settings.activeConnectionId;
   // Awaited before the first paint so shortcut labels never visibly change from
   // the US legend to the real one a moment later — and so the built-in model's
@@ -120,6 +132,45 @@ async function init(): Promise<void> {
     builtinAvailability().then((state) => (builtinState = state)),
   ]);
   render();
+  watchUnsavedChanges();
+}
+
+function isDirty(): boolean {
+  return JSON.stringify(settings) !== savedSnapshot;
+}
+
+/**
+ * Says so, in the footer and the tab title, when the page holds changes that
+ * are not stored yet. Saving is a separate click, and forgetting it leaves the
+ * user believing a provider or a shortcut is set when it is not.
+ */
+function refreshUnsaved(): void {
+  const dirty = isDirty();
+  document.title = dirty ? `● ${BASE_TITLE}` : BASE_TITLE;
+  const footer = footerStatus?.parentElement;
+  footer?.classList.toggle('footer--dirty', dirty);
+  if (!footerStatus) return;
+  if (dirty) {
+    footerStatus.className = 'status status--warn';
+    footerStatus.textContent = UNSAVED_NOTICE;
+    unsavedNoticeShown = true;
+  } else if (!dirty && unsavedNoticeShown) {
+    footerStatus.className = 'status';
+    footerStatus.textContent = '';
+    unsavedNoticeShown = false;
+  }
+}
+
+function watchUnsavedChanges(): void {
+  // Bubbling, so these run after the handler on the control itself has edited
+  // `settings`; the timeout lets handlers that finish in a later task settle.
+  for (const type of ['input', 'change', 'click']) {
+    app.addEventListener(type, () => setTimeout(refreshUnsaved, 0));
+  }
+  window.addEventListener('beforeunload', (event) => {
+    if (isDirty()) event.preventDefault();
+  });
+  refreshUnsaved();
 }
 
 /**
@@ -179,6 +230,7 @@ function render(): void {
       ?.focus();
     focusShortcutFor = null;
   }
+  if (savedSnapshot) refreshUnsaved();
 }
 
 function section(title: string, subtitle: string, ...children: (Node | null)[]): HTMLElement {
@@ -1722,6 +1774,8 @@ function renderLiveCheck(): HTMLElement {
 
 function renderFooter(): HTMLElement {
   const status = el('span', { class: 'status' });
+  footerStatus = status;
+  unsavedNoticeShown = false;
 
   return el(
     'div',
@@ -1791,6 +1845,10 @@ async function save(status: HTMLElement): Promise<void> {
 
   try {
     await saveSettings(settings);
+    savedSnapshot = JSON.stringify(settings);
+    unsavedNoticeShown = false;
+    document.title = BASE_TITLE;
+    status.parentElement?.classList.remove('footer--dirty');
     const usable = connectionChain(settings).some(
       (c) => validateConnection(c) === null && builtinCardProblem(c) === null,
     );

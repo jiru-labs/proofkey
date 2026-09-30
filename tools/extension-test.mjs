@@ -334,6 +334,29 @@ async function run() {
       'no empty download bar is shown when nothing is downloading',
       !(await page.locator('[data-builtin-progress]').isVisible()),
     );
+    // Saving is a separate click and is easy to forget: the page has to say so
+    // while changes are waiting, and stop saying it once they are stored or undone.
+    {
+      const notice = page.locator('.status--warn', { hasText: 'Unsaved changes' });
+      const box = page.locator('input[type=number]').first();
+      const original = await box.inputValue();
+      check('a page just opened shows no unsaved-changes notice', (await notice.count()) === 0 && !(await page.title()).startsWith('●'));
+      await box.fill(String(Number(original) + 1));
+      await page.waitForTimeout(150);
+      check('changing a field says the change is not saved', (await notice.count()) === 1 && (await page.title()).startsWith('●'), await page.title());
+      check('the Save button is marked while changes wait', (await page.locator('.footer--dirty .btn--primary').count()) === 1);
+      await box.fill(original);
+      await page.waitForTimeout(150);
+      check('putting the value back clears the notice', (await notice.count()) === 0 && !(await page.title()).startsWith('●'));
+      await box.fill(String(Number(original) + 1));
+      await page.waitForTimeout(150);
+      await page.locator('button', { hasText: 'Save' }).last().click();
+      await page.waitForTimeout(400);
+      check('Save clears the notice and the marked button', (await notice.count()) === 0 && (await page.locator('.footer--dirty').count()) === 0 && !(await page.title()).startsWith('●'), await page.title());
+      await box.fill(original);
+      await page.waitForTimeout(150);
+      check('a change after saving is flagged again', (await notice.count()) === 1);
+    }
     await page.locator('button', { hasText: 'Save' }).last().click();
     await page.waitForTimeout(300);
     check(

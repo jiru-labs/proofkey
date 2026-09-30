@@ -418,3 +418,26 @@ body {
 .status--error {
   color: var(--danger);
 }
+
+.status--warn {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+/* Unsaved changes: the Save button should be the loudest thing on the page. */
+.footer--dirty {
+  border-top-color: var(--warn);
+}
+
+.footer--dirty .btn--primary {
+  animation: save-nudge 1.6s ease-in-out infinite;
+}
+
+@keyframes save-nudge {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 55%, transparent); }
+  50% { box-shadow: 0 0 0 6px transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .footer--dirty .btn--primary { animation: none; outline: 2px solid var(--warn); }
+}
