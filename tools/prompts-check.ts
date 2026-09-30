@@ -50,6 +50,8 @@
  */
 
 import {
+  changedLanguage,
+  keptWordShare,
   BUILT_IN_ACTIONS,
   composeSystemPrompt,
   dropAddedFullStops,
@@ -349,6 +351,26 @@ equal(
   dropAddedTrailingSpaces('their is', 'There is  '),
   'There is',
 );
+
+console.log('\nchangedLanguage — a proofreading reply that left the text\'s language:');
+
+// The case that was measured: Qwen3.5 4B in Edge, 2026-09-30, on every run.
+check(
+  'a French sentence in place of broken English is caught',
+  changedLanguage('tis is a test, a i am cheking if it work', "C'est une test, je vérifie si ça marche."),
+);
+check(
+  'the same text corrected in English is not',
+  !changedLanguage('tis is a test, a i am cheking if it work', 'This is a test, and I am checking if it works.'),
+);
+check('a mild correction is not', !changedLanguage('Their is alot of things to do.', 'There is a lot of things to do.'));
+check(
+  'a Spanish accent fix is not',
+  !changedLanguage('Necesito el feedback antes de que termine el dia.', 'Necesito el feedback antes de que termine el día.'),
+);
+check('one or two words are never judged', !changedLanguage('teh', 'The') && !changedLanguage('hola mundo', 'Hello world'));
+check('an empty original is not judged', !changedLanguage('', 'Anything'));
+check('the share is a fraction of the original\'s words', Math.abs(keptWordShare('a b c d', 'a b x y') - 0.5) < 1e-9);
 
 console.log(failures === 0 ? '\nPrompt checks passed.' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

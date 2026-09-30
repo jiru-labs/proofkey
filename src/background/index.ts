@@ -18,6 +18,8 @@ import type {
   WorkerRequest,
 } from '../core/messages';
 import {
+  BUILT_IN_ACTIONS,
+  changedLanguage,
   composeCheckPrompt,
   composeExplainPrompt,
   composeSystemPrompt,
@@ -27,9 +29,11 @@ import {
   keepOuterWhitespace,
   parseCheckReply,
   resolveTargetLanguage,
+  SAME_LANGUAGE_RETRY_NOTE,
   TARGET_LANGUAGE,
 } from '../core/prompts';
 import { runCompletion, validateConnection } from '../core/providers';
+import type { WritingAction } from '../core/types';
 import { askOffscreen } from '../core/providers/inBrowser';
 import { IN_BROWSER_MODEL } from '../core/providers/inBrowserModel';
 import {
@@ -639,10 +643,27 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
   }
 
   try {
-    const result = await runCompletion(connectionChain(settings), {
-      systemPrompt,
-      userText: text,
-    });
+    const chain = connectionChain(settings);
+    let result = await runCompletion(chain, { systemPrompt, userText: text });
+
+    // Fix grammar keeps the author's words. A reply that shares almost none of
+    // them is another language — a small model does this on text too broken to
+    // recognise — and writing it over the author's text is the worst outcome.
+    // Asked once more with the rule restated at the end; if it still leaves the
+    // language, the text is left as it was.
+    if (keepsAuthorsWords(action) && changedLanguage(text, result.text)) {
+      result = await runCompletion(chain, {
+        systemPrompt: `${systemPrompt}\n\n${SAME_LANGUAGE_RETRY_NOTE}`,
+        userText: text,
+      });
+      if (changedLanguage(text, result.text)) {
+        return {
+          ok: false,
+          error: `${action.label} came back in a different language from your text, so ProofKey left your text as it was. Try again, or use a provider with a key.`,
+        };
+      }
+    }
+
     return {
       ok: true,
       value: {
@@ -654,6 +675,12 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+/** Fix grammar with its own prompt: the one action whose reply must share the author's words. */
+function keepsAuthorsWords(action: WritingAction): boolean {
+  const fixGrammar = BUILT_IN_ACTIONS.find((a) => a.id === 'fix-grammar');
+  return action.id === 'fix-grammar' && action.systemPrompt === fixGrammar?.systemPrompt;
 }
 
 async function explain(original: string, replacement: string): Promise<Result<RunResult>> {

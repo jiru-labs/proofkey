@@ -98,6 +98,23 @@ function startStubProvider() {
         return;
       }
 
+      // A model that answers in another language on text it cannot recognise:
+      // "drift-always" never recovers, "drift-once" recovers when the reply is
+      // asked again with the language rule restated at the end of the prompt.
+      const askedSystem = request.url.includes('/messages') ? '' : body ? (JSON.parse(body).messages?.[0]?.content ?? '') : '';
+      const askedUser = request.url.includes('/messages') ? '' : body ? (JSON.parse(body).messages?.at(-1)?.content ?? '') : '';
+      if (askedUser.endsWith('drift-always')
+        || (askedUser.endsWith('drift-once') && !askedSystem.includes('however many mistakes it has'))) {
+        response.end(
+          JSON.stringify({
+            model: 'stub-openai',
+            choices: [{ message: { content: "C'est une épreuve, je vérifie si ça marche." }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 10, completion_tokens: 5 },
+          }),
+        );
+        return;
+      }
+
       // Reply in whichever shape the caller asked for.
       response.end(
         request.url.includes('/messages')
@@ -1118,6 +1135,25 @@ async function run() {
     'a Gemini connection pointed elsewhere sends no reasoning_effort',
     seen[0] && !('reasoning_effort' in seen[0].body),
     'the preset is Gemini but the base URL is not, so the measured switch must not travel',
+  );
+
+  // Fix grammar must never write another language over the author's text.
+  console.log('\nlanguage drift:');
+  const driftRun = (text) =>
+    page.evaluate((t) => chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: t }), text);
+  seen.length = 0;
+  const normal = await driftRun('Their is alot of things to do.');
+  check('ordinary text costs one request', normal?.ok === true && seen.length === 1, `${seen.length} request(s)`);
+  seen.length = 0;
+  const once = await driftRun('tis is a test drift-once');
+  check('a reply in another language is asked again, and the second answer is used', once?.ok === true && seen.length === 2, JSON.stringify(once));
+  check('the retry restates the language rule at the end', /however many mistakes it has\.\s*$/.test(seen[1]?.body?.messages?.[0]?.content ?? ''));
+  seen.length = 0;
+  const always = await driftRun('tis is a test drift-always');
+  check(
+    'if it still leaves the language, the text is left as it was and the user is told',
+    always?.ok === false && /different language/.test(always?.error ?? '') && seen.length === 2,
+    JSON.stringify(always),
   );
 
   // The setting is only worth having if it is visible and says what it did.

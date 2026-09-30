@@ -479,6 +479,49 @@ export function dropAddedTrailingSpaces(original: string, rewrite: string): stri
 }
 
 /**
+ * Appended to a proofreading prompt for the one retry after a reply changed
+ * language. After the output contract, because a rule later in the prompt has
+ * measured at least as strong as a reworded one (see SAME_LANGUAGE_RULES).
+ */
+export const SAME_LANGUAGE_RETRY_NOTE =
+  'The reply must be in exactly the same language as the text you were given. ' +
+  'If the text is in English, the reply is in English, however many mistakes it has.';
+
+/** Below this share of the original's words kept, a proofread reply is taken to be in another language. */
+export const SAME_LANGUAGE_MIN_SHARE = 0.3;
+
+/** Words as letters and apostrophes, lower-cased; digits and punctuation do not count. */
+const wordsOf = (text: string): string[] => text.toLowerCase().match(/[\p{L}']+/gu) ?? [];
+
+/**
+ * The share of the original's words that are still in the rewrite. A proofread
+ * text keeps most of them; a translation keeps almost none.
+ */
+export function keptWordShare(original: string, rewrite: string): number {
+  const before = wordsOf(original);
+  if (before.length === 0) return 1;
+  const after = new Set(wordsOf(rewrite));
+  return before.filter((word) => after.has(word)).length / before.length;
+}
+
+/**
+ * True when a proofreading reply has left the language of the text it was given.
+ * Measured on Qwen3.5 4B in Microsoft Edge (2026-09-30): "tis is a test, a i am
+ * cheking if it work" came back as a French sentence, on every run, because the
+ * text was too broken to recognise as English. The prompt already forbids
+ * translating; a small model ignores that exactly when the text is worst, which
+ * is when a silent replacement costs the author most.
+ *
+ * Only meaningful for an action that keeps the author's words (Fix grammar).
+ * Improve, Summarize and Expand rewrite on purpose and would trip it. Texts of
+ * fewer than three words are not judged: one corrected word has nothing to share.
+ */
+export function changedLanguage(original: string, rewrite: string): boolean {
+  if (wordsOf(original).length < 3) return false;
+  return keptWordShare(original, rewrite) < SAME_LANGUAGE_MIN_SHARE;
+}
+
+/**
  * Gives a rewrite back the whitespace the author had around the text. The reply
  * is trimmed because models pad it, and trimming also took what the author
  * wrote: a WhatsApp message ending on Shift+Enter lost its last line break to
