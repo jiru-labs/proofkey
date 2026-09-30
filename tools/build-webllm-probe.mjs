@@ -60,6 +60,7 @@ procesan en tu GPU. Si ya mediste antes, los modelos siguen en la caché y no se
 <p>Qué medir:</p>
 <label><input type="checkbox" id="do-custom" checked> Un texto tuyo — Fix grammar y revisión en vivo, 3 veces cada una, con la respuesta tal cual la devuelve el modelo:</label>
 <textarea id="custom-text" style="height:3.5em">tis is a test, a i am cheking if it work</textarea>
+<label><input type="checkbox" id="do-variants" checked> Cuatro variantes del prompt de Fix grammar sobre 10 textos muy mal escritos (unos 4 min con el modelo ya cargado)</label><br>
 <label><input type="checkbox" id="do-live"> Revisión en vivo (14 casos) — repeticiones: <input id="runs" type="number" value="10" min="1" max="50" style="width:4em"></label><br>
 <label><input type="checkbox" id="do-actions"> Acciones rápidas (9 acciones: casos con idiomas mezclados, de un idioma y de traducción) — repeticiones por caso: <input id="action-runs" type="number" value="1" min="1" max="10" style="width:4em"></label>
 <p><button id="gpu">Solo comprobar WebGPU</button><button id="start">Empezar</button><button id="copy">Copiar resultado</button></p>

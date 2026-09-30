@@ -130,8 +130,20 @@ interface CustomRun {
   reply: string;
 }
 
+interface VariantRun {
+  variant: string;
+  input: string;
+  reply: string;
+  /** Share of the input's words that are still in the reply; a translation scores near 0. */
+  kept: number;
+  keptLanguage: boolean;
+  changed: boolean;
+}
+
 interface ModelResult {
   model: string;
+  /** Fix grammar prompt variants on badly broken text, raw replies kept. */
+  variants?: VariantRun[];
   /** Raw replies to the text typed into the page, through the real prompts. */
   custom?: CustomRun[];
   loadSeconds?: number;
@@ -350,6 +362,92 @@ async function measureCustom(engine: Engine, model: string, text: string, runs: 
   return out;
 }
 
+/**
+ * Badly broken text in one language. None of these is in the prompt examples, and
+ * none should come back in another language: the first is the sentence a user
+ * reported Qwen3.5 4B translating into French in Microsoft Edge (2026-09-30).
+ */
+const BROKEN_TEXTS = [
+  'tis is a test, a i am cheking if it work',
+  'me and him goes to school yesterday becuase of the test',
+  'pls send me teh report asap i dont have time',
+  'thx for ur help, it were really usefull',
+  'wat time is the meeting tomorow? i cant find it',
+  'he dont know nothing about that, i seen him yesterday',
+  'hello i am wanting to ask about the price of this thing, is it cheap',
+  'i lik it becuse it is verry gud',
+  'yo no se porque el no vino ayer a la reunion',
+  'ich habe gestern ein buch gelesen und es war sehr gut weil es spannend war',
+];
+
+const LANGUAGE_REMINDER =
+  'The reply must be in exactly the same language as the text you were given. ' +
+  'If the text is in English, the reply is in English, however many mistakes it has.';
+
+const MESSY_EXAMPLE =
+  '- Badly broken text stays in its own language too. For example, "i has a apple, its verry gud" ' +
+  'becomes "I have an apple, it\'s very good." — it stays in English.';
+
+const words = (text: string): string[] => text.toLowerCase().match(/[\p{L}']+/gu) ?? [];
+
+function keptShare(input: string, reply: string): number {
+  const inputWords = words(input);
+  const replyWords = new Set(words(reply));
+  if (inputWords.length === 0) return 1;
+  return inputWords.filter((w) => replyWords.has(w)).length / inputWords.length;
+}
+
+/**
+ * Four ways of asking Fix grammar, on the texts above. Only the wording around
+ * the text changes; temperature, tokens and the model do not. A reply "kept its
+ * language" when at least 30% of the input's words are still in it — crude, but
+ * a translation scores near zero and a correction well above.
+ */
+async function measureVariants(engine: Engine, model: string): Promise<VariantRun[]> {
+  const fix = BUILT_IN_ACTIONS.find((a) => a.id === 'fix-grammar')!;
+  const base = composeSystemPrompt({ ...fix }, EMPTY_PROFILE);
+  const variants: { name: string; system: string; user: (text: string) => string }[] = [
+    { name: 'current', system: base, user: (t) => t },
+    { name: 'reminder-last', system: `${base}\n\n${LANGUAGE_REMINDER}`, user: (t) => t },
+    { name: 'user-wrapper', system: base, user: (t) => `Correct this text without translating it:\n\n${t}` },
+    {
+      name: 'messy-example',
+      system: composeSystemPrompt({ ...fix, systemPrompt: fix.systemPrompt.replace(/(example, "Necesito[^]*?left as written\.)/, `$1\n${MESSY_EXAMPLE}`) }, EMPTY_PROFILE),
+      user: (t) => t,
+    },
+  ];
+  const out: VariantRun[] = [];
+  for (const v of variants) {
+    let kept = 0;
+    for (const input of BROKEN_TEXTS) {
+      const reply = await engine.chat.completions.create({
+        messages: [
+          { role: 'system', content: v.system },
+          { role: 'user', content: v.user(input) },
+        ],
+        temperature: 0,
+        max_tokens: 1024,
+        ...(model.startsWith('Qwen3') ? { extra_body: { enable_thinking: false } } : {}),
+      });
+      const text: string = (reply?.choices?.[0]?.message?.content ?? '').replace(/<think>\s*<\/think>\s*/i, '').trim();
+      const share = keptShare(input, text);
+      const run: VariantRun = {
+        variant: v.name,
+        input,
+        reply: text,
+        kept: Math.round(share * 100) / 100,
+        keptLanguage: share >= 0.3,
+        changed: normalise(text) !== normalise(input),
+      };
+      if (run.keptLanguage) kept++;
+      out.push(run);
+      log(`  ${v.name} ${run.keptLanguage ? 'ok ' : 'LANG'} ${JSON.stringify(input)} -> ${JSON.stringify(text)}`);
+    }
+    log(`  == ${v.name}: ${kept}/${BROKEN_TEXTS.length} kept the language`);
+  }
+  return out;
+}
+
 async function measure(): Promise<void> {
   $<HTMLButtonElement>('start').disabled = true;
   const doLive = $<HTMLInputElement>('do-live').checked;
@@ -398,6 +496,12 @@ async function measure(): Promise<void> {
       if ($<HTMLInputElement>('do-custom').checked && customText) {
         log(`  texto propio: ${JSON.stringify(customText)}`);
         result.custom = await measureCustom(engine!, model, customText, 3);
+        showReport();
+      }
+
+      if ($<HTMLInputElement>('do-variants').checked) {
+        log('  variantes del prompt de Fix grammar sobre 10 textos rotos:');
+        result.variants = await measureVariants(engine!, model);
         showReport();
       }
 
