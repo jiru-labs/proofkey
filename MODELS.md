@@ -1236,6 +1236,56 @@ and the live check measured the 4B reading at ~142 tok/s — but the action phas
 did not record prefill and decode separately, so that is inferred, not measured.
 Nano's Fix grammar took 4.8–4.9 s on the other machine.
 
+#### Text too broken to recognise, in Microsoft Edge
+
+Reported by the user, then reproduced: **Microsoft Edge 154.0.4258.48** (stable,
+Windows 11, the same RX 6600), `Qwen3.5-4B-q4f16_1-MLC` inside the extension, on
+**`tis is a test, a i am cheking if it work`**, 2026-09-30.
+
+| Task | Result, 3 of 3 runs at temperature 0 |
+|---|---|
+| Fix grammar (the real prompt) | `C'est une test, je vérifie si ça marche.` — **French**, 12 tokens |
+| Live check (one line) | the line handed back unchanged, so "no errors" |
+
+The probe's adapter line in Edge was `amd` / `rdna-2`, `shader-f16` present, 2048 MB
+buffers — the same reading as Brave's, so nothing in the browser's GPU path
+separates them. **Not run:** the same sentence in Brave, so "it is the model and
+not Edge" is the likely reading, not a measurement.
+
+What was measured to go further, all on `Qwen3.5-4B-Q4_K_M.gguf` (Unsloth, SHA-256
+checked against Hugging Face) under llama.cpp b11169 with Vulkan on that RX 6600,
+temperature 0, thinking off, the real composed prompts. A different quantisation
+from WebLLM's `q4f16_1`: on the 14 live-check fixtures it scored **13/14 with no
+false alarms and the same single miss** (`Their is alot`) as in the browser, so it
+is a fair stand-in there; on the sentence above it is not — it came back in English
+(`This is a test; I am checking if it works.`) where the browser model came back in
+French. The drift sits at the edge of what the model recognises and moves with the
+quantisation.
+
+- **Fix grammar on 70 badly broken texts** (10 by hand, 30 grammar-broken
+  sentences and the same 30 with seeded typos): the current prompt left the language
+  on **69 of 70**; the one loss was `me and him goes to school yesterday becuase of
+  the test`, returned in Spanish. Moving the language rule to the end of the prompt
+  and a worked example of broken English each scored 70/70; wrapping the text as
+  "Correct this text without translating it:" made it **worse**, 58/60, with two
+  Spanish translations. One run per text, and a baseline that fails once in 70
+  cannot rank the variants, so **the prompt was not changed**.
+- **What was changed instead:** `changedLanguage` (`src/core/prompts.ts`) — a
+  Fix grammar reply that keeps under 30% of the original's words is treated as
+  another language; the request is asked once more with the rule restated at the
+  end, and if it still leaves the language the text is left as it was and the
+  user is told. Checked against a stub in `npm run test:ext` and in
+  `tools/prompts-check.ts`; never seen firing on a real model's reply, because the
+  real failure does not reproduce on this stand-in.
+- **Live check on single broken lines** changed **50 of 60** with the current prompt
+  and 0 of 7 clean lines (no false alarms). Two edits to the prompt scored 51 and
+  52 of 60, both together 55 — but the example added was a sentence that is also in
+  the 60, so two of the five gains are not independent, and nothing here was
+  significant enough to move a prompt that says a needless change costs more than a
+  miss. **Not changed.** The 10 lines from the first round show the pattern: sent one
+  at a time, `tis is a test…` and three others came back unchanged; sent together as
+  one request, all but one English line were corrected.
+
 ### Measuring quick actions
 
 `npm run eval` only ever sent the live-check prompt. Nothing measured whether a
