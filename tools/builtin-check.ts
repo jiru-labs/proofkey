@@ -39,7 +39,7 @@ const brave = as({
   brave: { isBrave: async () => true },
 });
 check('Brave is named as the reason', /\bBrave\b/.test(brave), brave);
-check('Brave is pointed at Google Chrome for the no-key model', /Google Chrome/.test(brave), brave);
+check('Brave is pointed at the model inside the browser for the no-key route', /Run a model inside this browser/.test(brave), brave);
 check('Brave is not sent after disk space or GPU memory', !/GB/.test(brave), brave);
 check('Brave is still told what works here', /API key/.test(brave), brave);
 check('Brave is offered a model on this computer, with no key', /LM Studio, Ollama or llama\.cpp/.test(brave), brave);
@@ -69,6 +69,8 @@ check('Google Chrome below the floor is offered a model on this computer too', /
 console.log('\nno built-in model at all:');
 const noApi = builtinProblem('no-api') ?? '';
 check('a browser with no model is offered one on this computer, with no key', /LM Studio, Ollama or llama\.cpp/.test(noApi), noApi);
+check('and the model inside the browser comes first', /Run a model inside this browser/.test(noApi) && noApi.indexOf('Run a model') < noApi.indexOf('LM Studio'), noApi);
+check('the same goes for Chrome below its floor', /Run a model inside this browser/.test(chrome), chrome);
 check('and still told a key works', /API key/.test(noApi), noApi);
 
 if (failures) {

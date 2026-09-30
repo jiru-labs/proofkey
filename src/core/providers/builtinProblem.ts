@@ -31,7 +31,7 @@ export function builtinProblem(state: BuiltinAvailability): string | null {
     case 'available':
       return null;
     case 'no-api':
-      return 'This browser has no built-in model; Google Chrome on desktop has one. With no key, run a model on this computer with LM Studio, Ollama or llama.cpp. Or add a provider with an API key.';
+      return 'This browser has no built-in model. With no key, open ProofKey settings and click "Run a model inside this browser": it runs on your graphics card. Or use LM Studio, Ollama or llama.cpp, or add a provider with an API key.';
     case 'unavailable':
       // Not a hardware verdict in Brave: Brave Origin 153 answered it on the laptop
       // where Google Chrome 153 runs the model (2026-09-13), and on Windows Brave's
@@ -39,9 +39,9 @@ export function builtinProblem(state: BuiltinAvailability): string | null {
       // disabled" (2026-09-26, on an 8 GB GPU). At most 41 words: the in-page
       // toast gives 300 ms a word, and `test:render` holds it to that.
       if (isBrave()) {
-        return 'Brave switches off Chrome\'s built-in model, even on computers where Google Chrome runs it. With no key, run a model on this computer with LM Studio, Ollama or llama.cpp, or use Google Chrome. Or add a provider with an API key.';
+        return 'Brave switches off Chrome\'s built-in model. With no key, open ProofKey settings and click "Run a model inside this browser": it runs on your graphics card. Or use LM Studio, Ollama or llama.cpp, or add a provider with an API key.';
       }
-      return 'This browser says its built-in model is unavailable. In Google Chrome that usually means the computer is below Chrome\'s requirements: 22 GB of free disk, and either a GPU with more than 4 GB of memory or 16 GB of RAM with 4 CPU cores. With no key, run a model on this computer with LM Studio, Ollama or llama.cpp instead. Or add a provider with an API key.';
+      return 'This browser says its built-in model is unavailable. In Google Chrome that usually means the computer is below Chrome\'s requirements: 22 GB of free disk, and either a GPU with more than 4 GB of memory or 16 GB of RAM with 4 CPU cores. With no key, open ProofKey settings and click "Run a model inside this browser", or use LM Studio, Ollama or llama.cpp. Or add a provider with an API key.';
     case 'downloadable':
       return 'The built-in model is not downloaded yet. Open ProofKey settings and click "Download model".';
     case 'downloading':
