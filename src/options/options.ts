@@ -1251,6 +1251,20 @@ function renderActions(): HTMLElement {
               'Chrome leaves this unset when another extension already claimed the combination, and does not let ' +
               `an extension set it back — only you can, on the page below. ${IS_MAC ? '⌘⇧K' : 'Ctrl+Shift+K'} is the intended default.`,
           }),
+          // Naming one that is free turns "pick something" into a thing to type.
+          // Another extension's shortcuts cannot be read from here, so this is
+          // free among ProofKey's own and outside the chords Chrome documents
+          // for itself — the same pool the per-action suggestion draws from.
+          (() => {
+            const free = suggestChord(takenChords(''));
+            return free
+              ? el('p', {
+                  class: 'notice__text',
+                  dataset: { defaultShortcutSuggestion: '' },
+                  text: `Suggested: ${shortcutLabel(free)}. On that page, click the pencil next to "Run the default action" and press it.`,
+                })
+              : null;
+          })(),
           // The most an extension is permitted to do about its own command:
           // open the page. `tabs.create` may open chrome:// URLs even though
           // nothing else can touch them, and it needs no permission.

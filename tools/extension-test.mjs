@@ -1194,6 +1194,15 @@ async function run() {
     const openButton = notice.getByRole('button', { name: 'Open Chrome’s shortcut settings' });
     check('the notice carries a button to fix it', (await openButton.count()) > 0);
 
+    // Asked for by the user, 2026-09-30: "which shortcut should I set?" — so
+    // the notice names one rather than leaving the choice open.
+    const suggestion = (await notice.locator('[data-default-shortcut-suggestion]').textContent().catch(() => '')) ?? '';
+    check(
+      'and names a free chord to set, with where to press it',
+      /^Suggested: Alt\+Shift\+G\./.test(suggestion) && /Run the default action/.test(suggestion),
+      suggestion || 'no suggestion shown',
+    );
+
     const [shortcutsTab] = await Promise.all([
       context.waitForEvent('page', { timeout: 5000 }).catch(() => null),
       openButton.click(),
