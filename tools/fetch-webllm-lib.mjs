@@ -9,10 +9,14 @@
  * mlc-ai/binary-mlc-llm-libs pinned to one commit, and is refused unless its
  * SHA-256 is the one in `src/core/providers/inBrowserModel.ts`.
  *
- * Not committed: that repository declares no licence (checked 2026-09-27 — no
- * LICENSE file, nothing in its README, no SPDX id on GitHub), and a binary
- * without one is not ours to redistribute. Until that is settled the library is
- * fetched for development and measurement only.
+ * Not in git, to keep a 6.5 MB binary out of the history; `npm run release`
+ * runs this before it builds. Its source repository states no licence
+ * (checked 2026-09-27: no LICENSE file, nothing in its README, no SPDX id on
+ * GitHub), though WebLLM from the same project loads these libraries by
+ * default. Shipped anyway, by the maintainer's decision of 2026-09-30, with the
+ * question open at mlc-ai/binary-mlc-llm-libs#166; `public/THIRD_PARTY_NOTICES.txt`
+ * says so inside the package. If the project answers that it may not be
+ * redistributed, the way out is compiling it here from MLC-LLM (Apache-2.0).
  */
 
 import { createHash } from 'node:crypto';

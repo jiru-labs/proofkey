@@ -7,7 +7,8 @@
 // The store rejects a package whose version is not strictly greater than the
 // published one, so the bump is the first thing checked and the first thing done.
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, writeFileSync, rmSync, statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync, writeFileSync, rmSync, statSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { readEnv, requireKeys } from './env.ts'
 
@@ -121,6 +122,13 @@ const rollBack = (why: string): never => {
   process.exit(1)
 }
 
+step('Making sure the in-browser model library is in public/')
+try {
+  run('node', ['tools/fetch-webllm-lib.mjs'])
+} catch {
+  rollBack('could not fetch the in-browser model library')
+}
+
 step('Running the full verify suite')
 try {
   run('npm', ['run', 'verify'])
@@ -129,27 +137,42 @@ try {
 }
 stopServer()
 
-// The in-browser model needs its compiled WebGPU library inside the package,
-// and that library's source repository declares no licence (2026-09-27; see
-// tools/fetch-webllm-lib.mjs). Shipping it redistributes a binary without one;
-// shipping without it leaves a connection in settings that cannot load. Either
-// way it is not a release to make by default. Once the licence is settled —
-// or the model library is built here from Apache-2.0 sources — pass
-// --in-browser-cleared.
-if (!process.argv.includes('--in-browser-cleared') && readFileSync(`${ROOT}/src/core/presets.ts`, 'utf8').includes("id: 'in-browser'")) {
-  const bundled = existsSync(`${ROOT}/dist/webllm`) && readdirSync(`${ROOT}/dist/webllm`).some((f) => f.endsWith('.wasm'))
-  rollBack(
-    bundled
-      ? 'dist/ carries the in-browser model library, whose source declares no licence; not shipping it (--in-browser-cleared once that is settled)'
-      : 'the in-browser model connection is in this build but its model library is not, so it could not load; not shipping a broken option (--in-browser-cleared once the licence is settled)',
-  )
+// The in-browser model's compiled WebGPU library has to be inside the package:
+// MV3 forbids code fetched at run time. It is not in git, so a fresh checkout
+// builds without it and the connection it backs could never load. Check the
+// bytes that are about to ship, not the ones in public/.
+if (readFileSync(`${ROOT}/src/core/presets.ts`, 'utf8').includes("id: 'in-browser'")) {
+  const model = readFileSync(`${ROOT}/src/core/providers/inBrowserModel.ts`, 'utf8')
+  const lib = model.match(/IN_BROWSER_MODEL_LIB = '([^']+)'/)?.[1]
+  const pinned = model.match(/IN_BROWSER_MODEL_LIB_SHA256 =\s*'([0-9a-f]{64})'/)?.[1]
+  const shipped = lib && existsSync(`${ROOT}/dist/${lib}`)
+    ? createHash('sha256').update(readFileSync(`${ROOT}/dist/${lib}`)).digest('hex')
+    : null
+  if (!lib || !pinned || shipped !== pinned) {
+    rollBack(
+      shipped
+        ? `dist/${lib} does not match the pinned SHA-256; not shipping it`
+        : 'dist/ lacks the in-browser model library, so that connection could not load (node tools/fetch-webllm-lib.mjs, then release again)',
+    )
+  }
 }
 
 step('Packaging dist/')
 const zipPath = `${ROOT}/proofkey-${version}.zip`
 rmSync(zipPath, { force: true })
-// -r recurse, -q quiet, -X drop platform extras the store does not want.
-execFileSync('zip', ['-rqX', zipPath, '.'], { cwd: `${ROOT}/dist`, stdio: 'inherit' })
+// Python's zipfile rather than zip(1), which a fresh machine may lack. Paths
+// are relative to dist/, so manifest.json sits at the root as the store wants,
+// and dotfiles go in like any other file.
+execFileSync('python3', ['-c', `
+import os, sys, zipfile
+root, out = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
+    for folder, dirs, files in os.walk(root):
+        dirs.sort()
+        for name in sorted(files):
+            path = os.path.join(folder, name)
+            z.write(path, os.path.relpath(path, root))
+`, `${ROOT}/dist`, zipPath], { stdio: 'inherit' })
 const bytes = statSync(zipPath).size
 console.log(`${zipPath}  (${(bytes / 1024).toFixed(1)} KiB)`)
 

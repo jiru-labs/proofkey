@@ -28,5 +28,5 @@ tools/webllm-probe.html
 tools/.webllm-probe-build/
 
 # The in-browser model library: fetched and hash-checked by tools/fetch-webllm-lib.mjs,
-# not committed until its licence is settled (see that file).
+# kept out of git; npm run release fetches it (see that file).
 public/webllm/
