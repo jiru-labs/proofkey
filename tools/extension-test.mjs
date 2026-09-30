@@ -463,6 +463,14 @@ async function run() {
       ).catch(() => {});
       check('and ends ready', ((await card.textContent()) ?? '').startsWith('Ready.'), (await card.textContent()) ?? '');
 
+      // Seen in the user's Brave, 2026-09-30: Test answered "Access to that
+      // endpoint was not granted." — it asked for host access the model has no
+      // use for.
+      await page.locator('.conn__body button', { hasText: /^Test$/ }).first().click();
+      await page.waitForTimeout(1500);
+      const tested = (await page.locator('.conn__body .status').first().textContent()) ?? '';
+      check('Test reaches the model, asking for no site access', /^Working — Qwen3\.5-4B-q4f16_1-MLC replied/.test(tested), tested);
+
       const fixed = await page.evaluate(() =>
         chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: 'Todo esta bien pero todavia no.' }),
       );

@@ -971,6 +971,23 @@ async function testConnection(connection: Connection, status: HTMLElement): Prom
     return;
   }
 
+  // The in-browser model lives in the worker's offscreen document; asking it
+  // from this page would reach the worker's own listener too.
+  if (connection.transport === 'in_browser') {
+    const reply = (await chrome.runtime.sendMessage({ type: 'proofkey:in-browser', op: 'test' })) as
+      | { ok: true; value: { model: string; text: string } }
+      | { ok: false; error: string }
+      | undefined;
+    if (reply?.ok) {
+      status.textContent = `Working — ${reply.value.model} replied "${reply.value.text.trim().slice(0, 40)}".`;
+      status.className = 'status status--ok';
+    } else {
+      status.textContent = reply?.error ?? 'The in-browser model did not answer.';
+      status.className = 'status status--error';
+    }
+    return;
+  }
+
   try {
     const result = await runCompletion([connection], {
       systemPrompt: 'Reply with exactly: ok',
@@ -994,7 +1011,8 @@ async function testConnection(connection: Connection, status: HTMLElement): Prom
  * origins resolve to true without showing a dialog, so the check bought nothing.
  */
 async function ensureOriginPermission(connection: Connection): Promise<boolean> {
-  if (connection.transport === 'chrome_builtin') return true;
+  // Neither on-device model has an endpoint to be granted.
+  if (connection.transport === 'chrome_builtin' || connection.transport === 'in_browser') return true;
   const pattern = originPattern(connection);
   if (!pattern) return false;
   return chrome.permissions.request({ origins: [pattern] });

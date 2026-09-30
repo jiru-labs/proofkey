@@ -31,6 +31,7 @@ import {
 } from '../core/prompts';
 import { runCompletion, validateConnection } from '../core/providers';
 import { askOffscreen } from '../core/providers/inBrowser';
+import { IN_BROWSER_MODEL } from '../core/providers/inBrowserModel';
 import {
   activeConnection,
   connectionChain,
@@ -279,6 +280,9 @@ async function sendToTab(tabId: number, message: WorkerRequest): Promise<void> {
 // ---------------------------------------------------------- message router
 
 chrome.runtime.onMessage.addListener((message: ContentRequest, sender, sendResponse) => {
+  // Addressed to the offscreen document, which answers it. Answering here too
+  // would race it, and the first reply is the one the sender gets.
+  if ((message as { target?: string })?.target === 'proofkey-offscreen') return false;
   // Nothing outside this extension can reach this listener today: there is no
   // externally_connectable entry, so pages and other extensions have no route
   // in. The check costs one comparison and keeps that true if the manifest
@@ -338,6 +342,16 @@ async function handle(
       return frameGrant(sender, message.origin);
 
     case 'proofkey:in-browser':
+      if (message.op === 'test') {
+        const text = await askOffscreen<string>({
+          target: 'proofkey-offscreen',
+          op: 'complete',
+          systemPrompt: 'Reply with exactly: ok',
+          userText: 'ping',
+          maxTokens: 16,
+        });
+        return { ok: true, value: { model: IN_BROWSER_MODEL, text } };
+      }
       return { ok: true, value: await askOffscreen({ target: 'proofkey-offscreen', op: message.op }) };
   }
 }

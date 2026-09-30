@@ -27,7 +27,7 @@ export type ContentRequest =
   /** The user clicked Allow on that offer. Must be sent from the click itself. */
   | { type: 'proofkey:frame-grant'; origin: string }
   /** Options page: the in-browser model's state, its one download, or removing it. */
-  | { type: 'proofkey:in-browser'; op: 'status' | 'download' | 'delete' };
+  | { type: 'proofkey:in-browser'; op: 'status' | 'download' | 'delete' | 'test' };
 
 /** Service worker → content script. */
 export type WorkerRequest =
