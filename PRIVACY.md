@@ -30,8 +30,7 @@ click **Download model**. What Chrome itself records about the download or about
 using its model is governed by Google's Chrome privacy notice, not by this
 policy.
 
-**A model inside the browser sends nothing either** (on `main`, not yet in the
-store version). For browsers without Chrome's model, such as Brave, ProofKey can
+**A model inside the browser sends nothing either** (since version 0.1.11). For browsers without Chrome's model, such as Brave, ProofKey can
 run a language model itself, on your computer's GPU. Your text never leaves the
 browser for it. The model's files are downloaded once — 2.4 GB, from
 `huggingface.co`, pinned to one published revision — and only when you click **Download model** in
