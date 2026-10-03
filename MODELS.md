@@ -379,12 +379,13 @@ prompt only, and `gemini-2.5-flash` scores *worst* of the three there
 
 Four of the nine actions now have a number of their own, from a second harness
 built to answer exactly that — [Measuring quick
-actions](#measuring-quick-actions) below. On `gemini-2.5-flash`: `fix-grammar`
-scores 160/160, `translate` scores 80/80, and `summarize` and `bullet-points`
-score 50/50 each. The other five — `improve-writing`, `make-professional`,
+actions](#measuring-quick-actions) below. On `gemini-2.5-flash`: `translate` scores 80/80,
+and on the mixed set re-scored on 2026-10-03 `fix-grammar` keeps the mixture
+69/80, `summarize` 70/80 and `bullet-points` 71/80 — almost all of it one
+Japanese fixture the scorer could not see fail before that day. The other five — `improve-writing`, `make-professional`,
 `make-friendly`, `simplify`, `expand` — were measured on 2026-09-23 and **do
-not hold mixed-language text on this model**: 32–59 of 80 checks, where the
-three above scored 80/80 the same day ("Rewrites and mixed-language text",
+not hold mixed-language text on this model**: 29–59 of 80 checks on
+2026-10-03, against 69–71 for the three above ("Rewrites and mixed-language text",
 below; [#1](https://github.com/jiru-labs/proofkey/issues/1)). None of these numbers has been checked on a provider besides
 Google Gemini. Do not read the measured actions as the others.
 
@@ -1098,7 +1099,8 @@ has been measured.
 
 **The quick actions are where it falls short**, measured with
 `tools/action-eval.ts --actions all --runs 3 --temperature 0` through the same
-bridge:
+bridge (scored before 2026-10-03, when the Japanese fixture could not fail —
+read every row as an upper bound):
 
 | Action | Mixture kept | Offered on this model |
 |---|---|---|
@@ -1196,6 +1198,8 @@ token-survival rules (now shared in `tools/action-eval-fixtures.ts`). **One run
 per fixture**, greedy; the live check had given the same answer on all 10 runs,
 but that was not re-measured for the actions. Nano's column is its
 `--actions all --runs 3` result above, mixed fixtures only, out of 24.
+Every mixed column here was scored before 2026-10-03, when the Japanese
+fixture could not fail, so read each as an upper bound.
 
 | Action | `Qwen3.5-4B` mixed | one language | s / request | `Qwen3.5-2B` mixed | one language | s / request | Nano, mixed (of 24) |
 |---|---|---|---|---|---|---|---|
@@ -1412,7 +1416,7 @@ prompts as shipped in 0.1.10, `--fixtures mixed --runs 10` (80 checks each):
 
 | Action | Kept the mixture |
 |---|---|
-| Fix grammar, Summarize, Convert to bullet points | 80/80 each |
+| Fix grammar, Summarize, Convert to bullet points | 80/80 each (69, 70 and 71 on the fixed scorer, 2026-10-03 — see below) |
 | Improve writing | 59/80 |
 | Simplify | 58/80 |
 | Make professional | 48/80 |
@@ -1440,6 +1444,75 @@ tone, register or length is never a reason to translate" — scored 35/64 on the
 mixed set, exactly the shipped prompt's 35/64, so it does nothing for that
 model. Its measurement on `gemini-2.5-flash` was cut short when the eval key's
 prepaid credit ran out. Tracked in [#1](https://github.com/jiru-labs/proofkey/issues/1).
+
+**Measured on `gemini-2.5-flash` on 2026-10-03, and it is not the fix either**
+(see the next section for why every number there is lower than above). Through
+OpenRouter (`google/gemini-2.5-flash`, served by Google, `reasoning_effort:
+"none"`), `--fixtures mixed --runs 10`, the three prompts side by side the same
+hour. A is the candidate just described; B is A plus a worked rewrite example
+("Te mando el link del dashboard cuando pueda." made more formal, `link` and
+`dashboard` kept — no word of it is in a fixture). Both change only the five
+rewrites; the composed prompts of the other four actions were diffed and are
+byte-identical.
+
+| Action | Shipped | A | B |
+|---|---|---|---|
+| Improve writing | 59/80 | 55/80 | 49/80 |
+| Make professional | 32/80 | 42/80 | 40/80 |
+| Make friendly | 34/80 | 50/80 | 48/80 |
+| Simplify | 41/80 | 49/80 | 54/80 |
+| Expand | 29/80 | 25/80 | 28/80 |
+| **Total** | **195/400** | **221/400** | **219/400** |
+
+By fixture, out of 50 (five actions × 10 runs), the two Spanish-base fixtures
+stay at 6–25, the English-base one at 1–11, and the Japanese one at 0 under all
+three prompts. The shipped prompt itself moved by up to ±10 per action between
+2026-09-23 and today (Improve writing 49→59 and Simplify 48→41 on the seven
+fixtures both scorers could see), and the deltas above sit inside that spread.
+Neither candidate ships, and no third wording was tried: the rewrites translate
+borrowed words on this model whatever the rule says, and that is what the
+README and COMPATIBILITY.md now say. Cost of the day's runs, read off
+`/api/v1/key`: $0.37.
+
+### The Japanese fixture could not fail, until 2026-10-03
+
+`tools/action-eval-fixtures.ts` matched a single word only when the characters
+on both sides were not letters. In Japanese every neighbour is a letter, so
+inside `明日のミーティングはcancelになりました` neither `cancel` nor the
+translations on its blocklist (`キャンセル`, `中止`) could ever be found: the
+fixture scored as a pass whatever the model wrote. Fixed the same day — a word
+in a script written without spaces matches as a substring, and a letter of
+such a script counts as a word's edge — with `tools/action-eval-check.ts`
+watched failing first (3 of 8 checks) and now in `npm test`. Only that one
+fixture is affected: the monolingual and Translate sets contain no Japanese,
+so the 640/640 above stands.
+
+Re-measured on the fixed scorer, same route and settings as the table above:
+
+| Action | Before (one fixture blind) | 2026-10-03 | What fails |
+|---|---|---|---|
+| Fix grammar | 80/80 (160/160 at 20 runs) | **69/80** | `cancel`→`キャンセル` 10/10; `team`/`kickoff meeting`→`equipo`/`reunión` 1/10 |
+| Summarize | 80/80 | **70/80** | `cancel`→`キャンセル` 10/10 |
+| Convert to bullet points | 80/80 | **71/80** | `cancel`→`キャンセル` 7/10; `team`→`equipo` 2/10 |
+
+`キャンセル` is the ordinary Japanese loanword for "cancel" written in
+katakana, so a reader may call that normal Japanese spelling rather than a
+translation; the prompt promises to keep the mixture as written, and the
+fixture has scored it as a failure since it was written, so it is scored as
+one here. The Spanish `equipo` cases are translation by any reading. 0.1.11
+ships these same prompts, so nothing changed for users — what changed is what
+the numbers on this page can claim.
+
+Every mixed-set number on this page dated before 2026-10-03 — Gemini's
+included: the 09-23 rewrite table, the worked-example run, 77/80, 159/160 and
+494/640 — counted that fixture as a pass, ten free passes per action at 10 runs.
+Compared on the seven fixtures both scorers could see, Improve writing went
+49 → 59 between 09-23 and today, not 59 → 59.
+
+Scored before the fix and **not** re-measured, so read as upper bounds: every
+mixed-set number for Chrome's built-in model (Fix grammar 21/24 and the rest of
+its table), for the WebLLM `Qwen3.5` models, and for `Qwen3-4B`/`gemma-3-12b`
+on llama.cpp. Each of those counted the Japanese fixture as a pass.
 
 Not measured here, and it should be read as that rather than as an oversight:
 every model besides `gemini-2.5-flash` on mixed-language text, apart from the

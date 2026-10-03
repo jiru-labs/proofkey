@@ -31,6 +31,11 @@ If you cannot improve the text, return it unchanged.`.trim();
  * fixes saturate the fixture set, so it can no longer tell them apart -- if this
  * rule ever regresses, moving it later is as reasonable a first attempt as
  * rewriting it again.
+ *
+ * Every number above was taken while one of the eight fixtures, the Japanese
+ * one, could not fail (a scorer bug fixed 2026-10-03). On the fixed scorer this
+ * wording keeps the mixture 69/80 on Fix grammar: `cancel` comes back as the
+ * katakana loanword in all ten runs. See MODELS.md.
  */
 const SAME_LANGUAGE_RULES = `
 - Work in the language the text is written in. Never translate it into a

@@ -180,6 +180,9 @@ export const TRANSLATE_FIXTURES: Fixture[] = [
   },
 ];
 
+/** Scripts that put no spaces between words, so a letter there is not a word's edge. */
+const UNSPACED = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}\p{sc=Thai}\p{sc=Lao}\p{sc=Khmer}\p{sc=Myanmar}]/u;
+
 /**
  * Word-boundary, case-insensitive, accent-sensitive. Accent-sensitive matters:
  * "mañana" and "manana" are not the same word, and a harness that ignored the
@@ -189,9 +192,17 @@ export function contains(haystack: string, needle: string): boolean {
   const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // \b does not fire next to accented letters in some engines, so a phrase is
   // matched as a substring and a single word is bounded by non-letters.
-  const pattern = needle.includes(' ')
-    ? new RegExp(escaped, 'iu')
-    : new RegExp(`(^|[^\\p{L}])${escaped}([^\\p{L}]|$)`, 'iu');
+  //
+  // Scripts written without spaces are the exception both ways. A word in one
+  // of them is matched as a substring, since every neighbour is a letter; and a
+  // letter of one of them counts as a boundary for a word in any other script,
+  // so "cancel" is found in "ミーティングはcancelになりました". Until
+  // 2026-10-03 neither held, and the Japanese fixture passed whatever the model
+  // wrote (tools/action-eval-check.ts).
+  const pattern =
+    needle.includes(' ') || UNSPACED.test(needle)
+      ? new RegExp(escaped, 'iu')
+      : new RegExp(`(^|[^\\p{L}]|${UNSPACED.source})${escaped}(${UNSPACED.source}|[^\\p{L}]|$)`, 'iu');
   return pattern.test(haystack);
 }
 

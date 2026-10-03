@@ -30,7 +30,8 @@
  * and gemini-2.5-flash ignored it on 26 of 100 measured runs anyway (see
  * `tools/action-eval.ts` and commit 38168f8). Fixing it took a reworded rule
  * with a worked example, measured at 160/160 against the old wording's 146/160
- * over the same 20 runs, 8 fixtures. None of that measurement is repeated
+ * over the same 20 runs, 8 fixtures (one of which, the Japanese one, could not
+ * fail until a scorer fix on 2026-10-03; 69/80 on the fixed scorer). None of that measurement is repeated
  * here — it costs a paid API key and this file spends neither — but whether
  * the fixed wording, and its example, are still the ones actually being sent
  * is a string comparison, and asserting on it is what would catch a future
