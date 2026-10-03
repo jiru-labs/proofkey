@@ -358,6 +358,17 @@ async function run() {
       const box = page.locator('input[type=number]').first();
       const original = await box.inputValue();
       check('a page just opened shows no unsaved-changes notice', (await notice.count()) === 0 && !(await page.title()).startsWith('●'));
+      {
+        let kind = null;
+        const onDialog = (dialog) => {
+          kind = dialog.type();
+          dialog.accept().catch(() => {});
+        };
+        page.on('dialog', onDialog);
+        await page.reload();
+        page.off('dialog', onDialog);
+        check('leaving with nothing unsaved asks nothing', kind === null, String(kind));
+      }
       await box.fill(String(Number(original) + 1));
       await page.waitForTimeout(150);
       check('changing a field says the change is not saved', (await notice.count()) === 1 && (await page.title()).startsWith('●'), await page.title());
@@ -373,6 +384,22 @@ async function run() {
       await box.fill(original);
       await page.waitForTimeout(150);
       check('a change after saving is flagged again', (await notice.count()) === 1);
+      // The notice is half of it; the other half is the browser's own "Leave
+      // site?" when the tab is reloaded or closed with that change still waiting.
+      const leaving = async () => {
+        let kind = null;
+        const onDialog = (dialog) => {
+          kind = dialog.type();
+          dialog.dismiss().catch(() => {});
+        };
+        page.on('dialog', onDialog);
+        await page.reload({ timeout: 2000 }).catch(() => {});
+        page.off('dialog', onDialog);
+        return kind;
+      };
+      const unsavedLeave = await leaving();
+      check('leaving with a change unsaved asks the browser to confirm', unsavedLeave === 'beforeunload', String(unsavedLeave));
+      check('dismissing that keeps the change on the page', (await box.inputValue()) === original && (await notice.count()) === 1);
     }
     await page.locator('button', { hasText: 'Save' }).last().click();
     await page.waitForTimeout(300);
