@@ -39,6 +39,7 @@ import {
   loadSettings,
   newConnectionId,
   resolveActions,
+  mergeOnSave,
   saveSettings,
   setActionShortcut,
   shortcutConflicts,
@@ -1844,8 +1845,17 @@ async function save(status: HTMLElement): Promise<void> {
   }
 
   try {
+    // After the permission prompt, which needs the click still in scope.
+    const edited = JSON.stringify(settings);
+    mergeOnSave(settings, JSON.parse(savedSnapshot) as Settings, await loadSettings());
     await saveSettings(settings);
     savedSnapshot = JSON.stringify(settings);
+    // Show what was kept, or the boxes would still hold the old lists and the
+    // next edit to them would drop those sites after all.
+    if (savedSnapshot !== edited) {
+      render();
+      if (footerStatus) status = footerStatus;
+    }
     unsavedNoticeShown = false;
     document.title = BASE_TITLE;
     status.parentElement?.classList.remove('footer--dirty');

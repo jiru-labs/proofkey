@@ -1067,6 +1067,36 @@ async function run() {
     }
   }
 
+  // Settings opened before a site was switched on wrote their old lists back on
+  // Save, and live checking went off in that tab (seen in Brave, 2026-10-04).
+  {
+    console.log('\nsaving settings opened before a site was switched on:');
+    const stale = await context.newPage();
+    await stale.goto(`chrome-extension://${extensionId}/options/index.html`);
+    await stale.waitForTimeout(800);
+    // What the toolbar button and "add to dictionary" store through the worker.
+    await page.evaluate(async () => {
+      const all = await chrome.storage.sync.get('proofkey:settings');
+      const settings = all['proofkey:settings'] ?? {};
+      settings.liveCheck = { ...(settings.liveCheck ?? {}), enabledOrigins: ['https://switched-on.example'] };
+      await chrome.storage.sync.set({ 'proofkey:settings': settings });
+      await chrome.runtime.sendMessage({ type: 'proofkey:add-word', word: 'Proofkeyism' });
+    });
+    await stale.evaluate(() => { chrome.permissions.request = async () => true; });
+    await stale.locator('button', { hasText: 'Save' }).last().click();
+    await stale.waitForTimeout(800);
+    const after = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings'].liveCheck);
+    check(
+      'a site switched on meanwhile survives a Save from settings opened before',
+      after?.enabledOrigins?.includes('https://switched-on.example') === true,
+      JSON.stringify(after?.enabledOrigins),
+    );
+    check('and so does a word added to the dictionary meanwhile', after?.dictionary?.includes('Proofkeyism') === true, JSON.stringify(after?.dictionary));
+    const shown = await stale.locator('textarea[placeholder^="https://mail.google.com"]').inputValue().catch(() => '');
+    check('and the settings page shows the site, so the next edit keeps it', /switched-on\.example/.test(shown), JSON.stringify(shown));
+    await stale.close();
+  }
+
   for (const transport of ['chat_completions', 'anthropic_messages']) {
     console.log(`\n${transport}:`);
     seen.length = 0;

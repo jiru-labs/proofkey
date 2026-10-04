@@ -102,6 +102,34 @@ export async function saveSettings(settings: Settings): Promise<void> {
   await chrome.storage.sync.set({ [KEY_SETTINGS]: settings });
 }
 
+/**
+ * The settings a page that has been open a while should save.
+ *
+ * The worker writes some of them too — the sites live checking and the
+ * shortcuts run on, the frames allowed from a page, the dictionary — whenever
+ * the user acts on a page. Settings opened before that held the old lists, and
+ * Save wrote them back whole: switching live checking on in a tab, then saving
+ * a provider change in settings, switched it off again (seen in Brave,
+ * 2026-10-04). So those lists are taken from storage as it is now, with only
+ * this page's own additions and removals applied on top.
+ *
+ * In place: the page's inputs hold references to these objects, and a copy
+ * would leave every later edit writing to the one that is no longer saved.
+ */
+export function mergeOnSave(edited: Settings, loaded: Settings, stored: Settings): void {
+  const merge = (now: string[], before: string[], mine: string[]): string[] => {
+    const removed = new Set(before.filter((item) => !mine.includes(item)));
+    const added = mine.filter((item) => !before.includes(item));
+    return [...new Set([...now.filter((item) => !removed.has(item)), ...added])];
+  };
+  const { liveCheck } = edited;
+  edited.shortcutOrigins = merge(stored.shortcutOrigins, loaded.shortcutOrigins, edited.shortcutOrigins);
+  edited.frameOrigins = stored.frameOrigins;
+  liveCheck.enabledOrigins = merge(stored.liveCheck.enabledOrigins, loaded.liveCheck.enabledOrigins, liveCheck.enabledOrigins);
+  liveCheck.blockedOrigins = merge(stored.liveCheck.blockedOrigins, loaded.liveCheck.blockedOrigins, liveCheck.blockedOrigins);
+  liveCheck.dictionary = merge(stored.liveCheck.dictionary, loaded.liveCheck.dictionary, liveCheck.dictionary);
+}
+
 export function activeConnection(settings: Settings): Connection | undefined {
   return (
     settings.connections.find((c) => c.id === settings.activeConnectionId) ??
