@@ -165,6 +165,16 @@ function createOverlayHighlighter(
     }
     // A textarea wraps; a single-line input never does.
     content.style.whiteSpace = node instanceof HTMLTextAreaElement ? 'pre-wrap' : 'pre';
+    // A scrollbar takes its width out of the field's text, not out of the
+    // mirror's: the lines broke in different places and every underline after
+    // the first wrap sat words away from its own (seen in Brave on Windows,
+    // 2026-10-04, in a textarea long enough to scroll).
+    const borders = parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+    const scrollbar = Math.max(0, node.offsetWidth - node.clientWidth - Math.round(borders));
+    const inner = style.boxSizing === 'border-box'
+      ? 0
+      : borders + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    content.style.width = `${rect.width - scrollbar - inner}px`;
     content.style.transform = `translate(${-node.scrollLeft}px, ${-node.scrollTop}px)`;
   };
 

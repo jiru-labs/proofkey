@@ -166,6 +166,21 @@ const probe = ([id, props]) => {
 
     const overlayRect = overlay?.getBoundingClientRect();
 
+    // The width the text wraps at, in the field and in the mirror.
+    const textWidth = (node, outer) => {
+      const s = getComputedStyle(node);
+      return outer - parseFloat(s.borderLeftWidth) - parseFloat(s.borderRightWidth)
+        - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight);
+    };
+    const wrapWidths = content && field.tagName === 'TEXTAREA'
+      ? {
+          field: field.clientWidth - parseFloat(getComputedStyle(field).paddingLeft) - parseFloat(getComputedStyle(field).paddingRight),
+          mirror: textWidth(content, content.getBoundingClientRect().width),
+          scrollbar: field.offsetWidth - field.clientWidth
+            - parseFloat(getComputedStyle(field).borderLeftWidth) - parseFloat(getComputedStyle(field).borderRightWidth),
+        }
+      : null;
+
     return {
       marks,
       styleDrift,
@@ -177,6 +192,7 @@ const probe = ([id, props]) => {
       overlayRect: overlayRect
         ? { x: overlayRect.x, y: overlayRect.y, w: overlayRect.width, h: overlayRect.height }
         : null,
+      wrapWidths,
       fieldText: field.value ?? field.innerText,
       hasStrong: !!document.querySelector('#rich strong'),
     };
@@ -200,6 +216,9 @@ async function run() {
   const browser = await chromium.launch({
     headless: !process.argv.includes('--headed'),
     ...(executablePath ? { executablePath } : {}),
+    // Playwright hides scrollbars when headless, and a scrollbar is what the
+    // `scrolled` field is about: it narrows the text the mirror has to match.
+    ignoreDefaultArgs: ['--hide-scrollbars'],
   });
   // Clipboard access so one case can paste for real. A synthetic ClipboardEvent
   // is not enough: Lexical ignores an untrusted one, and a test that cannot
@@ -213,7 +232,7 @@ async function run() {
   });
   page.on('pageerror', (error) => console.log(`    [page exception] ${error.message}`));
 
-  for (const field of ['plain', 'odd', 'single', 'chat', 'rich']) {
+  for (const field of ['plain', 'odd', 'scrolled', 'single', 'chat', 'rich']) {
     console.log(`\n${field}:`);
     await page.goto(`${BASE}?field=${field}`, { waitUntil: 'load' });
     await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
@@ -242,10 +261,21 @@ async function run() {
       check('overlay box aligns with field', !!aligned,
         r ? `overlay ${r.x},${r.y} ${r.w}x${r.h} vs field ${f.x},${f.y} ${f.w}x${f.h}` : 'no overlay');
 
+      // A field scrolled to the caret has lines above its box; the overlay
+      // clips their marks, so only the sideways bound applies to it.
       const inside = before.marks.every((m) =>
         m.rect.x >= f.x - 2 && m.rect.x + m.rect.w <= f.x + f.w + 2 &&
-        m.rect.y >= f.y - 2 && m.rect.y + m.rect.h <= f.y + f.h + 2);
+        (field === 'scrolled' || (m.rect.y >= f.y - 2 && m.rect.y + m.rect.h <= f.y + f.h + 2)));
       check('every underline sits inside the field', inside);
+
+      const w = before.wrapWidths;
+      if (w) {
+        check('the mirror wraps at the width the field wraps at', Math.abs(w.field - w.mirror) < 1,
+          `field ${w.field.toFixed(1)} vs mirror ${w.mirror.toFixed(1)} (scrollbar ${w.scrollbar}px)`);
+      }
+      if (field === 'scrolled') {
+        check('this field really has a scrollbar, or the check above proves nothing', (w?.scrollbar ?? 0) > 0, `${w?.scrollbar}px`);
+      }
     }
 
     check('badge shown near field', !!before.badge, before.badge

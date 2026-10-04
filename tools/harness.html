@@ -22,6 +22,10 @@
         margin-bottom: 22px;
       }
       textarea { height: 96px; resize: none; }
+      /* A classic scrollbar that takes width, as on Windows and on any site that
+         styles one; headless Chromium otherwise draws an overlay one that takes none. */
+      #scrolled::-webkit-scrollbar { width: 16px; }
+      #scrolled::-webkit-scrollbar-thumb { background: #bbb; }
       .rich { min-height: 70px; }
       /* A deliberately awkward field: different font and letter-spacing, to
          prove the mirror overlay copies typography rather than assuming it. */
@@ -53,6 +57,16 @@ Their is alot of things to do this week. We should of started the projet earlier
     <h2>textarea — serif, letter-spaced, tall line-height</h2>
     <textarea id="odd" class="odd">
 The quarterly report show that revenue have increased. Their is more work to do.</textarea
+    >
+
+    <!--
+      Long enough to scroll, so the textarea draws a vertical scrollbar and its
+      text is narrower than its box. The mirror once wrapped at the full box
+      width, and underlines drifted words away from their errors.
+    -->
+    <h2>textarea — long enough to scroll</h2>
+    <textarea id="scrolled">
+The plan for the next quarter is in the shared folder, with the budget and the people on each part of it. Please read it before the meating on thursday, because we will not have time to go through all of it there. Their is a section on hiring that needs alot of input from every team lead. The projet timeline is at the end, and I dont think it is final yet. Send me your comments by Wednesday so I can put them together. After that we will meet again to agree on the final version, and then it goes to the whole company for a last round of feedback before it is signed off.</textarea
     >
 
     <h2>single-line input</h2>
