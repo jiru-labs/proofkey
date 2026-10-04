@@ -1309,7 +1309,18 @@ quantisation.
   again, and the worker left the text alone with "came back in a different
   language" — two requests. `pls snd me teh fil b4 frday thx` and `ur rite i shud
   of tole u erlier sory` were corrected in English on one request each. One run
-  each; the worker's reply was read, not the card a page shows for it.
+  each; the worker's reply was read here, and `npm run test:render` checks that
+  this refusal reaches the page as an error card and leaves the field as it was.
+- **The retry note's English example does not matter here**, measured the same day
+  on the same model. The note says "If the text is in English, the reply is in
+  English"; a neutral note without that sentence was tried on the two texts out of
+  nine Spanish and Catalan shorthand lines that left their language 3 times in 3
+  (`ola k ase…` into Portuguese, `ns si podre anar, ja et dic algo` into Spanish),
+  10 retries each: shipped 0/10 and 2/10, neutral 1/10 and 2/10. Neither wording
+  brings these back, and the Catalan "recoveries" are Spanish replies too close to
+  Catalan for the check to see. **Not changed**: on this model the refusal, not the
+  retry, is what protects the text. The English case the note was written for does
+  not reproduce on ct/108.
 - **Live check on single broken lines** changed **50 of 60** with the current prompt
   and 0 of 7 clean lines (no false alarms). Two edits to the prompt scored 51 and
   52 of 60, both together 55 — but the example added was a sentence that is also in

@@ -1022,6 +1022,20 @@ async function run() {
     await page.waitForTimeout(8000);
     check('but still goes on its own once there was time to read it', !(await shown()));
 
+    // The language guard's refusal: the reply was another language, so the
+    // author's text must stay exactly as it was and the reason must be on screen.
+    const DRIFT = 'Fix grammar came back in a different language from your text, so ProofKey left your text as it was. Try again, or use a provider with a key.';
+    {
+      await page.goto(`${BASE}?field=plain`, { waitUntil: 'load' });
+      await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+      const before = await page.inputValue('#plain');
+      await failWith(DRIFT);
+      const text = await page.evaluate(() =>
+        document.getElementById('proofkey-root')?.shadowRoot?.querySelector('.pk-toast--error')?.textContent ?? '');
+      check('a reply in another language is reported on the page', text.includes('different language'), JSON.stringify(text.slice(0, 60)));
+      check('and the field keeps the author\'s text', (await page.inputValue('#plain')) === before);
+    }
+
     check('a short error is shown', await failWith('Nothing to work on.'));
     await page.waitForTimeout(5000);
     check('and still goes on its own', !(await shown()));
