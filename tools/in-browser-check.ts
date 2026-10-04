@@ -22,6 +22,8 @@ import {
   IN_BROWSER_MODEL_LIB,
   IN_BROWSER_MODEL_LIB_SHA256,
   IN_BROWSER_MODEL_URL,
+  interruptedDownload,
+  isNetworkError,
   stripThinking,
 } from '../src/core/providers/inBrowserModel.ts';
 
@@ -30,6 +32,17 @@ function check(name: string, ok: boolean, detail = ''): void {
   if (!ok) failures++;
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`);
 }
+
+console.log('a download cut by the network:');
+// The exact error the user's Brave showed at 71% of the download, 2026-10-04.
+check('the Cache API network error is a network error', isNetworkError(new TypeError("Failed to execute 'add' on 'Cache': Cache.add() encountered a network error")));
+check('so is a failed fetch', isNetworkError(new TypeError('Failed to fetch')));
+check('a bad file is not', !isNetworkError(new Error('Integrity check failed for model-00001.bin')));
+check('nor is a missing GPU', !isNetworkError(new Error('WebGPU found no usable GPU (it may be blocklisted or switched off).')));
+check(
+  'the card says the part already downloaded is kept, and how to carry on',
+  /network error/.test(interruptedDownload('x')) && /Download model/.test(interruptedDownload('x')) && /kept/.test(interruptedDownload('x')),
+);
 
 console.log('what reaches the field:');
 // The exact shape Qwen3.5 returned on every request in Brave (2026-09-26).

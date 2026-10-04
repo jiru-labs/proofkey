@@ -26,6 +26,11 @@ export type ContentRequest =
   | { type: 'proofkey:frame-offer'; origin: string }
   /** The user clicked Allow on that offer. Must be sent from the click itself. */
   | { type: 'proofkey:frame-grant'; origin: string }
+  /**
+   * Typing resumed while a live check was running. The in-browser model drops
+   * that check so the GPU is free for the page; it runs again at the next pause.
+   */
+  | { type: 'proofkey:typing' }
   /** Options page: the in-browser model's state, its one download, or removing it. */
   | { type: 'proofkey:in-browser'; op: 'status' | 'download' | 'delete' | 'test' };
 
@@ -42,6 +47,9 @@ export type WorkerRequest =
   | { type: 'proofkey:toggle-live'; injected: boolean };
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
+
+/** The error a live check answers with when typing interrupted it: not a failure, a retry. */
+export const CHECK_INTERRUPTED = 'Interrupted: typing resumed.';
 
 export interface CheckResult {
   /** One corrected sentence per input, in the same order. */

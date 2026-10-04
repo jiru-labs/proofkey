@@ -84,6 +84,24 @@ export const ACTIONS_ON_IN_BROWSER_MODEL: ReadonlySet<string> = new Set([
 /** How long the model stays in GPU memory after its last request. */
 export const IN_BROWSER_IDLE_MS = 5 * 60_000;
 
+/** Waits before each new try when the download hits a network error; one entry per retry. */
+export const IN_BROWSER_NETWORK_RETRIES: readonly number[] = [2_000, 10_000, 30_000];
+
+/**
+ * A fetch that failed on the network, as against a bad file or no GPU. The
+ * browser words it differently by API — "Failed to fetch", "NetworkError",
+ * and from the Cache API "Cache.add() encountered a network error".
+ */
+export function isNetworkError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /network ?error|failed to fetch|load failed|ERR_(INTERNET|NETWORK|CONNECTION)/i.test(message);
+}
+
+/** What the card says when the download stopped on the network after every retry. */
+export function interruptedDownload(detail: string): string {
+  return `The download was interrupted by a network error. Click "Download model" to carry on: the part already downloaded is kept. (${detail})`;
+}
+
 /**
  * Qwen3.5 in WebLLM 0.2.85 opens every reply with an empty `<think></think>`
  * even with thinking off (measured on the RX 6600). It is not text the user
@@ -106,13 +124,19 @@ export type OffscreenRequest =
   | { target: 'proofkey-offscreen'; op: 'status' }
   | { target: 'proofkey-offscreen'; op: 'download' }
   | { target: 'proofkey-offscreen'; op: 'delete' }
+  /** Stops the reply being generated, if it is an interruptible one. */
+  | { target: 'proofkey-offscreen'; op: 'interrupt' }
   | {
       target: 'proofkey-offscreen';
       op: 'complete';
       systemPrompt: string;
       userText: string;
       maxTokens: number;
+      interruptible?: boolean;
     };
+
+/** What the offscreen document answers when a reply was stopped by `interrupt`. */
+export const IN_BROWSER_INTERRUPTED = 'The in-browser model stopped: typing resumed.';
 
 export function describeInBrowserState(state: InBrowserState): string {
   switch (state.kind) {

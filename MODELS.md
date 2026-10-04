@@ -1330,6 +1330,30 @@ quantisation.
   at a time, `tis is a test…` and three others came back unchanged; sent together as
   one request, all but one English line were corrected.
 
+#### Typing while it checks
+
+Reported by the user: with the in-browser model, live checking made typing stutter.
+Measured 2026-10-04 in Brave 1.96.61 (Chromium 154) on Windows 11, RX 6600, on a
+local test page (a textarea, no network) that records the Event Timing duration of
+each keystroke — input delay plus processing plus the next paint — while text was
+typed in bursts with live checking on:
+
+| What was running while typing | Keystrokes over 100 ms to paint |
+|---|---|
+| Nothing (GPU idle, live checking off) | 0 of 261 |
+| llama.cpp on the CPU, live checking on | 0 of 600 |
+| The in-browser model, 0.1.12 | **177 of 361** (91 over 200 ms, worst 264 ms) |
+| The in-browser model, interrupting the check on typing | 0 of 339; 0 of 340 |
+
+The page's own main thread was not the cause — keystroke processing stayed under
+16 ms — so the time went to presenting the frame: the model and the page's
+compositor share the GPU. On `main` (not in 0.1.12), a live check running on the in-browser model
+is stopped when typing resumes (WebLLM `interruptGenerate`) and sent again at the
+next pause; the actions the user asks for are never stopped. Checks still complete:
+the second burst above ended with all 12 errors in it underlined. Frames over 100 ms
+still happen while a check runs during a pause (32 in that run), when nobody is
+typing.
+
 ### Measuring quick actions
 
 `npm run eval` only ever sent the live-check prompt. Nothing measured whether a

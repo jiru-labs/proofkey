@@ -17,6 +17,7 @@ import type {
   SiteOffer,
   WorkerRequest,
 } from '../core/messages';
+import { CHECK_INTERRUPTED } from '../core/messages';
 import {
   BUILT_IN_ACTIONS,
   changedLanguage,
@@ -34,7 +35,7 @@ import {
 } from '../core/prompts';
 import { runCompletion, validateConnection } from '../core/providers';
 import type { WritingAction } from '../core/types';
-import { askOffscreen } from '../core/providers/inBrowser';
+import { askOffscreen, interruptLiveCheck } from '../core/providers/inBrowser';
 import { IN_BROWSER_MODEL } from '../core/providers/inBrowserModel';
 import {
   activeConnection,
@@ -324,6 +325,10 @@ async function handle(
     case 'proofkey:check':
       return check(message.sentences);
 
+    case 'proofkey:typing':
+      await interruptLiveCheck();
+      return { ok: true, value: null };
+
     case 'proofkey:explain':
       return explain(message.original, message.replacement);
 
@@ -548,6 +553,7 @@ async function check(sentences: string[]): Promise<Result<CheckResult>> {
     const result = await runCompletion(chain, {
       systemPrompt: composeCheckPrompt(settings.profile, sentences.length),
       userText: formatCheckPayload(sentences),
+      interruptible: true,
     });
 
     const parsed = parseCheckReply(result.text, sentences.length);
@@ -566,6 +572,7 @@ async function check(sentences: string[]): Promise<Result<CheckResult>> {
         const single = await runCompletion(chain, {
           systemPrompt: composeCheckPrompt(settings.profile, 1),
           userText: formatCheckPayload([sentence]),
+          interruptible: true,
         });
         const reply = parseCheckReply(single.text, 1)?.[0];
         return reply === undefined ? sentence : dropAddedFullStops([sentence], [reply])[0]!;
@@ -573,6 +580,7 @@ async function check(sentences: string[]): Promise<Result<CheckResult>> {
     );
     return { ok: true, value: { corrections: individually } };
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') return { ok: false, error: CHECK_INTERRUPTED };
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }

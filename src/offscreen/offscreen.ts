@@ -24,10 +24,14 @@
 import {
   IN_BROWSER_IDLE_MS,
   IN_BROWSER_INTEGRITY,
+  IN_BROWSER_INTERRUPTED,
   IN_BROWSER_MODEL,
   IN_BROWSER_MODEL_LIB,
   IN_BROWSER_MODEL_URL,
+  IN_BROWSER_NETWORK_RETRIES,
   IN_BROWSER_VRAM_MB,
+  interruptedDownload,
+  isNetworkError,
   stripThinking,
   type InBrowserState,
   type OffscreenRequest,
@@ -35,6 +39,7 @@ import {
 
 interface Engine {
   chat: { completions: { create(request: unknown): Promise<any> } };
+  interruptGenerate(): void;
   unload(): Promise<void>;
 }
 
@@ -91,6 +96,13 @@ let lastError: string | null = null;
 /** Set while the user's "Download model" is running, as against a load from the cache. */
 let downloading = false;
 let idle: ReturnType<typeof setTimeout> | undefined;
+/**
+ * The reply being generated, when a live check may drop it. Measured in the
+ * user's Brave on an RX 6600, 2026-10-04: while the model generated, half the
+ * keystrokes on the page took over 100 ms to paint (up to 264 ms), against none
+ * with the GPU idle — the model and the page's compositor share the GPU.
+ */
+let generating: { interruptible: boolean; interrupted: boolean } | null = null;
 
 function startEngine(): Promise<Engine> {
   loading ??= (async () => {
@@ -98,16 +110,28 @@ function startEngine(): Promise<Engine> {
     progress = { fraction: 0, text: 'Starting…' };
     lastError = null;
     try {
-      const created = await lib.CreateMLCEngine(IN_BROWSER_MODEL, {
-        appConfig: appConfig(),
-        initProgressCallback: (report) => {
-          progress = { fraction: report.progress, text: report.text };
-        },
-      });
-      engine = created;
-      return created;
+      // One dropped connection used to end a 2.4 GB download: seen in the
+      // user's Brave on Windows, 2026-10-04, at 71%, as "Failed to execute
+      // 'add' on 'Cache': Cache.add() encountered a network error". WebLLM
+      // keeps every file it finished, so trying again carries on from there.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const created = await lib.CreateMLCEngine(IN_BROWSER_MODEL, {
+            appConfig: appConfig(),
+            initProgressCallback: (report) => {
+              progress = { fraction: report.progress, text: report.text };
+            },
+          });
+          engine = created;
+          return created;
+        } catch (error) {
+          if (!isNetworkError(error) || attempt >= IN_BROWSER_NETWORK_RETRIES.length) throw error;
+          await new Promise((resolve) => setTimeout(resolve, IN_BROWSER_NETWORK_RETRIES[attempt]));
+        }
+      }
     } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
+      const message = error instanceof Error ? error.message : String(error);
+      lastError = isNetworkError(error) ? interruptedDownload(message) : message;
       throw error;
     } finally {
       progress = null;
@@ -157,18 +181,38 @@ async function complete(request: Extract<OffscreenRequest, { op: 'complete' }>):
     await startEngine();
   }
   touch();
-  const reply = await engine!.chat.completions.create({
-    messages: [
-      { role: 'system', content: request.systemPrompt },
-      { role: 'user', content: request.userText },
-    ],
-    // Greedy, as measured: 13.0/14 on all 10 runs.
-    temperature: 0,
-    max_tokens: request.maxTokens,
-    extra_body: { enable_thinking: false },
-  });
+  const current = { interruptible: !!request.interruptible, interrupted: false };
+  generating = current;
+  let content = '';
+  let finish: string | null = null;
+  try {
+    // Streamed, though nothing reads it as it comes. WebLLM's non-streamed path
+    // tests the interrupt flag before it starts and never clears it, so an
+    // interrupt landing just after a reply finished made every later request
+    // come back empty (WebLLM 0.2.85, read in its source on 2026-10-04). The
+    // streamed path clears the flag at the start of each request.
+    const stream = await engine!.chat.completions.create({
+      messages: [
+        { role: 'system', content: request.systemPrompt },
+        { role: 'user', content: request.userText },
+      ],
+      // Greedy, as measured: 13.0/14 on all 10 runs.
+      temperature: 0,
+      max_tokens: request.maxTokens,
+      extra_body: { enable_thinking: false },
+      stream: true,
+    });
+    for await (const chunk of stream as AsyncIterable<any>) {
+      content += chunk?.choices?.[0]?.delta?.content ?? '';
+      finish = chunk?.choices?.[0]?.finish_reason ?? finish;
+    }
+  } finally {
+    if (generating === current) generating = null;
+  }
   touch();
-  const text = stripThinking(String(reply?.choices?.[0]?.message?.content ?? ''));
+  // A half-generated correction is not a correction; the check runs again.
+  if (current.interrupted || finish === 'abort') throw new Error(IN_BROWSER_INTERRUPTED);
+  const text = stripThinking(content);
   if (!text.trim()) throw new Error('The in-browser model returned an empty reply.');
   return text;
 }
@@ -199,6 +243,13 @@ async function handle(request: OffscreenRequest): Promise<unknown> {
     }
     case 'complete':
       return complete(request);
+    case 'interrupt':
+      // Only a live check: an action the user asked for is never dropped.
+      if (generating?.interruptible && engine) {
+        generating.interrupted = true;
+        engine.interruptGenerate();
+      }
+      return null;
   }
 }
 

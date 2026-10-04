@@ -153,28 +153,53 @@ async function buildTestExtension() {
 
   // No GPU here, so no model can run. The offscreen document uses this stand-in
   // when its package carries one; a released build never does. It downloads in
-  // four steps, answers with the empty think block Qwen3.5 really opens with,
-  // and on "__params__" reports the request it was given.
+  // four steps and loses the network once, keeping what it had; it answers with
+  // the empty think block Qwen3.5 really opens with, and on "__params__" reports
+  // the request it was given.
   await writeFile(`${TEST_EXT}/offscreen/test-engine.js`, `
 let cached = false;
+let kept = 0;
+let cut = false;
 export async function hasModelInCache() { return cached; }
-export async function deleteModelAllInfoInCache() { cached = false; }
+export async function deleteModelAllInfoInCache() { cached = false; kept = 0; }
 export async function CreateMLCEngine(model, { initProgressCallback } = {}) {
   if (!cached) {
     for (const fraction of [0.25, 0.5, 0.75, 1]) {
+      if (fraction <= kept) continue;
       await new Promise((resolve) => setTimeout(resolve, 400));
+      // The first download loses its connection once, as the user's did at 71%.
+      if (fraction === 0.75 && !cut) {
+        cut = true;
+        throw new TypeError("Failed to execute 'add' on 'Cache': Cache.add() encountered a network error");
+      }
+      kept = fraction;
       initProgressCallback?.({ progress: fraction, text: 'stand-in ' + fraction });
     }
     cached = true;
   }
+  let stop = false;
   return {
     chat: { completions: { create: async (request) => {
       const user = request.messages[1].content;
-      const content = user === '__params__'
-        ? JSON.stringify({ model, temperature: request.temperature, thinking: request.extra_body?.enable_thinking, max: request.max_tokens })
+      stop = false;
+      // "__slow__" generates for 3 s unless interrupted, as WebLLM does.
+      let aborted = false;
+      if (user.includes('__slow__')) {
+        for (let i = 0; i < 30 && !stop; i++) await new Promise((resolve) => setTimeout(resolve, 100));
+        aborted = stop;
+      }
+      const content = aborted ? '' : user === '__params__'
+        ? JSON.stringify({ model, temperature: request.temperature, thinking: request.extra_body?.enable_thinking, max: request.max_tokens, stream: request.stream })
         : user.replace('todavia', 'todavía');
-      return { choices: [{ message: { content: '<think>\\n\\n</think>\\n\\n' + content } }] };
+      // Streamed in two pieces, as WebLLM sends a reply a few tokens at a time.
+      const text = aborted ? '' : '<think>\\n\\n</think>\\n\\n' + content;
+      const half = Math.floor(text.length / 2);
+      return (async function* () {
+        yield { choices: [{ delta: { content: text.slice(0, half) }, finish_reason: null }] };
+        yield { choices: [{ delta: { content: text.slice(half) }, finish_reason: aborted ? 'abort' : 'stop' }] };
+      })();
     } } },
+    interruptGenerate: () => { stop = true; },
     unload: async () => {},
   };
 }
@@ -528,7 +553,7 @@ async function run() {
         null,
         { timeout: 15000 },
       ).catch(() => {});
-      check('and ends ready', ((await card.textContent()) ?? '').startsWith('Ready.'), (await card.textContent()) ?? '');
+      check('and ends ready, carrying on after the connection dropped', ((await card.textContent()) ?? '').startsWith('Ready.'), (await card.textContent()) ?? '');
 
       // Seen in the user's Brave, 2026-09-30: Test answered "Access to that
       // endpoint was not granted." — it asked for host access the model has no
@@ -563,6 +588,34 @@ async function run() {
         'a rewrite it measured badly on is refused, naming this model',
         rewrite?.ok === false && /not offered on the in-browser model/.test(rewrite?.error ?? ''),
         rewrite?.error ?? JSON.stringify(rewrite),
+      );
+      // Typing over a live check: measured in the user's Brave, 2026-10-04, the
+      // model and the page's compositor share the GPU and keystrokes stuttered.
+      const stubBefore = seen.length;
+      const interrupted = await page.evaluate(async () => {
+        const checking = chrome.runtime.sendMessage({ type: 'proofkey:check', sentences: ['__slow__ sentence one.'] });
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        await chrome.runtime.sendMessage({ type: 'proofkey:typing' });
+        const started = performance.now();
+        const reply = await checking;
+        return { reply, ms: performance.now() - started };
+      });
+      check(
+        'typing over a live check stops it at once, as a retry and not an error',
+        interrupted.reply?.ok === false && interrupted.reply?.error === 'Interrupted: typing resumed.' && interrupted.ms < 1000,
+        JSON.stringify(interrupted),
+      );
+      check('and the text is not passed on to another provider', seen.length === stubBefore, `${seen.length - stubBefore} request(s)`);
+      const kept = await page.evaluate(async () => {
+        const running = chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: '__slow__ todavia' });
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        await chrome.runtime.sendMessage({ type: 'proofkey:typing' });
+        return running;
+      });
+      check(
+        'an action the user asked for is never interrupted',
+        kept?.ok === true && kept.value?.text === '__slow__ todavía',
+        JSON.stringify(kept),
       );
       const offered = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:get-state' }));
       check(
