@@ -86,7 +86,13 @@ let expandedConnectionId: string | null = null;
  * user touched anything else while 4 GB came down.
  */
 let builtinState: BuiltinAvailability | null = null;
-let builtinDownload: { fraction: number } | null = null;
+let builtinDownload: { fraction: number; movedAt: number } | null = null;
+let builtinDownloadPoll: ReturnType<typeof setInterval> | undefined;
+
+/** How often a running download asks Chrome whether the model is there yet. */
+const BUILTIN_POLL_MS = 5_000;
+/** How long without progress before the card says the download looks stuck. */
+const BUILTIN_STALL_MS = 120_000;
 let builtinDownloadError: string | null = null;
 /**
  * What the last "Find a model on this computer" click turned up. Kept outside the
@@ -763,21 +769,40 @@ function adoptLocalServer(probes: LocalServerProbe[]): { lines: string[]; kind: 
 function startBuiltinDownload(): void {
   // Called before any await: Chrome only starts the download from a click.
   const running = downloadBuiltinModel((fraction) => {
-    if (builtinDownload) builtinDownload.fraction = fraction;
+    if (builtinDownload) {
+      if (fraction !== builtinDownload.fraction) builtinDownload.movedAt = Date.now();
+      builtinDownload.fraction = fraction;
+    }
     paintBuiltinProgress();
   });
-  builtinDownload = { fraction: 0 };
+  builtinDownload = { fraction: 0, movedAt: Date.now() };
   builtinDownloadError = null;
   render();
+  // Chrome's progress events can stop while the download goes on (or after it
+  // has finished), so the card also asks Chrome directly.
+  clearInterval(builtinDownloadPoll);
+  builtinDownloadPoll = setInterval(() => {
+    void builtinAvailability().then((state) => {
+      if (!builtinDownload) return;
+      if (state === 'available') {
+        finishBuiltinDownload();
+        builtinState = state;
+        render();
+      } else {
+        paintBuiltinProgress();
+      }
+    });
+  }, BUILTIN_POLL_MS);
   running.then(
     async () => {
-      builtinDownload = null;
+      if (!builtinDownload) return;
+      finishBuiltinDownload();
       builtinState = await builtinAvailability();
       render();
     },
     (error: unknown) => {
-      builtinDownload = null;
-      builtinDownloadError = error instanceof Error ? error.message : String(error);
+      if (!builtinDownload) return;
+      finishBuiltinDownload(error);
       render();
     },
   );
@@ -792,7 +817,21 @@ function paintBuiltinProgress(): void {
     bar.hidden = false;
     bar.value = builtinDownload.fraction;
   }
-  if (text) text.textContent = `Downloading… ${Math.round(builtinDownload.fraction * 100)}%`;
+  if (!text) return;
+  const percent = `Downloading… ${Math.round(builtinDownload.fraction * 100)}%`;
+  // Seen in Chrome 154 on Windows, 2026-10-05: progress stopped at 3% and never
+  // moved; after Chrome was restarted the model was there.
+  text.textContent =
+    Date.now() - builtinDownload.movedAt > BUILTIN_STALL_MS
+      ? `${percent} — no progress for 2 minutes. If it stays like this, restart Chrome: the download carries on, and this card shows the model ready once it is.`
+      : percent;
+}
+
+/** Ends the download state, whichever way it ended. */
+function finishBuiltinDownload(error: unknown = null): void {
+  clearInterval(builtinDownloadPoll);
+  builtinDownload = null;
+  builtinDownloadError = error === null ? null : error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -837,7 +876,10 @@ function renderBuiltinBody(
         ? 'Checking this browser…'
         : current === 'available'
           ? 'Ready. The model is on this computer, and ProofKey sends nothing you check anywhere.'
-          : (builtinProblem(current) ?? '');
+          : current === 'downloadable'
+            // builtinProblem's wording is for a page elsewhere; this is the settings page.
+            ? 'Not downloaded yet. Click "Download model" — Chrome fetches it once, then it runs on this computer.'
+            : (builtinProblem(current) ?? '');
   };
   paint();
 

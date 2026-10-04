@@ -691,6 +691,43 @@ async function run() {
       await downloadPage.locator('[data-builtin-state]').textContent(),
     );
     await downloadPage.close();
+
+    // Seen in Chrome 154 on Windows, 2026-10-05: progress stopped at 3% and the
+    // card sat there; Chrome had the model once restarted. Here the progress
+    // events stop and `create` never settles, but Chrome comes to report the
+    // model available — the card has to notice that on its own.
+    const stalledPage = await context.newPage();
+    await stalledPage.addInitScript(() => {
+      let ready = false;
+      setTimeout(() => (ready = true), 2500);
+      globalThis.LanguageModel = {
+        availability: async () => (ready ? 'available' : 'downloadable'),
+        create: (options) => {
+          const monitor = new EventTarget();
+          options?.monitor?.(monitor);
+          const event = new Event('downloadprogress');
+          event.loaded = 0.03;
+          setTimeout(() => monitor.dispatchEvent(event), 300);
+          return new Promise(() => {});
+        },
+      };
+    });
+    await stalledPage.goto(`chrome-extension://${extensionId}/options/index.html`);
+    await stalledPage.waitForTimeout(600);
+    await stalledPage.getByRole('button', { name: 'Download model' }).click();
+    await stalledPage.waitForTimeout(800);
+    check(
+      'a download whose progress stops shows where it stopped',
+      (await stalledPage.locator('[data-builtin-state]').textContent())?.startsWith('Downloading… 3%'),
+      await stalledPage.locator('[data-builtin-state]').textContent(),
+    );
+    await stalledPage.waitForTimeout(7000);
+    check(
+      'and turns ready once Chrome reports the model, with no progress event to say so',
+      (await stalledPage.locator('[data-builtin-state]').textContent())?.startsWith('Ready.'),
+      await stalledPage.locator('[data-builtin-state]').textContent(),
+    );
+    await stalledPage.close();
   }
 
   // Translate is the first action whose prompt carries a token that has to be
