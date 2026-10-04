@@ -369,6 +369,42 @@ check(
   'a Spanish accent fix is not',
   !changedLanguage('Necesito el feedback antes de que termine el dia.', 'Necesito el feedback antes de que termine el día.'),
 );
+
+// Chat shorthand, corrected in its own language: real Qwen3-4B Fix grammar
+// replies (llama.cpp, 2026-10-04). Counting only words kept letter for letter
+// called every one of these "another language" on every run, and would have left
+// the most broken WhatsApp messages uncorrected behind an error.
+check(
+  'shorthand spelled out is not',
+  !changedLanguage('pls snd me teh fil b4 frday thx', 'Please send me the file before Friday. Thanks.'),
+);
+check(
+  'phonetic spelling corrected is not',
+  !changedLanguage('ur rite i shud of tole u erlier sory', "You're right, I should have told you earlier, sorry."),
+);
+check(
+  'dropped letters put back are not',
+  !changedLanguage('i dont no wen hes comin bak but ill tel him u cald', "I don't know when he's coming back, but I'll tell him you called."),
+);
+check(
+  'French shorthand corrected in French is not',
+  !changedLanguage('cest pa grav on se voi demin', "C'est pas grave on se voit demain."),
+);
+check(
+  'Spanish shorthand answered in Portuguese is caught',
+  changedLanguage('ola k ase, aver si qedamos el finde xfa', 'Olá, já passou o fim de semana?'),
+);
+check(
+  'English shorthand answered in French is still caught',
+  changedLanguage(
+    'wat r u doin tmrw? i thot we cud go 2 the moovies',
+    'Qu’est-ce que tu fais demain ? Je pensais que nous pourrions aller au cinéma ?',
+  ),
+);
+check(
+  'a cognate or two do not hide a translation',
+  changedLanguage('nesesito q me enbies el documento antes del bierne', 'I need you to send me the document before the meeting'),
+);
 check('one or two words are never judged', !changedLanguage('teh', 'The') && !changedLanguage('hola mundo', 'Hello world'));
 check('an empty original is not judged', !changedLanguage('', 'Anything'));
 check('the share is a fraction of the original\'s words', Math.abs(keptWordShare('a b c d', 'a b x y') - 0.5) < 1e-9);

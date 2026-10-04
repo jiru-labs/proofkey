@@ -1279,8 +1279,37 @@ quantisation.
   another language; the request is asked once more with the rule restated at the
   end, and if it still leaves the language the text is left as it was and the
   user is told. Checked against a stub in `npm run test:ext` and in
-  `tools/prompts-check.ts`; never seen firing on a real model's reply, because the
-  real failure does not reproduce on this stand-in.
+  `tools/prompts-check.ts`. The real failure does not reproduce on this stand-in;
+  the whole path was first seen on a real model on 2026-10-04 (below).
+- **The guard as first written would have refused chat shorthand** (2026-10-04,
+  before any release carried it). It counted only words kept letter for letter, and
+  proofreading `pls snd me teh fil b4 frday thx` changes nearly all of them. On
+  `Qwen3-4B-Instruct-2507` Q4_K_M under llama.cpp b11120 (CPU, the server's default
+  sampling, the real composed Fix grammar prompt), 15 broken texts in English,
+  Spanish, French and German, 3 runs each: it fired on **15 of 45** replies, and 12
+  of those were correct corrections in the text's own language (four texts, every
+  run). The other 3 were a real change of language — Spanish shorthand answered in
+  Portuguese — so the check itself has now fired on a real model's reply.
+  It now counts a word as kept when the reply has it with the author's dropped
+  letters put back (same first letter, at most 2.5 times as long) or within one
+  edit in three letters; words of one or two letters still count only exactly.
+  Scored on the same stored replies: **3 of 45** (the Portuguese ones only), and
+  **0 of 16** on eight shorthand texts written after the change (4 of 16 before).
+  Against 44 real translations of those texts by the same model (Translate, to
+  French, Spanish, German, Portuguese, Italian, English and Dutch), it fires on
+  **38** where the old count fired on 39: English into French 7/7, as before. The
+  lost one is a half translation that kept `k ase` from the original; the ones
+  that pass either way are Spanish into Portuguese or Italian, where shared words
+  were already enough to pass — the check catches a different language, not a
+  close one. One model, one machine; the replies are not in the repo.
+  **End to end**, the same day: `dist/` loaded in Brave Origin 153 under `xvfb-run`,
+  one OpenAI-compatible connection to that llama.cpp server through a proxy that
+  counted requests. `ola k ase, aver si qedamos el finde xfa` came back in
+  Portuguese, was asked again with the rule at the end, came back in Portuguese
+  again, and the worker left the text alone with "came back in a different
+  language" — two requests. `pls snd me teh fil b4 frday thx` and `ur rite i shud
+  of tole u erlier sory` were corrected in English on one request each. One run
+  each; the worker's reply was read, not the card a page shows for it.
 - **Live check on single broken lines** changed **50 of 60** with the current prompt
   and 0 of 7 clean lines (no false alarms). Two edits to the prompt scored 51 and
   52 of 60, both together 55 — but the example added was a sentence that is also in

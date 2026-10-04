@@ -495,18 +495,78 @@ export const SAME_LANGUAGE_RETRY_NOTE =
 /** Below this share of the original's words kept, a proofread reply is taken to be in another language. */
 export const SAME_LANGUAGE_MIN_SHARE = 0.3;
 
-/** Words as letters and apostrophes, lower-cased; digits and punctuation do not count. */
-const wordsOf = (text: string): string[] => text.toLowerCase().match(/[\p{L}']+/gu) ?? [];
+/**
+ * Words as letters and apostrophes, lower-cased, accents dropped; digits and
+ * punctuation do not count. A typographic apostrophe is the same apostrophe:
+ * "C’est" is one word, as "C'est" is.
+ */
+const wordsOf = (text: string): string[] =>
+  text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[‘’ʼ]/g, "'")
+    .match(/[\p{L}']+/gu) ?? [];
+
+/** Edit distance between two words, given up once it is past `limit`. */
+function withinEdits(a: string, b: string, limit: number): boolean {
+  if (Math.abs(a.length - b.length) > limit) return false;
+  let previous = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      current[j] = Math.min(previous[j]! + 1, current[j - 1]! + 1, previous[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
+      best = Math.min(best, current[j]!);
+    }
+    if (best > limit) return false;
+    previous = current;
+  }
+  return previous[b.length]! <= limit;
+}
+
+/** True when `short` can be had from `long` by dropping letters: "pls" from "please". */
+function isAbbreviationOf(short: string, long: string): boolean {
+  let at = 0;
+  for (const letter of long) if (letter === short[at]) at++;
+  return at === short.length;
+}
 
 /**
- * The share of the original's words that are still in the rewrite. A proofread
- * text keeps most of them; a translation keeps almost none.
+ * Whether `word` from the original is still there in the rewrite, spelled
+ * right. Proofreading chat shorthand changes nearly every word ("pls snd me teh
+ * fil" → "Please send me the file"), so a word counts as kept when the rewrite
+ * has it exactly, has it with the letters the author dropped put back — same
+ * first letter, at most 2.5 times as long — or has it within one edit in three
+ * letters. Words of one or two letters only count exactly: anything near "a" or
+ * "u" is in every language.
+ */
+function keptIn(word: string, after: readonly string[], exact: ReadonlySet<string>): boolean {
+  if (exact.has(word)) return true;
+  if (word.length < 3) return false;
+  const limit = Math.floor(word.length / 3);
+  return after.some(
+    (candidate) =>
+      candidate.length >= 3 &&
+      ((candidate[0] === word[0] && candidate.length <= word.length * 2.5 && isAbbreviationOf(word, candidate)) ||
+        withinEdits(word, candidate, Math.max(limit, Math.floor(candidate.length / 3)))),
+  );
+}
+
+/**
+ * The share of the original's words that are still in the rewrite, allowing for
+ * the spelling a proofread fixes. A proofread text keeps most of them; a
+ * translation keeps almost none.
  */
 export function keptWordShare(original: string, rewrite: string): number {
   const before = wordsOf(original);
   if (before.length === 0) return 1;
-  const after = new Set(wordsOf(rewrite));
-  return before.filter((word) => after.has(word)).length / before.length;
+  const exact = new Set(wordsOf(rewrite));
+  const after = [...exact];
+  // Judged once per distinct word: a long text repeats most of its words.
+  const kept = new Map<string, boolean>();
+  for (const word of before) if (!kept.has(word)) kept.set(word, keptIn(word, after, exact));
+  return before.filter((word) => kept.get(word)).length / before.length;
 }
 
 /**
