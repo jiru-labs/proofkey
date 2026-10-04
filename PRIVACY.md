@@ -55,9 +55,13 @@ Stored using the browser's own extension storage, on your device:
 - if you downloaded the in-browser model, its files, in the browser's storage
   for the extension. **Remove the downloaded model** in settings deletes them.
 
-If you have Chrome Sync switched on, Chrome may sync some of this between your
-own signed-in browsers. That is Chrome's mechanism and Chrome's policy; ProofKey
-neither operates nor can read that channel.
+All of the settings above — **your API keys included** — are kept in
+`chrome.storage.sync` (`src/core/storage.ts`). If you are signed in to the
+browser with Chrome Sync switched on for extensions, the browser copies them
+through your Google account's sync servers to your other signed-in browsers.
+That is the browser's mechanism and its provider's policy; ProofKey neither
+operates nor can read that channel. With Sync off, or not signed in, they stay
+on this computer. The downloaded in-browser model never syncs.
 
 Nothing is stored anywhere else. Uninstalling the extension removes it.
 
