@@ -81,6 +81,37 @@ Nothing is stored anywhere else. Uninstalling the extension removes it.
 - No reading of pages you have not enabled it on.
 - No collection of browsing history, credentials, or form data.
 
+## Threat model
+
+What ProofKey protects you from, and what it does not, in the terms
+[Privacy Guides uses for common threats](https://www.privacyguides.org/en/basics/common-threats/).
+
+**It protects against:**
+
+- **Surveillance as a business model**, on the part of the tool itself. Jiru Labs
+  runs no server for ProofKey: no text, key, setting or usage count reaches us,
+  because there is nowhere for it to go. The code is MIT licensed, so this can
+  be checked rather than taken on trust.
+- **Privacy from service providers**, as far as you choose it. With Chrome's
+  built-in model or the in-browser model, ProofKey sends your text nowhere: the
+  check runs on your computer. With a llama.cpp server you host, it goes only to
+  that server. Nothing in between is ours.
+- **Pages reading more than you meant.** No site access is granted at install.
+  ProofKey reads a page only where you switched it on, one site at a time.
+
+**It does not protect against:**
+
+- **The provider you pick.** With an API key, the text you check goes to that
+  provider, under its own privacy policy, tied to your account and billing.
+- **Your browser's own sync.** Settings, API keys included, travel through your
+  Google account's sync servers if Chrome Sync is on for extensions (see above).
+- **The browser and the page.** Chrome's built-in model is Chrome's code; the
+  site you type into already sees what you type there; another extension, or
+  malware on the device, can read the same fields ProofKey does.
+- **Being identified.** ProofKey is not an anonymity tool. A provider knows who
+  holds the key, and the one model download from Hugging Face is seen by Hugging
+  Face like any visit.
+
 ## Permissions, and why each exists
 
 | Permission | Why |
