@@ -9,6 +9,7 @@ import {
 import { createFrameWatcher } from './frames';
 import { createShortcuts } from './keys';
 import { createLive, type LiveController } from './live';
+import { noteApplied } from './review';
 import { applyToTarget, readTarget, targetIsCurrent, type EditTarget } from './target';
 import { toast } from './toast';
 import css from './ui.css?inline';
@@ -269,6 +270,9 @@ async function invoke(actionId: string): Promise<void> {
     }
 
     const fallback = result.value.fallbackErrors[0];
+    // Counted either way; asked only over a clean result, never over news that
+    // a connection failed.
+    if (await noteApplied(ui(), !fallback)) return;
     toast(ui(), {
       kind: 'ok',
       text: fallback

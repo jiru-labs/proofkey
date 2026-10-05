@@ -149,6 +149,10 @@ async function buildTestExtension() {
   const manifestPath = `${TEST_EXT}/manifest.json`;
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   manifest.host_permissions = [`http://localhost:${PORT}/*`, `http://localhost:${ALT_PORT}/*`];
+  // What a Chrome Web Store install's manifest carries (read off store installs
+  // in Brave, 2026-10-05). Without it the worker knows no store and never asks
+  // for a rating, which is right for an unpacked build and untestable here.
+  manifest.update_url = 'https://clients2.google.com/service/update2/crx';
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
 
   // No GPU here, so no model can run. The offscreen document uses this stand-in
@@ -1373,6 +1377,53 @@ async function run() {
 
   const datalistOptions = await page.locator('datalist option').count();
   check('datalist still populated for type-to-filter', datalistOptions === 4, `${datalistOptions}`);
+
+  // --------------------------------------------------------- rating question
+  // The worker's half, with real storage. The question is put once; the count
+  // behind it stays in storage.local, which never syncs; and the page it opens
+  // is chosen by the worker from its own manifest.
+  console.log('\nrating question:');
+  {
+    const DAY = 24 * 60 * 60 * 1000;
+    const seed = (applied) => page.evaluate(
+      (state) => chrome.storage.local.set({ 'proofkey:review': state }),
+      { applied, firstAppliedAt: Date.now() - 3 * DAY, asked: false },
+    );
+    const applied = () => page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:applied' }));
+
+    await seed(8);
+    const answers = [await applied(), await applied(), await applied()];
+    check('asked on the tenth apply and on no other',
+      JSON.stringify(answers.map((answer) => answer.ok && answer.value.askReview)) === '[false,true,false]',
+      JSON.stringify(answers));
+    const stored = (await page.evaluate(() => chrome.storage.local.get('proofkey:review')))['proofkey:review'];
+    check('the count is kept in storage.local, and remembers it asked',
+      stored?.applied === 11 && stored?.asked === true, JSON.stringify(stored));
+    const synced = JSON.stringify(await page.evaluate(() => chrome.storage.sync.get(null)));
+    check('nothing about it is in storage.sync', !/review|firstAppliedAt/.test(synced));
+
+    // Two tabs applying at the same moment each read the count; unserialised,
+    // both were at nine and both were told to ask.
+    await seed(9);
+    const burst = await page.evaluate(() =>
+      Promise.all(Array.from({ length: 5 }, () => chrome.runtime.sendMessage({ type: 'proofkey:applied' }))));
+    check('five applies at once are asked once between them',
+      burst.filter((answer) => answer.ok && answer.value.askReview).length === 1, JSON.stringify(burst));
+
+    // The browser does not let Playwright stub the Web Store (seen 2026-10-05:
+    // the tab went to Google's consent page), so the worker's tabs.create is
+    // replaced instead and the test opens nothing at all.
+    await worker.evaluate(() => {
+      globalThis.__pkOpened = [];
+      chrome.tabs.create = async (options) => { globalThis.__pkOpened.push(options.url); return {}; };
+    });
+    const opened = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:open-review' }));
+    const urls = await worker.evaluate(() => globalThis.__pkOpened);
+    const expected = `https://chromewebstore.google.com/detail/${extensionId}/reviews`;
+    check('Rate ProofKey opens this extension\'s reviews page in the store, and nothing else',
+      opened.ok && urls.length === 1 && urls[0] === expected, JSON.stringify(urls));
+    await page.evaluate(() => chrome.storage.local.remove('proofkey:review'));
+  }
 
   // --------------------------------------------------------- unbound command
   // In this fresh profile Chrome does assign Ctrl+Shift+K, so the lost-shortcut

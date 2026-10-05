@@ -4,6 +4,7 @@ import { segment, sentenceAt, sentenceKey } from '../core/sentences';
 import type { Suggestion } from '../core/types';
 import { createCard, type SuggestionCard } from './card';
 import { createHighlighter, type FieldRef, type Highlighter } from './highlight';
+import { noteApplied } from './review';
 import { applyToTarget, flatten, offsetOfPoint } from './target';
 
 /**
@@ -448,6 +449,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
       rebuild();
       return;
     }
+    void noteApplied(shadow);
 
     // Applying is deliberately not recorded as a dismissal. `dismissed` is keyed
     // by sentence content and the cache never forgets, so marking the applied

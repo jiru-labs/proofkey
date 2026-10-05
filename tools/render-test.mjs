@@ -374,6 +374,8 @@ async function run() {
 
     check('every suggestion could be applied in turn', rounds === started,
       `${started} found, ${rounds} applied, ${state.marks.length} left${stopped ? `; ${stopped}` : ''}`);
+    const counted = await page.evaluate(() => window.__pkSent.filter((type) => type === 'proofkey:applied').length);
+    check('each one applied is counted for the rating question', counted === rounds, `${counted} counted, ${rounds} applied`);
     check('text matches a single-pass correction',
       state.fieldText.trim() === expected.trim(),
       `got ${JSON.stringify(state.fieldText.trim())}`);
@@ -1143,6 +1145,44 @@ async function run() {
     check('and so does the dismiss button', inside(close));
 
     await page.evaluate(() => { window.__pkFrameNeeded = false; });
+  }
+
+  // The one rating question. The worker decides when (tools/review-check.ts);
+  // this is the content script's half: the plain "Applied" until told otherwise,
+  // the question in its place the one time it is, and a button that asks the
+  // worker to open the page rather than opening anything itself.
+  {
+    console.log('\nthe rating question:');
+    const toasts = () => page.evaluate(() =>
+      [...(document.getElementById('proofkey-root')?.shadowRoot?.querySelectorAll('.pk-toast') ?? [])].map((t) => t.textContent));
+    const rewrite = async (ask) => {
+      await page.goto(`${BASE}?field=plain`, { waitUntil: 'load' });
+      await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      await page.evaluate((value) => { window.__pkAskReview = value; }, ask);
+      await page.focus('#plain');
+      await page.evaluate(() => window.__pkInvoke('fix-grammar'));
+      await page.waitForTimeout(700);
+    };
+
+    await rewrite(false);
+    const plain = await toasts();
+    check('a rewrite is counted', await page.evaluate(() => window.__pkSent.includes('proofkey:applied')));
+    check('and says only "Applied." when it is not the time to ask', plain.join() === 'Applied.×', JSON.stringify(plain));
+
+    await rewrite(true);
+    const asking = await toasts();
+    check('the one time it is, the question takes its place',
+      asking.length === 1 && asking[0].startsWith('Applied. If ProofKey has been useful') && asking[0].includes('Rate ProofKey'),
+      JSON.stringify(asking));
+    await page.evaluate(() => {
+      [...document.getElementById('proofkey-root').shadowRoot.querySelectorAll('.pk-toast__action')]
+        .find((button) => button.textContent === 'Rate ProofKey')?.click();
+    });
+    await page.waitForTimeout(200);
+    check('the button asks the worker to open the reviews page',
+      await page.evaluate(() => window.__pkSent.includes('proofkey:open-review')));
+    check('and the question goes away', (await toasts()).length === 0, JSON.stringify(await toasts()));
   }
 
   await browser.close();

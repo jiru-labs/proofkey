@@ -6,6 +6,7 @@ import {
   originMatchPattern,
 } from '../core/browser';
 import type {
+  AppliedResult,
   CheckResult,
   ContentRequest,
   ContentState,
@@ -34,6 +35,7 @@ import {
   TARGET_LANGUAGE,
 } from '../core/prompts';
 import { runCompletion, validateConnection } from '../core/providers';
+import { emptyReviewState, recordApplied, reviewUrl, type ReviewState } from '../core/review';
 import type { WritingAction } from '../core/types';
 import { askOffscreen, interruptLiveCheck } from '../core/providers/inBrowser';
 import { IN_BROWSER_MODEL } from '../core/providers/inBrowserModel';
@@ -332,6 +334,15 @@ async function handle(
     case 'proofkey:explain':
       return explain(message.original, message.replacement);
 
+    case 'proofkey:applied':
+      return { ok: true, value: await countApplied() };
+
+    case 'proofkey:open-review': {
+      const url = storeReviewUrl();
+      if (url) await chrome.tabs.create({ url });
+      return { ok: true, value: url !== null };
+    }
+
     case 'proofkey:set-live':
       return setLive(sender, message.enabled);
 
@@ -363,6 +374,33 @@ async function handle(
       }
       return { ok: true, value: await askOffscreen({ target: 'proofkey-offscreen', op: message.op }) };
   }
+}
+
+// ------------------------------------------------------------------ rating
+
+/** Local only: `chrome.storage.local` never syncs and nothing here is sent anywhere. */
+const KEY_REVIEW = 'proofkey:review';
+
+function storeReviewUrl(): string | null {
+  return reviewUrl(chrome.runtime.getManifest().update_url, chrome.runtime.id);
+}
+
+/**
+ * Serialised, because two tabs applying at once would each read the same count
+ * and both could be told to ask.
+ */
+let reviewQueue: Promise<unknown> = Promise.resolve();
+
+function countApplied(): Promise<AppliedResult> {
+  const next = reviewQueue.then(async (): Promise<AppliedResult> => {
+    const stored = (await chrome.storage.local.get(KEY_REVIEW))[KEY_REVIEW] as ReviewState | undefined;
+    const canAsk = storeReviewUrl() !== null;
+    const { state, ask } = recordApplied({ ...emptyReviewState(), ...stored }, Date.now(), canAsk);
+    await chrome.storage.local.set({ [KEY_REVIEW]: state });
+    return { askReview: ask };
+  });
+  reviewQueue = next.catch(() => undefined);
+  return next;
 }
 
 // ------------------------------------------------------------ site origins

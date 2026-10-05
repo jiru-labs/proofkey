@@ -31,6 +31,10 @@ export type ContentRequest =
    * that check so the GPU is free for the page; it runs again at the next pause.
    */
   | { type: 'proofkey:typing' }
+  /** A suggestion or rewrite was applied. Counted on this computer, only to ask once for a rating. */
+  | { type: 'proofkey:applied' }
+  /** The user clicked the rating link. The worker picks the URL; the page does not get a say. */
+  | { type: 'proofkey:open-review' }
   /** Options page: the in-browser model's state, its one download, or removing it. */
   | { type: 'proofkey:in-browser'; op: 'status' | 'download' | 'delete' | 'test' };
 
@@ -62,6 +66,11 @@ export interface RunResult {
   servedBy: string;
   /** Failures from earlier connections in the chain. */
   fallbackErrors: { label: string; message: string }[];
+}
+
+export interface AppliedResult {
+  /** True the one time the "Applied" message should ask for a rating. */
+  askReview: boolean;
 }
 
 export interface FrameOffer {

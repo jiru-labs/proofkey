@@ -247,6 +247,9 @@ The plan for the next quarter is in the shared folder, with the budget and the p
                 return { ok: true, value: { needed: !!window.__pkSiteNeeded } };
               case 'proofkey:site-grant':
                 return { ok: true, value: { granted: true } };
+              case 'proofkey:applied':
+                // The worker's answer on the one apply that should ask for a rating.
+                return { ok: true, value: { askReview: !!window.__pkAskReview } };
               default:
                 return { ok: true, value: null };
             }

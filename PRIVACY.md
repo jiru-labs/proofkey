@@ -63,11 +63,20 @@ That is the browser's mechanism and its provider's policy; ProofKey neither
 operates nor can read that channel. With Sync off, or not signed in, they stay
 on this computer. The downloaded in-browser model never syncs.
 
+One more thing is kept, in `chrome.storage.local`, which never syncs: how many
+suggestions you have applied, when you applied the first, and whether ProofKey
+has asked you to rate it (`src/core/review.ts`). It exists for one purpose —
+asking **once**, after at least 10 applied suggestions over at least two days,
+whether you would leave a rating in the Chrome Web Store — and it is never sent
+anywhere. Clicking **Rate ProofKey** opens the store's reviews page in a new
+tab; nothing else happens, and ignoring it means it is not asked again.
+
 Nothing is stored anywhere else. Uninstalling the extension removes it.
 
 ## What ProofKey does not do
 
-- No telemetry, analytics, crash reporting, or usage statistics.
+- No telemetry, analytics, crash reporting, or usage statistics. The one count
+  described above stays on your device and is only read by ProofKey itself.
 - No advertising, and no data sold, rented, or shared with third parties.
 - No reading of pages you have not enabled it on.
 - No collection of browsing history, credentials, or form data.

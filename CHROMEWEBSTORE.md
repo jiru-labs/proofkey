@@ -45,6 +45,8 @@ pinned Hugging Face revision with integrity checks on the config, tokenizer and 
 - **Authentication information (your API keys):** stored in `chrome.storage.sync`, sent only
   to the provider each key belongs to. With Chrome Sync on, the browser syncs it between
   your own signed-in browsers (see PRIVACY.md).
+- **A count of applied suggestions,** kept in `chrome.storage.local` only to ask once for a
+  rating. It never leaves the device, so it is not data the form counts as collected.
 - **Nothing else:** no analytics, telemetry, crash reporting or usage statistics, and no
   server of ours. Not sold, not transferred, not used for anything but the feature.
 
