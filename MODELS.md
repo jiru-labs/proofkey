@@ -1274,7 +1274,7 @@ quantisation.
   "Correct this text without translating it:" made it **worse**, 58/60, with two
   Spanish translations. One run per text, and a baseline that fails once in 70
   cannot rank the variants, so **the prompt was not changed**.
-- **What was changed instead** (on `main`, not in 0.1.11): `changedLanguage` (`src/core/prompts.ts`) — a
+- **What was changed instead** (since 0.1.12): `changedLanguage` (`src/core/prompts.ts`) — a
   Fix grammar reply that keeps under 30% of the original's words is treated as
   another language; the request is asked once more with the rule restated at the
   end, and if it still leaves the language the text is left as it was and the
