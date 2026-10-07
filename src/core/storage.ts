@@ -102,6 +102,30 @@ export async function saveSettings(settings: Settings): Promise<void> {
   await chrome.storage.sync.set({ [KEY_SETTINGS]: settings });
 }
 
+/** API keys by connection id, in `chrome.storage.local`, which never syncs. */
+const KEY_API_KEYS = 'proofkey:apiKeys';
+
+/**
+ * Copies every API key into `chrome.storage.local`, and drops the copy of any
+ * key that is gone from settings.
+ *
+ * The first half of keeping keys off the browser's sync. Sync still holds them
+ * and is still what is read, so a browser signed in on two computers behaves
+ * as before. The release that stops writing keys to sync will read them from
+ * here: every computer that ran this one has its copy by then, where it would
+ * otherwise lose its key the moment another computer saved settings without it.
+ */
+export async function mirrorApiKeys(): Promise<void> {
+  const settings = await loadSettings();
+  const keys = Object.fromEntries(
+    settings.connections.filter((c) => c.apiKey).map((c) => [c.id, c.apiKey]),
+  );
+  const stored = (await chrome.storage.local.get(KEY_API_KEYS))[KEY_API_KEYS] ?? {};
+  if (JSON.stringify(stored) === JSON.stringify(keys)) return;
+  if (Object.keys(keys).length > 0) await chrome.storage.local.set({ [KEY_API_KEYS]: keys });
+  else await chrome.storage.local.remove(KEY_API_KEYS);
+}
+
 /**
  * The settings a page that has been open a while should save.
  *

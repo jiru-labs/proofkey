@@ -44,6 +44,7 @@ import {
   connectionChain,
   findAction,
   loadSettings,
+  mirrorApiKeys,
   offeredActions,
   runsOnActiveConnection,
   saveSettings,
@@ -61,19 +62,25 @@ const SHORTCUT_SCRIPT_ID = 'proofkey-shortcuts';
 chrome.runtime.onInstalled.addListener((details) => {
   void rebuildContextMenus();
   void syncRegistration();
+  // An update is the moment every installed copy runs this release, so each
+  // computer takes its copy of the keys here, not only when settings change.
+  void mirrorApiKeys();
   // Nothing works until a provider exists, so send first-time users straight there.
   if (details.reason === 'install') void chrome.runtime.openOptionsPage();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   void syncRegistration();
+  void mirrorApiKeys();
 });
 
-// Menu labels come from the user's actions, so they have to follow edits.
+// Menu labels come from the user's actions, so they have to follow edits. Keys
+// follow too, whether saved here or arriving from another computer's sync.
 chrome.storage.onChanged.addListener((_changes, area) => {
   if (area !== 'sync') return;
   void rebuildContextMenus();
   void syncRegistration();
+  void mirrorApiKeys();
 });
 
 // Host access can be revoked from chrome://extensions without ProofKey being

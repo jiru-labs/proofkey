@@ -1425,6 +1425,47 @@ async function run() {
     await page.evaluate(() => chrome.storage.local.remove('proofkey:review'));
   }
 
+  // ------------------------------------------------------------ key mirror
+  // The first half of keeping keys off sync: every key saved to settings gets
+  // a copy in storage.local, and the copy follows when a key is cleared. Sync
+  // is written the way another computer's would be, so the worker has to
+  // notice it on its own.
+  console.log('\nAPI keys copied to local storage:');
+  {
+    const localKeys = () => page.evaluate(async () => (await chrome.storage.local.get('proofkey:apiKeys'))['proofkey:apiKeys']);
+    const settle = async (want) => {
+      for (let i = 0; i < 20; i++) {
+        const keys = await localKeys();
+        if (JSON.stringify(keys) === JSON.stringify(want)) return keys;
+        await page.waitForTimeout(100);
+      }
+      return localKeys();
+    };
+    const settings = settingsFor('chat_completions');
+    const second = { ...settings.connections[0], id: 'second-connection', apiKey: 'second-key-456' };
+    await page.evaluate(
+      (value) => chrome.storage.sync.set({ 'proofkey:settings': value }),
+      { ...settings, connections: [settings.connections[0], second] },
+    );
+    const copied = await settle({ 'test-connection': 'test-key-123', 'second-connection': 'second-key-456' });
+    check('a key that arrives in sync is copied to storage.local, by connection',
+      copied?.['test-connection'] === 'test-key-123' && copied?.['second-connection'] === 'second-key-456',
+      JSON.stringify(copied));
+
+    await page.evaluate(
+      (value) => chrome.storage.sync.set({ 'proofkey:settings': value }),
+      { ...settings, connections: [settings.connections[0], { ...second, apiKey: '' }] },
+    );
+    const cleared = await settle({ 'test-connection': 'test-key-123' });
+    check('a key cleared in settings leaves storage.local too',
+      JSON.stringify(cleared) === JSON.stringify({ 'test-connection': 'test-key-123' }), JSON.stringify(cleared));
+
+    await page.evaluate(() => chrome.storage.sync.clear());
+    const none = await settle(undefined);
+    check('no key in settings, no copy left behind',
+      cleared !== undefined && none === undefined, `${JSON.stringify(cleared)} -> ${JSON.stringify(none)}`);
+  }
+
   // --------------------------------------------------------- unbound command
   // In this fresh profile Chrome does assign Ctrl+Shift+K, so the lost-shortcut
   // state has to be simulated: getAll is wrapped to report the real commands
