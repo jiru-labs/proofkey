@@ -34,6 +34,7 @@
     "token": "node --experimental-strip-types tools/get-refresh-token.ts",
     "release": "node --experimental-strip-types tools/release.ts",
     "status": "node --experimental-strip-types tools/cws-status.ts",
+    "submit": "node --experimental-strip-types tools/cws-submit.ts",
     "verify": "npm run typecheck && npm test && npm run build && npm run test:render && npm run test:ext"
   },
   "devDependencies": {

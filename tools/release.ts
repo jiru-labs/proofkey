@@ -242,7 +242,7 @@ if (!publishResponse.ok) {
   console.error('Publish rejected:', JSON.stringify(publish, null, 2))
   // The package is uploaded but unsubmitted at this point, which is exactly the
   // --draft state, so the version stays bumped and only the submit is retried.
-  console.error(`\nThe ${version} package is uploaded as a draft. Submit it from the dashboard.`)
+  console.error(`\nThe ${version} package is uploaded as a draft. Submit it with: npm run submit`)
   process.exit(1)
 }
 console.log((publish.statusDetail ?? publish.status ?? []).join('\n'))
