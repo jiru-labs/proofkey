@@ -3,7 +3,7 @@
   "name": "ProofKey: AI Grammar Checker & Writing Assistant with Your Own API Key",
   "short_name": "ProofKey",
   "version": "0.1.12",
-  "description": "Open-source Grammarly alternative. Fix grammar and rewrite text with your own LLM API key (BYOK) or a local model. No telemetry.",
+  "description": "Private, open-source Grammarly alternative: your text goes only to the AI you pick — your API key or a local model. No telemetry.",
   "minimum_chrome_version": "116",
   "permissions": ["storage", "contextMenus", "activeTab", "scripting", "offscreen"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
