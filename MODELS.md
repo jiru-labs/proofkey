@@ -1387,11 +1387,34 @@ The same procedure on the build as committed, once per browser after a warm-up:
 | Edge 154.0.4258.62, in-browser model | 0, 0, 0 | 0 |
 | Chrome 154.0.8037.98, Gemini Nano | 0, 1, 0 | 0 |
 
-**Still there: the first check after the model loads.** Loading it into the GPU
-stalls the page for about 2.8 s once: in the warm-up run of the build as
-committed, 54 keystrokes over 100 ms in Brave and 96 in Edge, none on Gemini Nano. It happens after the
-browser starts and again after `IN_BROWSER_IDLE_MS` (5 minutes) without a request,
-when ProofKey unloads the model to give back ~4 GB of GPU memory.
+**Starting the conversation, moved off the keyboard.** Every time the
+conversation starts — the model just loaded, a quick action ran in between, or
+it outgrew 6,000 characters — the next check pays the full 3.7 s again, and the
+first one after the model loads also pays the load (about 2.8 s). Measured with a
+runner that types into the page over the browser's own protocol (Playwright,
+`page.keyboard.type`, 80 ms per key) so the desktop stays usable while it runs —
+it matched the script typing at the OS level (0 slow keystrokes on a normal run
+in both). Same 8 sentences and pauses; "action" runs Fix grammar after the 4th
+sentence; "long" types 48 distinct sentences (3,343 keystrokes), enough to pass
+the 6,000-character limit:
+
+| Keystrokes over 100 ms | Warm-up (model just loaded) | Normal | Fix grammar mid-way | 48 sentences |
+|---|---|---|---|---|
+| Brave, chained checks only (`473345d`) | 93 | 0 | 11 | 23 of 3,343 |
+| Brave, warming as well | 0; 0 | 0 | 12; 11; 12 | 3 of 3,343 |
+| Edge, warming as well | 49; 0 | 0 | 12; 13; 9 | 0 of 3,343 |
+
+Warming, on `main` (not in 0.1.13): a page with live checking on asks for the
+model when it loads (and a field taking focus asks again), so it is loaded and the
+conversation started before the first sentence; typing keeps it from being
+unloaded; and after a quick action, or once the conversation outgrew its limit,
+it is started again right away or after 4 s without a request. Edge's 49 is a run
+in which loading took longer than the 5 s the runner waits between opening the
+page and typing. **Still there: right after a quick action**, the next check pays
+the 3.7 s while typing goes on in these runs, because typing resumes 2 s after the
+action — about 10 slow keystrokes, once. Starting the conversation as soon as the
+action returns rather than after a quiet spell made no difference here (11 and 12
+both ways); it is kept because a result is usually read for longer than that.
 
 In every run the page's own main thread stayed under 16 ms per keystroke; the
 time went to presenting the frame, which the model and the page's compositor
