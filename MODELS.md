@@ -1333,10 +1333,11 @@ quantisation.
 #### Typing while it checks
 
 Reported by the user: with the in-browser model, live checking made typing stutter.
-Measured 2026-10-04 in Brave 1.96.61 (Chromium 154) on Windows 11, RX 6600, on a
-local test page (a textarea, no network) that records the Event Timing duration of
-each keystroke — input delay plus processing plus the next paint — while text was
-typed in bursts with live checking on:
+Measured on Windows 11 with an RX 6600 8 GB, on a local test page (a textarea, no
+network) that records the Event Timing duration of each keystroke — input delay
+plus processing plus the next paint.
+
+**2026-10-04, typed in bursts**, Brave 1.96.61 (Chromium 154):
 
 | What was running while typing | Keystrokes over 100 ms to paint |
 |---|---|
@@ -1345,14 +1346,56 @@ typed in bursts with live checking on:
 | The in-browser model, 0.1.12 | **177 of 361** (91 over 200 ms, worst 264 ms) |
 | The in-browser model, interrupting the check on typing | 0 of 339; 0 of 340 |
 
-The page's own main thread was not the cause — keystroke processing stayed under
-16 ms — so the time went to presenting the frame: the model and the page's
-compositor share the GPU. On `main` (not in 0.1.12), a live check running on the in-browser model
-is stopped when typing resumes (WebLLM `interruptGenerate`) and sent again at the
-next pause; the actions the user asks for are never stopped. Checks still complete:
-the second burst above ended with all 12 errors in it underlined. Frames over 100 ms
-still happen while a check runs during a pause (32 in that run), when nobody is
-typing.
+That last row shipped in 0.1.13 (a live check on this model was stopped when
+typing resumed, WebLLM `interruptGenerate`), and it does not hold at a human pace.
+The keys above were sent a few milliseconds apart, so little typing overlapped a
+check.
+
+**2026-10-08, typed at a human pace**: a Windows script pressing one key every
+80 ms, 8 error-filled sentences with a 2 s pause after each, 462 keystrokes per
+run. The pause is long enough for a check to start, and typing resumes while it
+runs. A logging build timed each check in the offscreen document:
+
+| Build, in Brave 155 (in-browser model) | Time to first token, median | Checks stopped by typing | Keystrokes over 100 ms, per run |
+|---|---|---|---|
+| 0.1.13: each check sent fresh, stopped when typing resumes | 3.7 s | 6 of 8 per run | 33, 121, 118, 112 |
+| Checks continuing one conversation, never stopped | 0.29 s | — | 0, 0, 0, 0 |
+| Checks continuing one conversation, stopped when typing resumes | 0.29 s | 0 | 0, 0, 0, 0 |
+
+Interleaved in one session, A–B–C–C–B–A, two runs each after a warm-up run. Two
+things were wrong with 0.1.13. Almost all of the 3.7 s is WebLLM reading the
+~1,800-character check prompt before it writes anything, and WebLLM cannot stop
+that stretch: it only looks at the interrupt between generated tokens. So stopping
+a check saved little, and the check sent again at the next pause paid the 3.7 s
+again. Sent as one continuing conversation instead — the earlier checks and their
+replies kept, the new sentence added — WebLLM reuses what it already computed and
+reads only the new part. A check then takes under a second of GPU in all and ends
+before typing resumes, so there is nothing left to interrupt. On `main` (not in
+0.1.13) checks continue one conversation and are never stopped; quick actions
+start it again. Quality held: on the 14 live-check fixtures, one sentence per
+request in shuffled order, **258/280** chained against **260/280** sent fresh,
+no false alarms and no broken replies either way (`Qwen3.5-4B` Q4_K_M on
+llama.cpp with Vulkan on the same GPU, 20 runs — the in-browser model's weights in
+another format, so a proxy, not the product). The conversation starts over past
+6,000 characters of earlier checks, well inside the model's 4,096-token window.
+
+The same procedure on the build as committed, once per browser after a warm-up:
+
+| Browser and model | Keystrokes over 100 ms, per run | Control: same page, ProofKey not on it |
+|---|---|---|
+| Brave 155, in-browser model | 0, 0, 1 | 0 |
+| Edge 154.0.4258.62, in-browser model | 0, 0, 0 | 0 |
+| Chrome 154.0.8037.98, Gemini Nano | 0, 1, 0 | 0 |
+
+**Still there: the first check after the model loads.** Loading it into the GPU
+stalls the page for about 2.8 s once: in the warm-up run of the build as
+committed, 54 keystrokes over 100 ms in Brave and 96 in Edge, none on Gemini Nano. It happens after the
+browser starts and again after `IN_BROWSER_IDLE_MS` (5 minutes) without a request,
+when ProofKey unloads the model to give back ~4 GB of GPU memory.
+
+In every run the page's own main thread stayed under 16 ms per keystroke; the
+time went to presenting the frame, which the model and the page's compositor
+share the GPU for.
 
 ### Measuring quick actions
 
