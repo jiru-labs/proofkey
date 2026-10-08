@@ -35,6 +35,7 @@ import {
   type InBrowserState,
   type OffscreenRequest,
 } from '../core/providers/inBrowserModel';
+import { formatCheckPayload } from '../core/prompts';
 
 interface Engine {
   chat: { completions: { create(request: unknown): Promise<any> } };
@@ -112,8 +113,60 @@ let idle: ReturnType<typeof setTimeout> | undefined;
 const CHAIN_MAX_CHARS = 6000;
 let chain: { system: string; turns: { role: 'user' | 'assistant'; content: string }[] } | null = null;
 
+/**
+ * Starting the conversation costs the full read of the check prompt, so it is
+ * done when nobody is typing: on `warm` (a page with live checking loaded, or a
+ * field took focus), right after a quick action while its result is being read,
+ * and `PRIME_QUIET_MS` after the last check once the conversation outgrew
+ * `CHAIN_MAX_CHARS`. The first turn is a neutral sentence; what follows are the
+ * user's own.
+ */
+const PRIME_QUIET_MS = 4000;
+const PRIMER = formatCheckPayload(['Hello, this is a short note.']);
+let liveSystem: string | null = null;
+let primeTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** One request at a time, so a check arriving mid-prime extends the conversation instead of resetting it. */
+let queue: Promise<unknown> = Promise.resolve();
+function serial<T>(task: () => Promise<T>): Promise<T> {
+  clearTimeout(primeTimer);
+  const run = queue.then(task, task);
+  queue = run.catch(() => undefined);
+  return run;
+}
+
+function needsPrime(): boolean {
+  if (!engine || !liveSystem) return false;
+  const length = chain?.turns.reduce((sum, turn) => sum + turn.content.length, 0) ?? 0;
+  return !chain || chain.system !== liveSystem || length > CHAIN_MAX_CHARS;
+}
+
+function prime(): Promise<unknown> {
+  if (!needsPrime()) return Promise.resolve();
+  return complete({ target: 'proofkey-offscreen', op: 'complete', systemPrompt: liveSystem!, userText: PRIMER, maxTokens: 64, liveCheck: true });
+}
+
+function primeAfter(delay: number): void {
+  clearTimeout(primeTimer);
+  if (!needsPrime()) return;
+  primeTimer = setTimeout(() => void serial(prime).catch(() => undefined), delay);
+}
+
+async function warm(systemPrompt: string): Promise<void> {
+  liveSystem = systemPrompt;
+  if (!engine) {
+    if (downloading || (await webgpuProblem())) return;
+    const lib = await loadWebLLM();
+    if (!loading && !(await lib.hasModelInCache(IN_BROWSER_MODEL, appConfig()))) return;
+    await startEngine();
+  }
+  touch();
+  await prime();
+}
+
 function chainFor(request: Extract<OffscreenRequest, { op: 'complete' }>): typeof chain {
   if (!request.liveCheck) return null;
+  liveSystem = request.systemPrompt;
   const length = chain?.turns.reduce((sum, turn) => sum + turn.content.length, 0) ?? 0;
   if (!chain || chain.system !== request.systemPrompt || length > CHAIN_MAX_CHARS) {
     return { system: request.systemPrompt, turns: [] };
@@ -261,7 +314,9 @@ async function handle(request: OffscreenRequest): Promise<unknown> {
       return status();
     }
     case 'complete':
-      return complete(request);
+      return serial(() => complete(request)).finally(() => primeAfter(request.liveCheck ? PRIME_QUIET_MS : 0));
+    case 'warm':
+      return serial(() => warm(request.systemPrompt));
   }
 }
 

@@ -595,7 +595,18 @@ async function run() {
         const chained = await ask('__turns__ second.');
         await chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: 'Todo esta bien.' });
         const afterAction = await ask('__turns__ third.');
-        return { chained: chained?.value?.corrections?.[0], afterAction: afterAction?.value?.corrections?.[0] };
+        await chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: 'Todo esta bien.' });
+        await chrome.runtime.sendMessage({ type: 'proofkey:warm' });
+        const warmed = await ask('__turns__ fourth.');
+        await chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: 'Todo esta bien.' });
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const quiet = await ask('__turns__ fifth.');
+        return {
+          chained: chained?.value?.corrections?.[0],
+          afterAction: afterAction?.value?.corrections?.[0],
+          warmed: warmed?.value?.corrections?.[0],
+          quiet: quiet?.value?.corrections?.[0],
+        };
       });
       check(
         'a live check carries the earlier check and its reply',
@@ -603,10 +614,14 @@ async function run() {
         JSON.stringify(turns),
       );
       check(
-        'and starts again after anything else ran on the model',
-        turns.afterAction === 'system,user',
+        'and starts again after anything else ran on the model (only the neutral first turn, not the earlier checks)',
+        turns.afterAction === 'system,user,assistant,user',
         JSON.stringify(turns),
       );
+      // Starting it reads the whole check prompt, which stalled typing for
+      // seconds on a real GPU; that is done before anyone types instead.
+      check('a field taking focus starts the conversation ahead of the first check', turns.warmed === 'system,user,assistant,user', JSON.stringify(turns));
+      check('and so does the moment after a quick action', turns.quiet === 'system,user,assistant,user', JSON.stringify(turns));
       const offered = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:get-state' }));
       check(
         'the menu offers Fix grammar, bullet points and Translate',

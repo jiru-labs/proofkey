@@ -43,6 +43,9 @@ const MIN_SENTENCE_LENGTH = 4;
  */
 const SETTLE_MULTIPLIER = 3;
 
+/** How often, at most, typing tells the worker to keep the model ready. */
+const WARM_EVERY_MS = 60_000;
+
 interface Session {
   field: FieldRef;
   highlighter: Highlighter;
@@ -55,6 +58,8 @@ interface Session {
   settleTimer: number;
   inFlight: boolean;
   dirtyWhileChecking: boolean;
+  /** When the worker was last asked to keep the model ready, so typing does not ask on every key. */
+  warmedAt: number;
   /** Watches rich-text fields for edits that emit no `input` event. */
   observer: MutationObserver | null;
   /** Last text seen, so a re-render that changes nothing cannot re-arm the debounce. */
@@ -125,11 +130,13 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
       settleTimer: 0,
       inFlight: false,
       dirtyWhileChecking: false,
+      warmedAt: performance.now(),
       observer: null,
       lastText: fieldText(field),
     };
     session = active;
     field.node.addEventListener('input', onInput);
+    void askWorker({ type: 'proofkey:warm' }).catch(() => undefined);
 
     // `input` is not enough on its own. A framework editor that handles a
     // command itself calls preventDefault and reconciles the DOM in its own
@@ -187,6 +194,13 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     // not then re-reported as a mutation the observer has never seen.
     session.lastText = fieldText(session.field);
     if (session.inFlight) session.dirtyWhileChecking = true;
+    // Typing keeps the in-browser model loaded: it is unloaded after a quiet
+    // spell, and loading it again stalls the page while it happens.
+    const now = performance.now();
+    if (now - session.warmedAt > WARM_EVERY_MS) {
+      session.warmedAt = now;
+      void askWorker({ type: 'proofkey:warm' }).catch(() => undefined);
+    }
     schedule();
   };
 
@@ -555,6 +569,9 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
 
   document.addEventListener('focusin', onFocusIn, true);
   document.addEventListener('click', onClick, true);
+  // A page with live checking on is likely to be typed into: have the model
+  // loaded while the page is still being read, not on the first sentence.
+  if (enabled) void askWorker({ type: 'proofkey:warm' }).catch(() => undefined);
 
   return {
     isEnabled: () => enabled,
@@ -564,6 +581,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
         detach();
         return;
       }
+      void askWorker({ type: 'proofkey:warm' }).catch(() => undefined);
       const field = eligible(document.activeElement);
       if (field) attach(field);
     },

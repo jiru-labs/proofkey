@@ -124,6 +124,8 @@ export type OffscreenRequest =
   | { target: 'proofkey-offscreen'; op: 'status' }
   | { target: 'proofkey-offscreen'; op: 'download' }
   | { target: 'proofkey-offscreen'; op: 'delete' }
+  /** Loads a downloaded model and starts the live-check conversation, before anyone types. */
+  | { target: 'proofkey-offscreen'; op: 'warm'; systemPrompt: string }
   | {
       target: 'proofkey-offscreen';
       op: 'complete';

@@ -13,6 +13,8 @@ import type { ShortcutBinding } from './shortcuts';
 export type ContentRequest =
   | { type: 'proofkey:run'; actionId: string; text: string }
   | { type: 'proofkey:check'; sentences: string[] }
+  /** A field with live checking took focus, or is being typed in: have the model ready. */
+  | { type: 'proofkey:warm' }
   | { type: 'proofkey:explain'; original: string; replacement: string }
   | { type: 'proofkey:open-options' }
   | { type: 'proofkey:set-live'; enabled: boolean }

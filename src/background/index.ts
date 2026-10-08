@@ -36,7 +36,7 @@ import {
 import { runCompletion, validateConnection } from '../core/providers';
 import { emptyReviewState, recordApplied, reviewUrl, type ReviewState } from '../core/review';
 import type { WritingAction } from '../core/types';
-import { askOffscreen } from '../core/providers/inBrowser';
+import { askOffscreen, warmLiveCheck } from '../core/providers/inBrowser';
 import { IN_BROWSER_MODEL } from '../core/providers/inBrowserModel';
 import {
   activeConnection,
@@ -332,6 +332,9 @@ async function handle(
 
     case 'proofkey:check':
       return check(message.sentences);
+
+    case 'proofkey:warm':
+      return warm();
 
     case 'proofkey:explain':
       return explain(message.original, message.replacement);
@@ -629,6 +632,23 @@ function stripNumbering(text: string): string {
 }
 
 /** Live checking may be pinned to a cheaper connection than the actions use. */
+/**
+ * Only for the in-browser model, and only when it is first in line for live
+ * checks: loading it and reading the check prompt stall the page's painting for
+ * seconds (measured in Brave on an RX 6600, 2026-10-08), so that happens when a
+ * field takes focus rather than on the first sentence typed into it.
+ */
+async function warm(): Promise<Result<null>> {
+  const settings = await loadSettings();
+  if (liveChain(settings)[0]?.transport !== 'in_browser') return { ok: true, value: null };
+  try {
+    await warmLiveCheck(composeCheckPrompt(settings.profile, 1));
+  } catch {
+    // Nothing to report: the check itself says what is wrong when it runs.
+  }
+  return { ok: true, value: null };
+}
+
 function liveChain(settings: Awaited<ReturnType<typeof loadSettings>>) {
   const pinned = settings.liveCheck.connectionId
     ? settings.connections.find((c) => c.id === settings.liveCheck.connectionId)

@@ -97,3 +97,11 @@ export async function complete(
 export async function listModels(): Promise<string[]> {
   return [IN_BROWSER_MODEL];
 }
+
+/**
+ * Has the model loaded and the live-check conversation started while the user
+ * is not typing yet. Never downloads: with no model on disk it does nothing.
+ */
+export async function warmLiveCheck(systemPrompt: string): Promise<void> {
+  await askOffscreen({ target: 'proofkey-offscreen', op: 'warm', systemPrompt });
+}
