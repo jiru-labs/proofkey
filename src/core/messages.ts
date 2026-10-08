@@ -30,7 +30,6 @@ export type ContentRequest =
    * Typing resumed while a live check was running. The in-browser model drops
    * that check so the GPU is free for the page; it runs again at the next pause.
    */
-  | { type: 'proofkey:typing' }
   /** A suggestion or rewrite was applied. Counted on this computer, only to ask once for a rating. */
   | { type: 'proofkey:applied' }
   /** The user clicked the rating link. The worker picks the URL; the page does not get a say. */
@@ -51,9 +50,6 @@ export type WorkerRequest =
   | { type: 'proofkey:toggle-live'; injected: boolean };
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
-
-/** The error a live check answers with when typing interrupted it: not a failure, a retry. */
-export const CHECK_INTERRUPTED = 'Interrupted: typing resumed.';
 
 export interface CheckResult {
   /** One corrected sentence per input, in the same order. */

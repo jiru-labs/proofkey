@@ -158,8 +158,8 @@ async function buildTestExtension() {
   // No GPU here, so no model can run. The offscreen document uses this stand-in
   // when its package carries one; a released build never does. It downloads in
   // four steps and loses the network once, keeping what it had; it answers with
-  // the empty think block Qwen3.5 really opens with, and on "__params__" reports
-  // the request it was given.
+  // the empty think block Qwen3.5 really opens with, on "__params__" reports
+  // the request it was given, and on "__turns__" the roles of the messages sent.
   await writeFile(`${TEST_EXT}/offscreen/test-engine.js`, `
 let cached = false;
 let kept = 0;
@@ -181,29 +181,22 @@ export async function CreateMLCEngine(model, { initProgressCallback } = {}) {
     }
     cached = true;
   }
-  let stop = false;
   return {
     chat: { completions: { create: async (request) => {
-      const user = request.messages[1].content;
-      stop = false;
-      // "__slow__" generates for 3 s unless interrupted, as WebLLM does.
-      let aborted = false;
-      if (user.includes('__slow__')) {
-        for (let i = 0; i < 30 && !stop; i++) await new Promise((resolve) => setTimeout(resolve, 100));
-        aborted = stop;
-      }
-      const content = aborted ? '' : user === '__params__'
+      const user = request.messages[request.messages.length - 1].content;
+      const content = user === '__params__'
         ? JSON.stringify({ model, temperature: request.temperature, thinking: request.extra_body?.enable_thinking, max: request.max_tokens, stream: request.stream })
-        : user.replace('todavia', 'todavía');
+        : user.includes('__turns__')
+          ? request.messages.map((m) => m.role).join(',')
+          : user.replace('todavia', 'todavía');
       // Streamed in two pieces, as WebLLM sends a reply a few tokens at a time.
-      const text = aborted ? '' : '<think>\\n\\n</think>\\n\\n' + content;
+      const text = '<think>\\n\\n</think>\\n\\n' + content;
       const half = Math.floor(text.length / 2);
       return (async function* () {
         yield { choices: [{ delta: { content: text.slice(0, half) }, finish_reason: null }] };
-        yield { choices: [{ delta: { content: text.slice(half) }, finish_reason: aborted ? 'abort' : 'stop' }] };
+        yield { choices: [{ delta: { content: text.slice(half) }, finish_reason: 'stop' }] };
       })();
     } } },
-    interruptGenerate: () => { stop = true; },
     unload: async () => {},
   };
 }
@@ -593,33 +586,26 @@ async function run() {
         rewrite?.ok === false && /not offered on the in-browser model/.test(rewrite?.error ?? ''),
         rewrite?.error ?? JSON.stringify(rewrite),
       );
-      // Typing over a live check: measured in the user's Brave, 2026-10-04, the
-      // model and the page's compositor share the GPU and keystrokes stuttered.
-      const stubBefore = seen.length;
-      const interrupted = await page.evaluate(async () => {
-        const checking = chrome.runtime.sendMessage({ type: 'proofkey:check', sentences: ['__slow__ sentence one.'] });
-        await new Promise((resolve) => setTimeout(resolve, 600));
-        await chrome.runtime.sendMessage({ type: 'proofkey:typing' });
-        const started = performance.now();
-        const reply = await checking;
-        return { reply, ms: performance.now() - started };
+      // Live checks continue one conversation, so WebLLM can reuse what it
+      // already computed for the check prompt (3.7 s of GPU per check when sent
+      // fresh, measured in Brave on an RX 6600, 2026-10-08).
+      const turns = await page.evaluate(async () => {
+        const ask = (sentence) => chrome.runtime.sendMessage({ type: 'proofkey:check', sentences: [sentence] });
+        await ask('A first sentence.');
+        const chained = await ask('__turns__ second.');
+        await chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: 'Todo esta bien.' });
+        const afterAction = await ask('__turns__ third.');
+        return { chained: chained?.value?.corrections?.[0], afterAction: afterAction?.value?.corrections?.[0] };
       });
       check(
-        'typing over a live check stops it at once, as a retry and not an error',
-        interrupted.reply?.ok === false && interrupted.reply?.error === 'Interrupted: typing resumed.' && interrupted.ms < 1000,
-        JSON.stringify(interrupted),
+        'a live check carries the earlier check and its reply',
+        turns.chained === 'system,user,assistant,user',
+        JSON.stringify(turns),
       );
-      check('and the text is not passed on to another provider', seen.length === stubBefore, `${seen.length - stubBefore} request(s)`);
-      const kept = await page.evaluate(async () => {
-        const running = chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: '__slow__ todavia' });
-        await new Promise((resolve) => setTimeout(resolve, 600));
-        await chrome.runtime.sendMessage({ type: 'proofkey:typing' });
-        return running;
-      });
       check(
-        'an action the user asked for is never interrupted',
-        kept?.ok === true && kept.value?.text === '__slow__ todavía',
-        JSON.stringify(kept),
+        'and starts again after anything else ran on the model',
+        turns.afterAction === 'system,user',
+        JSON.stringify(turns),
       );
       const offered = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:get-state' }));
       check(

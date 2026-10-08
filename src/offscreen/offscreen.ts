@@ -24,7 +24,6 @@
 import {
   IN_BROWSER_IDLE_MS,
   IN_BROWSER_INTEGRITY,
-  IN_BROWSER_INTERRUPTED,
   IN_BROWSER_MODEL,
   IN_BROWSER_MODEL_LIB,
   IN_BROWSER_MODEL_URL,
@@ -39,7 +38,6 @@ import {
 
 interface Engine {
   chat: { completions: { create(request: unknown): Promise<any> } };
-  interruptGenerate(): void;
   unload(): Promise<void>;
 }
 
@@ -97,12 +95,31 @@ let lastError: string | null = null;
 let downloading = false;
 let idle: ReturnType<typeof setTimeout> | undefined;
 /**
- * The reply being generated, when a live check may drop it. Measured in the
- * user's Brave on an RX 6600, 2026-10-04: while the model generated, half the
- * keystrokes on the page took over 100 ms to paint (up to 264 ms), against none
- * with the GPU idle — the model and the page's compositor share the GPU.
+ * Live checks run as one continuing conversation: the system prompt, every
+ * earlier check and its reply, then the new sentence. WebLLM only reuses what it
+ * already computed for a conversation when the new request extends the last one
+ * exactly. Sent fresh each time, the ~1,800-character check prompt was computed
+ * again on every check: measured in Brave on an RX 6600, 2026-10-08, 3.7 s of
+ * GPU per check before the first token, against 0.29 s chained — and typing
+ * over those 3.7 s stuttered, 33 to 121 of 462 keystrokes taking over 100 ms
+ * to paint, against none chained. The model shares the GPU with the page's
+ * compositor, and WebLLM cannot stop that stretch once it has started.
+ * Quality held: 258/280 chained against 260/280 fresh on the 14 live-check
+ * fixtures (Qwen3.5 4B, llama.cpp, 20 runs), no false alarms either way.
+ * Reset when the prompt changes, when it grows past `CHAIN_MAX_CHARS`, after
+ * anything but a completed live check, and whenever the engine is loaded again.
  */
-let generating: { interruptible: boolean; interrupted: boolean } | null = null;
+const CHAIN_MAX_CHARS = 6000;
+let chain: { system: string; turns: { role: 'user' | 'assistant'; content: string }[] } | null = null;
+
+function chainFor(request: Extract<OffscreenRequest, { op: 'complete' }>): typeof chain {
+  if (!request.liveCheck) return null;
+  const length = chain?.turns.reduce((sum, turn) => sum + turn.content.length, 0) ?? 0;
+  if (!chain || chain.system !== request.systemPrompt || length > CHAIN_MAX_CHARS) {
+    return { system: request.systemPrompt, turns: [] };
+  }
+  return chain;
+}
 
 function startEngine(): Promise<Engine> {
   loading ??= (async () => {
@@ -163,6 +180,7 @@ function touch(): void {
   idle = setTimeout(() => {
     const held = engine;
     engine = null;
+    chain = null;
     void held?.unload();
   }, IN_BROWSER_IDLE_MS);
 }
@@ -181,19 +199,18 @@ async function complete(request: Extract<OffscreenRequest, { op: 'complete' }>):
     await startEngine();
   }
   touch();
-  const current = { interruptible: !!request.interruptible, interrupted: false };
-  generating = current;
+  const conversation = chainFor(request);
+  // Whatever happens below, the engine's conversation is no longer the chain's
+  // until this request completes as a live check.
+  chain = null;
   let content = '';
   let finish: string | null = null;
   try {
-    // Streamed, though nothing reads it as it comes. WebLLM's non-streamed path
-    // tests the interrupt flag before it starts and never clears it, so an
-    // interrupt landing just after a reply finished made every later request
-    // come back empty (WebLLM 0.2.85, read in its source on 2026-10-04). The
-    // streamed path clears the flag at the start of each request.
+    // Streamed, though nothing reads it as it comes: the path that was measured.
     const stream = await engine!.chat.completions.create({
       messages: [
         { role: 'system', content: request.systemPrompt },
+        ...(conversation?.turns ?? []),
         { role: 'user', content: request.userText },
       ],
       // Greedy, as measured: 13.0/14 on all 10 runs.
@@ -207,11 +224,12 @@ async function complete(request: Extract<OffscreenRequest, { op: 'complete' }>):
       finish = chunk?.choices?.[0]?.finish_reason ?? finish;
     }
   } finally {
-    if (generating === current) generating = null;
+    touch();
   }
-  touch();
-  // A half-generated correction is not a correction; the check runs again.
-  if (current.interrupted || finish === 'abort') throw new Error(IN_BROWSER_INTERRUPTED);
+  if (conversation && finish === 'stop') {
+    conversation.turns.push({ role: 'user', content: request.userText }, { role: 'assistant', content });
+    chain = conversation;
+  }
   const text = stripThinking(content);
   if (!text.trim()) throw new Error('The in-browser model returned an empty reply.');
   return text;
@@ -235,6 +253,7 @@ async function handle(request: OffscreenRequest): Promise<unknown> {
       clearTimeout(idle);
       const held = engine;
       engine = null;
+      chain = null;
       await held?.unload();
       lastError = null;
       const lib = await loadWebLLM();
@@ -243,13 +262,6 @@ async function handle(request: OffscreenRequest): Promise<unknown> {
     }
     case 'complete':
       return complete(request);
-    case 'interrupt':
-      // Only a live check: an action the user asked for is never dropped.
-      if (generating?.interruptible && engine) {
-        generating.interrupted = true;
-        engine.interruptGenerate();
-      }
-      return null;
   }
 }
 

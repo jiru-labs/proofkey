@@ -1,5 +1,5 @@
 import { classifyChange, diffWords, type Change } from '../core/diff';
-import { askWorker, CHECK_INTERRUPTED, type CheckResult, type ContentState } from '../core/messages';
+import { askWorker, type CheckResult, type ContentState } from '../core/messages';
 import { segment, sentenceAt, sentenceKey } from '../core/sentences';
 import type { Suggestion } from '../core/types';
 import { createCard, type SuggestionCard } from './card';
@@ -43,9 +43,6 @@ const MIN_SENTENCE_LENGTH = 4;
  */
 const SETTLE_MULTIPLIER = 3;
 
-/** How often, at most, typing over a running check is reported to the worker. */
-const TYPING_RESEND_MS = 500;
-
 interface Session {
   field: FieldRef;
   highlighter: Highlighter;
@@ -58,8 +55,6 @@ interface Session {
   settleTimer: number;
   inFlight: boolean;
   dirtyWhileChecking: boolean;
-  /** When the worker was last told typing resumed during this check. */
-  typingSentAt: number;
   /** Watches rich-text fields for edits that emit no `input` event. */
   observer: MutationObserver | null;
   /** Last text seen, so a re-render that changes nothing cannot re-arm the debounce. */
@@ -129,7 +124,6 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
       timer: 0,
       settleTimer: 0,
       inFlight: false,
-      typingSentAt: 0,
       dirtyWhileChecking: false,
       observer: null,
       lastText: fieldText(field),
@@ -192,18 +186,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     // Keeps the observer's baseline current, so an edit that fires `input` is
     // not then re-reported as a mutation the observer has never seen.
     session.lastText = fieldText(session.field);
-    if (session.inFlight) {
-      session.dirtyWhileChecking = true;
-      // A model running in this browser shares the GPU with the page, and
-      // typing over it stuttered (measured, 2026-10-04). The worker drops the
-      // check; it runs again at the next pause. Repeated while typing goes on,
-      // in case one landed in the instant before the model started generating.
-      const now = performance.now();
-      if (now - session.typingSentAt > TYPING_RESEND_MS) {
-        session.typingSentAt = now;
-        void askWorker({ type: 'proofkey:typing' }).catch(() => undefined);
-      }
-    }
+    if (session.inFlight) session.dirtyWhileChecking = true;
     schedule();
   };
 
@@ -304,7 +287,6 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
 
     const batch = pending.slice(0, state.maxSentencesPerRequest);
     active.inFlight = true;
-    active.typingSentAt = 0;
     setBadge('checking');
 
     try {
@@ -316,12 +298,6 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
       if (session !== active) return; // focus moved on while we waited
 
       if (!result.ok) {
-        // Not a failure: the `finally` below sends it again at the next pause.
-        if (result.error === CHECK_INTERRUPTED) {
-          active.dirtyWhileChecking = true;
-          setBadge('waiting');
-          return;
-        }
         setBadge('error', result.error);
         return;
       }

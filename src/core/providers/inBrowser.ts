@@ -1,6 +1,5 @@
 import type { Connection } from '../types';
 import {
-  IN_BROWSER_INTERRUPTED,
   IN_BROWSER_MODEL,
   type InBrowserState,
   type OffscreenRequest,
@@ -74,7 +73,7 @@ export async function complete(
     systemPrompt: request.systemPrompt,
     userText: request.userText,
     maxTokens: connection.maxOutputTokens,
-    interruptible: request.interruptible,
+    liveCheck: request.liveCheck,
   });
   // The same ceiling every other transport has, so a stalled GPU cannot hold
   // the fallback chain forever. The document is not told to stop: WebLLM
@@ -91,23 +90,8 @@ export async function complete(
     return { text, model: IN_BROWSER_MODEL };
   } catch (error) {
     if (error instanceof ProviderError || request.signal?.aborted) throw error;
-    // An abort, not a failure: the fallback chain must not send the text on to
-    // the next provider just because the user started typing again.
-    if (error instanceof Error && error.message === IN_BROWSER_INTERRUPTED) {
-      throw new DOMException(IN_BROWSER_INTERRUPTED, 'AbortError');
-    }
     throw new ProviderError(error instanceof Error ? error.message : String(error), connection.label);
   }
-}
-
-/** Drops the live check being generated, if any. Never starts the offscreen document to do it. */
-export async function interruptLiveCheck(): Promise<void> {
-  const open = await chrome.runtime.getContexts({
-    contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
-    documentUrls: [chrome.runtime.getURL(OFFSCREEN_PATH)],
-  });
-  if (open.length === 0) return;
-  await chrome.runtime.sendMessage({ target: 'proofkey-offscreen', op: 'interrupt' }).catch(() => undefined);
 }
 
 export async function listModels(): Promise<string[]> {

@@ -28,8 +28,8 @@ export interface CompletionRequest {
   systemPrompt: string;
   userText: string;
   signal?: AbortSignal;
-  /** A live check the in-browser model may drop when typing resumes. Other transports ignore it. */
-  interruptible?: boolean;
+  /** A live check, which the in-browser model runs as one continuing conversation. Other transports ignore it. */
+  liveCheck?: boolean;
 }
 
 export interface CompletionResult {

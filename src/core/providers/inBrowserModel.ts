@@ -124,19 +124,14 @@ export type OffscreenRequest =
   | { target: 'proofkey-offscreen'; op: 'status' }
   | { target: 'proofkey-offscreen'; op: 'download' }
   | { target: 'proofkey-offscreen'; op: 'delete' }
-  /** Stops the reply being generated, if it is an interruptible one. */
-  | { target: 'proofkey-offscreen'; op: 'interrupt' }
   | {
       target: 'proofkey-offscreen';
       op: 'complete';
       systemPrompt: string;
       userText: string;
       maxTokens: number;
-      interruptible?: boolean;
+      liveCheck?: boolean;
     };
-
-/** What the offscreen document answers when a reply was stopped by `interrupt`. */
-export const IN_BROWSER_INTERRUPTED = 'The in-browser model stopped: typing resumed.';
 
 export function describeInBrowserState(state: InBrowserState): string {
   switch (state.kind) {
