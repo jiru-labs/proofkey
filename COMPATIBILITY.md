@@ -631,6 +631,14 @@ any number from this section.
 | `simplify` | Yes | `Broken` for mixed-language text (gemini-2.5-flash) | [#1](https://github.com/jiru-labs/proofkey/issues/1). **2026-10-03, fixed scorer, through OpenRouter: 41/80**; two reworded rules measured the same hour did not fix it (MODELS.md, "Rewrites and mixed-language text"). Before, with the Japanese fixture unable to fail: `tools/action-eval.ts --fixtures mixed --runs 10`, 2026-09-23, prompts as shipped in 0.1.10: **kept the mixture 58/80** — the same three fixtures as `improve-writing`. Text in one language is fine: all eight actions 640/640 over `--fixtures monolingual --runs 20` the same day |
 | `expand` | Yes | `Broken` for mixed-language text (gemini-2.5-flash) | [#1](https://github.com/jiru-labs/proofkey/issues/1). **2026-10-03, fixed scorer, through OpenRouter: 29/80**; two reworded rules measured the same hour did not fix it (MODELS.md, "Rewrites and mixed-language text"). Before, with the Japanese fixture unable to fail: `tools/action-eval.ts --fixtures mixed --runs 10`, 2026-09-23, prompts as shipped in 0.1.10: **kept the mixture 32/80** — six of the eight fixtures, including the quoted sentence and the Portuguese/English one (`deploy`→`implantação`, `rollback`→`reversão`). Text in one language is fine: all eight actions 640/640 over `--fixtures monolingual --runs 20` the same day |
 
+**On `main`, not in 0.1.13:** words in another script than the rest of the
+text, and quotations, are named in the prompt as words to keep. Measured the
+same night on `gemini-2.5-flash` through OpenRouter, all eight actions, mixed
+set, 10 runs: 405/640 with the 0.1.13 prompts, 487/640 with the change — the
+Japanese fixture 4/80 → 78/80, the other fixtures unchanged within noise. The
+rows above keep their 0.1.13 numbers until that ships. Details in MODELS.md,
+"Naming the words to keep".
+
 `fix-grammar`, `summarize` and `bullet-points` are marked `Verified` on the same
 looser basis the Providers section above already uses that tier on: a script
 talking to the real endpoint over `gemini-2.5-flash`, not a maintainer's hands

@@ -57,8 +57,10 @@ import {
   composeSystemPrompt,
   dropAddedFullStops,
   dropAddedTrailingSpaces,
+  composeCheckPrompt,
   emptyProfile,
   keepOuterWhitespace,
+  keptPassages,
   parseCheckReply,
   resolveTargetLanguage,
   TARGET_LANGUAGE,
@@ -253,6 +255,38 @@ for (const [field, language] of [
   check(`${field} alone resolves the token`, !composed.includes(TARGET_LANGUAGE));
   check(`${field} alone: the resolved language appears in the prompt`, composed.includes(language));
 }
+
+console.log('\nkeptPassages — what a rewrite is told to keep as written (issue #1):');
+
+equal('a quotation inside Spanish',
+  keptPassages('Le dije al cliente "we will ship it on Friday" y no se si fue buena idea.'),
+  ['we will ship it on Friday']);
+equal('typographic and angle quotes too',
+  keptPassages('Me dijo “ship it” y luego «c’est fini».'), ['ship it', 'c’est fini']);
+equal('a Latin-script word inside Japanese',
+  keptPassages('明日のミーティングはcancelになりましたので、参加しなくて大丈夫です。'), ['cancel']);
+equal('a Japanese word inside English',
+  keptPassages('We had 寿司 after the standup.'), ['寿司']);
+equal('an apostrophe is not a quotation', keptPassages("Don't touch it, it's fine."), []);
+equal('one script and no quotation: nothing', keptPassages('Merci pour ton retour, je regarde le document demain.'), []);
+equal('a mixture in one script is not found here — Terms never to flag is for that',
+  keptPassages('El deadline es mañana pero todavia no tengo el draft.'), []);
+check('long and many are capped',
+  keptPassages(Array.from({ length: 20 }, (_, i) => `"quote number ${i}"`).join(' ')).length === 12 &&
+  keptPassages(`"${'a'.repeat(201)}"`).length === 0);
+
+const fixGrammarAction = BUILT_IN_ACTIONS.find((action) => action.id === 'fix-grammar')!;
+const quotedText = 'Le dije al cliente "we will ship it on Friday" y no se si fue buena idea.';
+const withQuote = composeSystemPrompt(fixGrammarAction, emptyProfile(), quotedText);
+check('a rewrite is told the passage by name', withQuote.includes('- we will ship it on Friday'));
+check('the passages come last, after the output contract',
+  withQuote.indexOf('return it unchanged.') < withQuote.indexOf('quoted on purpose') && withQuote.trim().endsWith('- we will ship it on Friday'));
+equal('no text, the same prompt as before',
+  composeSystemPrompt(fixGrammarAction, emptyProfile(), 'Todo está bien.'),
+  composeSystemPrompt(fixGrammarAction, emptyProfile()));
+check('Translate is not told to keep a quotation in its own language',
+  !composeSystemPrompt(translateAction, profileWith({ translateLanguage: 'German' }), quotedText).includes('we will ship it on Friday'));
+check('the live check composes no such block', !composeCheckPrompt(emptyProfile(), 1).includes('quoted on purpose'));
 
 console.log('\ndropAddedFullStops — the one live-check rule models ignore:');
 

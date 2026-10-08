@@ -313,7 +313,11 @@ export function resolveTargetLanguage(profile: WritingProfile): string {
  * never-flag phrases cost a rule engine an XML file and a server; here they are
  * a paragraph the user typed.
  */
-export function composeSystemPrompt(action: WritingAction, profile: WritingProfile): string {
+export function composeSystemPrompt(
+  action: WritingAction,
+  profile: WritingProfile,
+  text = '',
+): string {
   // Applied to any action whose text contains the token, not to one id, so that
   // a custom action the user wrote themselves can use it too.
   const targetLanguage = resolveTargetLanguage(profile);
@@ -368,7 +372,56 @@ export function composeSystemPrompt(action: WritingAction, profile: WritingProfi
   }
 
   blocks.push(OUTPUT_CONTRACT);
+
+  // Named rather than described: told in general to keep a mixture, the rewrite
+  // actions still translated these; told which words, they kept them (issue #1).
+  // Last, after the output contract: on Qwen3-4B that placement scored 38/64 on
+  // the mixed set against 36 just before it and 27 without the block.
+  const kept = translating ? [] : keptPassages(text);
+  if (kept.length > 0) {
+    blocks.push(
+      [
+        'These words and phrases are in another language or quoted on purpose. Keep',
+        'each one exactly as written, in its own language, wherever it appears:',
+        kept.map((passage) => `- ${passage}`).join('\n'),
+      ].join('\n'),
+    );
+  }
+
   return blocks.join('\n\n');
+}
+
+const MAX_KEPT = 12;
+const MAX_KEPT_LENGTH = 200;
+const QUOTED = /"([^"\n]+)"|“([^”\n]+)”|«([^»\n]+)»|„([^“\n]+)“|「([^」\n]+)」|『([^』\n]+)』/g;
+const LATIN_RUN = /\p{Script=Latin}[\p{Script=Latin}\p{M}'’-]*(?:[ \t]+\p{Script=Latin}[\p{Script=Latin}\p{M}'’-]*)*/gu;
+const OTHER_SCRIPT_RUN = /(?:(?!\p{Script=Latin})\p{L})[\p{L}\p{M}]*(?:[ \t]+(?:(?!\p{Script=Latin})\p{L})[\p{L}\p{M}]*)*/gu;
+
+/**
+ * What a rewrite of `text` must hand back as written, found without asking a
+ * model: quotations, and words in another script than most of the text — the
+ * `cancel` inside Japanese, the 寿司 inside English. The words of a mixture in
+ * one script (an English `deadline` in Spanish) are not found here: that needs
+ * telling languages apart, and a 4B model asked to list them missed most and
+ * listed misspellings, which keeping as written would leave uncorrected
+ * (MODELS.md, 2026-10-08). Terms never to flag is the place for those.
+ */
+export function keptPassages(text: string): string[] {
+  const found: string[] = [];
+  for (const match of text.matchAll(QUOTED)) {
+    const quoted = match.slice(1).find((group) => group !== undefined)?.trim() ?? '';
+    if (/\p{L}/u.test(quoted)) found.push(quoted);
+  }
+
+  const letters = text.match(/\p{L}/gu)?.length ?? 0;
+  const latin = text.match(/\p{Script=Latin}/gu)?.length ?? 0;
+  if (letters > 0 && latin > 0 && latin < letters) {
+    found.push(...(text.match(latin * 2 < letters ? LATIN_RUN : OTHER_SCRIPT_RUN) ?? []));
+  }
+
+  return [...new Set(found.map((passage) => passage.trim()))]
+    .filter((passage) => passage.length > 0 && passage.length <= MAX_KEPT_LENGTH)
+    .slice(0, MAX_KEPT);
 }
 
 /**

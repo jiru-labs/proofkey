@@ -177,7 +177,7 @@ async function runOne(
   const body = {
     model,
     messages: [
-      { role: 'system', content: composeSystemPrompt(action, profile) },
+      { role: 'system', content: composeSystemPrompt(action, profile, fixture.input) },
       { role: 'user', content: fixture.input },
     ],
     max_tokens: maxTokens,

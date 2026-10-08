@@ -1583,6 +1583,57 @@ every model besides `gemini-2.5-flash` on mixed-language text, apart from the
 two local models below; every provider besides Google Gemini and a local
 llama.cpp server.
 
+### Naming the words to keep (on `main`, not in 0.1.13)
+
+Rewording the rule failed twice (above), so on 2026-10-08 the question changed:
+does the model keep the words when it is told **which** ones? On
+`Qwen3-4B-Instruct-2507` (llama.cpp, temperature 0, one run, the six actions
+that reword, mixed set), the shipped prompt kept the mixture in 16/48; the same
+prompt with each fixture's own `mustSurvive` words listed at the end, 39/48.
+Naming works; finding the words is the problem. Three ways of finding them:
+
+- **The model writes the list first** (`KEEP: …` on a line of its own, stripped
+  before the text is shown): scored 45/48, but in 7 replies the model returned
+  **only** the list, without the text. That reply would replace the user's text
+  with a list of words, and it scored as a pass because the list holds the very
+  words the scorer looks for. Rejected.
+- **A separate call lists them**, then the rewrite runs with the list: the model
+  does not count a borrowed word as foreign (`deadline` in Spanish came back
+  `[]`) and, told to list English words, listed misspellings in English text
+  (`tomorow`), which keeping as written would leave uncorrected. 30/48 with no
+  fixture word in the listing prompt. Rejected.
+- **Rules, no model** — `keptPassages` in `src/core/prompts.ts`: quotations,
+  and words in another script than most of the text (the `cancel` inside
+  Japanese). It cannot find a mixture in one script, such as an English
+  `deadline` in Spanish. **This ships**, as a block after the output contract,
+  only when there is something to name, never for Translate or the live check.
+
+Measured with the real composed prompt:
+
+| | Shipped | With the block |
+|---|---|---|
+| `Qwen3-4B`, all eight actions, mixed | 26/64 (27 on a second pass) | 36/64 before the output contract, **38/64 after it** |
+| `Qwen3-4B`, all eight actions, monolingual | 32/32 | 32/32 (the prompt is byte-identical: nothing to name) |
+| `gemini-2.5-flash`, all eight actions, mixed, 10 runs | **405/640** | **487/640** |
+
+The Gemini pair was run the same night, through OpenRouter (served by Google,
+`reasoning_effort: "none"`), the control from a worktree of `534c78f`. By
+fixture, all of the difference is the Japanese one: **4/80 → 78/80**. The quoted
+sentence was 80/80 under both, so Gemini keeps quotations without being told;
+Qwen did not (it translated the quote in four of the six rewrite actions), which
+is why quotations are named too. The six other fixtures, whose prompts are
+identical under both, went 320 → 329: that is the night's noise. Per action on
+Gemini: Fix grammar 69 → 79, Summarize 69 → 78, Convert to bullet points 74 → 80,
+Improve writing 55 → 65, Make professional 35 → 45, Make friendly 38 → 50,
+Simplify 42 → 55, Expand 23 → 35 — each about one Japanese fixture's worth.
+Cost of both runs, read off `/api/v1/key`: $0.28.
+
+**What the user can do today for a one-script mixture:** put the borrowed words
+in **Terms never to flag** (Profile). That list is composed into every action's
+prompt as "leave the following exactly as written". With each fixture's words
+there, `Qwen3-4B` kept the mixture in 45/64 across the eight actions, against
+26–27 without; not measured on Gemini.
+
 ### Text in one language
 
 Every fixture above mixes two languages, so nothing had ever sent a quick action
