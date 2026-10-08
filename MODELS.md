@@ -1333,7 +1333,7 @@ quantisation.
 #### Typing while it checks
 
 Reported by the user: with the in-browser model, live checking made typing stutter.
-Measured on Windows 11 with an RX 6600 8 GB, on a local test page (a textarea, no
+Measured on Windows 11 with an RX 6600 8 GB, on a local test page (`tools/typing-lab/lab.html`: a textarea, no
 network) that records the Event Timing duration of each keystroke — input delay
 plus processing plus the next paint.
 
@@ -1390,8 +1390,8 @@ The same procedure on the build as committed, once per browser after a warm-up:
 **Starting the conversation, moved off the keyboard.** Every time the
 conversation starts — the model just loaded, a quick action ran in between, or
 it outgrew 6,000 characters — the next check pays the full 3.7 s again, and the
-first one after the model loads also pays the load (about 2.8 s). Measured with a
-runner that types into the page over the browser's own protocol (Playwright,
+first one after the model loads also pays the load (about 2.8 s). Measured with
+`tools/typing-lab/runner.mjs`, which types into the page over the browser's own protocol (Playwright,
 `page.keyboard.type`, 80 ms per key) so the desktop stays usable while it runs —
 it matched the script typing at the OS level (0 slow keystrokes on a normal run
 in both). Same 8 sentences and pauses; "action" runs Fix grammar after the 4th

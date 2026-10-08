@@ -1,0 +1,50 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>pk typing lab</title>
+<style>body{font:16px system-ui;margin:20px;background:#fff;color:#111}textarea{width:900px;height:300px;font:18px system-ui}#s{font:13px monospace;white-space:pre}</style></head>
+<body>
+<div>run: <b id="run"></b> · origin: <b id="org"></b></div>
+<textarea id="t" spellcheck="false"></textarea>
+<div id="s"></div>
+<script>
+const run = new URLSearchParams(location.search).get('run') || 'unnamed';
+document.getElementById('run').textContent = run;
+document.getElementById('org').textContent = location.origin;
+const t0 = performance.now();
+const inter = new Map();           // interactionId -> {start, dur, delay, proc, name}
+const keys = [];                   // per keydown with duration >= 16 ms: {t, dur, delay, proc}
+const marks = [];                  // underline count changes: {t, n}
+let lastInput = 0, inputs = 0;
+new PerformanceObserver(list => {
+  for (const e of list.getEntries()) {
+    if (e.name !== 'keydown') continue;
+    keys.push({ t: Math.round(e.startTime - t0), dur: Math.round(e.duration),
+      delay: Math.round(e.processingStart - e.startTime),
+      proc: Math.round(e.processingEnd - e.processingStart) });
+  }
+}).observe({ type: 'event', buffered: true, durationThreshold: 16 });
+// Count keydowns that did NOT exceed 16 ms too (observer only reports >=16).
+document.getElementById('t').addEventListener('keydown', () => { inputs++; lastInput = performance.now(); }, true);
+function underlines() {
+  const h = document.getElementById('proofkey-root');
+  return h && h.shadowRoot ? h.shadowRoot.querySelectorAll('.pk-u').length : -1;
+}
+let lastN = -2;
+setInterval(() => {
+  const n = underlines();
+  if (n !== lastN) { marks.push({ t: Math.round(performance.now() - t0), n, sinceInput: Math.round(performance.now() - lastInput) }); lastN = n; }
+}, 100);
+function summary() {
+  const over = th => keys.filter(k => k.dur > th).length;
+  return { run, t0Epoch: Math.round(performance.timeOrigin + t0), origin: location.origin, ua: navigator.userAgent, at: new Date().toISOString(),
+    keydowns: inputs, over50: over(50), over100: over(100), over200: over(200),
+    worst: keys.reduce((m, k) => Math.max(m, k.dur), 0),
+    maxProc: keys.reduce((m, k) => Math.max(m, k.proc), 0),
+    keys, marks, text: document.getElementById('t').value };
+}
+async function send() {
+  const s = summary();
+  document.getElementById('s').textContent = `keydowns ${s.keydowns}  >50ms ${s.over50}  >100ms ${s.over100}  >200ms ${s.over200}  worst ${s.worst}ms  maxProc ${s.maxProc}ms  underlines ${underlines()}`;
+  try { await fetch('/results?run=' + encodeURIComponent(run), { method: 'POST', body: JSON.stringify(s) }); } catch {}
+}
+setInterval(send, 3000);
+</script></body></html>
