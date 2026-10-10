@@ -40,9 +40,12 @@ const flag = (name) => {
 const base = flag('base');
 const model = flag('model');
 const temperature = flag('temperature');
+// `--preset opencode-go` saves the connection as a preset's would be, so the
+// preset's own routing (transport per model, extra headers) is what runs.
+const preset = flag('preset') ?? 'custom';
 const key = process.env['PROOFKEY_EVAL_KEY'];
 if (!base || !model || key === undefined) {
-  console.error('Usage: PROOFKEY_EVAL_KEY=... node tools/provider-test.mjs --base <url>/v1 --model <id> [--temperature 0] [--headed]');
+  console.error('Usage: PROOFKEY_EVAL_KEY=... node tools/provider-test.mjs --base <url>/v1 --model <id> [--preset <id>] [--temperature 0] [--headed]');
   process.exit(1);
 }
 
@@ -68,7 +71,7 @@ function connection(id, label, apiKey) {
   return {
     id,
     label,
-    presetId: 'custom',
+    presetId: preset,
     transport: 'chat_completions',
     baseUrl: base,
     apiKey,
