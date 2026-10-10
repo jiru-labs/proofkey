@@ -9,6 +9,7 @@ import {
   type CompletionRequest,
   type CompletionResult,
 } from './request';
+import { sessionHeaders } from './session';
 
 /**
  * The OpenAI `/chat/completions` shape, which OpenRouter, Groq, Ollama,
@@ -40,7 +41,7 @@ export async function complete(
   const payload = await postJson(
     connection,
     buildUrl(connection, '/chat/completions'),
-    buildHeaders(connection, {}),
+    buildHeaders(connection, await sessionHeaders(connection)),
     body,
     request.signal,
   );
@@ -116,7 +117,7 @@ export async function listModels(
   const payload = await getJson(
     connection,
     buildUrl(connection, '/models'),
-    buildHeaders(connection, {}),
+    buildHeaders(connection, await sessionHeaders(connection)),
     signal,
   );
 

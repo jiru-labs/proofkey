@@ -1,9 +1,10 @@
-import { getPreset } from '../presets';
+import { effectiveTransport, getPreset } from '../presets';
 import type { Connection } from '../types';
 import * as anthropic from './anthropic';
 import * as chatCompletions from './chatCompletions';
 import * as chromeBuiltin from './chromeBuiltin';
 import * as inBrowser from './inBrowser';
+import * as responses from './responses';
 import { ProviderError, type CompletionRequest, type CompletionResult } from './request';
 
 export { ProviderError } from './request';
@@ -15,12 +16,13 @@ interface Adapter {
 }
 
 /**
- * Two network adapters cover every remote provider. Adding a provider that
- * speaks one of these transports is a row in `presets.ts`, not code. The third
- * is Chrome's on-device model, which has no URL at all.
+ * Three network adapters cover every remote provider. Adding a provider that
+ * speaks one of these transports is a row in `presets.ts`, not code. The other
+ * two run a model on this computer and have no URL at all.
  */
 const ADAPTERS: Record<Connection['transport'], Adapter> = {
   chat_completions: chatCompletions,
+  openai_responses: responses,
   anthropic_messages: anthropic,
   chrome_builtin: chromeBuiltin,
   in_browser: inBrowser,
@@ -57,7 +59,7 @@ export async function runCompletion(
     }
 
     try {
-      const result = await ADAPTERS[connection.transport].complete(connection, request);
+      const result = await ADAPTERS[effectiveTransport(connection)].complete(connection, request);
       return { ...result, connection, fallbackErrors: failures };
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') throw error;
@@ -76,7 +78,7 @@ export async function runCompletion(
 export function listModels(connection: Connection, signal?: AbortSignal): Promise<string[]> {
   const invalid = validateConnection(connection, { requireModel: false });
   if (invalid) return Promise.reject(new ProviderError(invalid, connection.label));
-  return ADAPTERS[connection.transport].listModels(connection, signal);
+  return ADAPTERS[effectiveTransport(connection)].listModels(connection, signal);
 }
 
 /** Returns a human-readable problem with the connection, or null when it is usable. */

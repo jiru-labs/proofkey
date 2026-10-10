@@ -38,6 +38,20 @@ export interface Preset {
    * default model.
    */
   disableThinking?: (model: string) => Record<string, unknown> | undefined;
+  /**
+   * The transport a model needs, where one endpoint speaks two protocols
+   * depending on the model; undefined means `transport` for every model. On
+   * OpenCode Go (2026-10-10) `gpt-*-luna` and `grok-*` answer only the Responses
+   * API and `glm-*` / `kimi-*` only `/chat/completions`, each refusing the
+   * other with `ModelProtocolUnsupported`.
+   */
+  transportFor?: (model: string) => Transport;
+  /**
+   * A header carrying an id kept for the browser session, where the endpoint
+   * refuses requests without one. OpenCode Go has answered `MissingSessionID`
+   * to every request lacking `x-opencode-session` since about 2026-09-17.
+   */
+  sessionHeader?: string;
   /** `primary` presets are listed first in the options page. */
   group: 'primary' | 'more';
   /** Shown under the fields in the options page. */
@@ -134,9 +148,11 @@ export const PRESETS: readonly Preset[] = [
     hint: 'Start the local server in LM Studio, then use "Fetch models" to list what is loaded.',
   }),
   openaiCompatible('opencode-go', 'OpenCode Go', 'https://opencode.ai/zen/go/v1', {
-    defaultModel: 'gpt-5.6-luna',
+    defaultModel: 'gpt-6-luna',
     group: 'primary',
-    hint: 'Flat-rate plan over coding models, which think — the fastest measured is 4.2s per live check and the slowest exceeds ProofKey\'s 60s timeout. gpt-5.6-luna is the measured pick; see MODELS.md. Do not set reasoning_effort: grok-4.5 and minimax-m2.5 reject it and the error does not say so. "Fetch models" over-reports — 3 of the 24 it lists cannot answer.',
+    transportFor: (model) => (/^(gpt-|grok-)/.test(model) ? 'openai_responses' : 'chat_completions'),
+    sessionHeader: 'x-opencode-session',
+    hint: 'Flat-rate plan that OpenCode says is "designed for OpenCode and other coding agents", with traffic "monitored for abuse" — proofreading is not coding-agent traffic, so read their terms before relying on it. gpt-6-luna is the measured pick: 14.0/14 on the live-check fixtures, no false alarms, 3.5 s for 14 sentences. ProofKey uses the Responses API for gpt-* and grok-* and /chat/completions for the rest, as Go requires, and sends the session id Go asks for.',
     docsUrl: 'https://opencode.ai/docs/go/',
   }),
   {
@@ -297,6 +313,17 @@ export function normalizeBaseUrl(raw: string): string {
  * from the preset at request time means it simply stops being sent the moment
  * the connection no longer points where it was measured.
  */
+/**
+ * The transport a connection's requests actually use: the preset's choice for
+ * its model, when the connection still points at that preset's endpoint.
+ */
+export function effectiveTransport(connection: Connection): Transport {
+  const preset = getPreset(connection.presetId);
+  if (!preset.transportFor || !preset.baseUrl) return connection.transport;
+  if (normalizeBaseUrl(preset.baseUrl) !== normalizeBaseUrl(connection.baseUrl)) return connection.transport;
+  return preset.transportFor(connection.model.trim());
+}
+
 export function disableThinkingBody(
   connection: Connection,
 ): Record<string, unknown> | undefined {

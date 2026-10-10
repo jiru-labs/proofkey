@@ -116,6 +116,20 @@ function startStubProvider() {
       }
 
       // Reply in whichever shape the caller asked for.
+      if (request.url.includes('/responses')) {
+        response.end(
+          JSON.stringify({
+            model: 'stub-responses',
+            status: 'completed',
+            output: [
+              { type: 'reasoning', summary: [] },
+              { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'There is a lot to do.' }] },
+            ],
+            usage: { input_tokens: 10, output_tokens: 5 },
+          }),
+        );
+        return;
+      }
       response.end(
         request.url.includes('/messages')
           ? JSON.stringify({
@@ -216,10 +230,15 @@ function settingsFor(transport) {
     maxOutputTokens: 512,
   };
 
+  // The Responses API is reached through the OpenCode Go preset, which is also
+  // the one that requires a session header; pointed at the stub, the transport
+  // is the connection's own rather than the preset's per-model choice.
   const connection =
     transport === 'anthropic_messages'
       ? { ...shared, presetId: 'anthropic', transport, authStyle: 'x-api-key' }
-      : { ...shared, presetId: 'custom', transport, authStyle: 'bearer' };
+      : transport === 'openai_responses'
+        ? { ...shared, presetId: 'opencode-go', transport, authStyle: 'bearer' }
+        : { ...shared, presetId: 'custom', transport, authStyle: 'bearer' };
 
   return {
     schemaVersion: 1,
@@ -1192,7 +1211,7 @@ async function run() {
     await stale.close();
   }
 
-  for (const transport of ['chat_completions', 'anthropic_messages']) {
+  for (const transport of ['chat_completions', 'anthropic_messages', 'openai_responses']) {
     console.log(`\n${transport}:`);
     seen.length = 0;
 
@@ -1217,7 +1236,8 @@ async function run() {
       continue;
     }
 
-    const expectedPath = transport === 'anthropic_messages' ? '/v1/messages' : '/v1/chat/completions';
+    const expectedPath =
+      transport === 'anthropic_messages' ? '/v1/messages' : transport === 'openai_responses' ? '/v1/responses' : '/v1/chat/completions';
     check('endpoint path', request.path === expectedPath, request.path);
 
     if (transport === 'anthropic_messages') {
@@ -1235,8 +1255,19 @@ async function run() {
         !('temperature' in request.body),
         'current Claude models reject it',
       );
+    } else if (transport === 'openai_responses') {
+      check('bearer auth sent', request.headers['authorization'] === 'Bearer test-key-123');
+      check('system prompt sent as instructions', typeof request.body.instructions === 'string');
+      check('input carries only the user turn', request.body.input?.length === 1 && request.body.input[0].role === 'user');
+      check('max_output_tokens sent', request.body.max_output_tokens === 512, JSON.stringify(request.body.max_output_tokens));
+      check('temperature omitted', !('temperature' in request.body), 'gpt-6-luna refuses it');
+      check('only the message item becomes the reply, not the reasoning item', reply?.value?.text === 'There is a lot to do.', reply?.value?.text);
+      // OpenCode Go answers MissingSessionID to any request without it.
+      const sessionId = request.headers['x-opencode-session'];
+      check('session header sent', /^[0-9a-f-]{36}$/.test(sessionId ?? ''), sessionId);
     } else {
       check('bearer auth sent', request.headers['authorization'] === 'Bearer test-key-123');
+      check('no session header where the preset has none', !('x-opencode-session' in request.headers));
       check(
         'system sent as the first message',
         request.body.messages?.[0]?.role === 'system',
@@ -1253,7 +1284,7 @@ async function run() {
 
     check(
       'style-guide rules would ride on the system prompt',
-      String(request.body.system ?? request.body.messages?.[0]?.content ?? '').includes(
+      String(request.body.system ?? request.body.instructions ?? request.body.messages?.[0]?.content ?? '').includes(
         'Output only the resulting text',
       ),
       'output contract present',
