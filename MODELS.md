@@ -459,7 +459,7 @@ catalogue by protocol: `gpt-6-luna`, `gpt-5.6-luna` and `grok-4.7` answer only
 the Responses API (`POST /responses`), `glm-5.3` and `kimi-k3` only
 `/chat/completions`, and each refuses the other with `ModelProtocolUnsupported`
 (`grok-4.6` also refused `/chat/completions`, not tried on Responses;
-`claude-haiku-5-5` refused both). On `main` (not in 0.1.14) the preset sends a
+`claude-haiku-5-5` refused both). Since 0.1.15 the preset sends a
 session id kept for the browser session, picks the protocol per model, and
 defaults to `gpt-6-luna`. The same live-check measurement as `npm run eval` (14
 fixtures in one request, the real prompt and parser) over the Responses API, five
