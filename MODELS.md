@@ -1408,9 +1408,10 @@ Warming, on `main` (not in 0.1.13): a page with live checking on asks for the
 model when it loads (and a field taking focus asks again), so it is loaded and the
 conversation started before the first sentence; typing keeps it from being
 unloaded; and after a quick action, or once the conversation outgrew its limit,
-it is started again right away or after 4 s without a request. Edge's 49 is a run
+it is started again right away or after 4 s without a request. Edge's 49 is most likely a run
 in which loading took longer than the 5 s the runner waits between opening the
-page and typing. **Still there: right after a quick action**, the next check pays
+page and typing — inferred, not measured: that build logged no timings, and the
+next warm-up run in Edge had none. **Still there: right after a quick action**, the next check pays
 the 3.7 s while typing goes on in these runs, because typing resumes 2 s after the
 action — about 10 slow keystrokes, once. Starting the conversation as soon as the
 action returns rather than after a quiet spell made no difference here (11 and 12

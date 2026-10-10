@@ -71,8 +71,9 @@ try {
   let worker = await findWorker();
   const extId = new URL(worker.url()).host;
   // A restart can keep an old service worker. The extensions page's own Reload
-  // (what its button calls) re-reads it from disk; chrome.runtime.reload() of an
-  // extension loaded from the command line leaves it disabled instead.
+  // (what its button calls) re-reads it from disk. chrome.runtime.reload() of an
+  // extension loaded from the command line left it disabled instead (seen once,
+  // Brave Origin 153 under xvfb).
   const mgr = await context.newPage();
   await mgr.goto('chrome://extensions');
   const version = await mgr.evaluate(async (id) => {
