@@ -40,7 +40,8 @@ else is either covered by automated tests or by nothing at all, and
 
 | Provider | Status |
 |---|---|
-| Google Gemini · xAI (Grok) · OpenRouter · OpenCode Go · llama.cpp (self-hosted) | **Verified** against real keys |
+| Google Gemini · xAI (Grok) · OpenRouter · llama.cpp (self-hosted) | **Verified** against real keys |
+| OpenCode Go | **Broken in 0.1.14 and earlier** — since about 2026-09-17 Go refuses requests without a session header, and its `gpt-*` models now answer only the Responses API. Fixed on `main` (not in 0.1.14), measured over Go's own endpoint; see [MODELS.md](MODELS.md#if-you-are-on-opencode) |
 | Chrome's built-in model (Gemini Nano, no key) | **Verified** — 2026-09-13, Chrome 153 on one laptop, through the real service worker. Live checking and Fix grammar only; [why](#no-api-key-at-all-chromes-built-in-model) |
 | The other 31 presets | *Prefilled, not confirmed* — the base URL is filled in for you, that is all it means |
 

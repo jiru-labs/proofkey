@@ -452,6 +452,32 @@ on every paid Zen model.
 
 Only Go was measured. Everything below is about Go.
 
+**Since about 2026-09-17, ProofKey 0.1.14 and earlier cannot reach Go at all.**
+Measured 2026-10-10: every request without an `x-opencode-session` header now
+answers `MissingSessionID`, whatever the model. With the header, Go splits its
+catalogue by protocol: `gpt-6-luna`, `gpt-5.6-luna` and `grok-4.7` answer only
+the Responses API (`POST /responses`), `glm-5.3` and `kimi-k3` only
+`/chat/completions`, and each refuses the other with `ModelProtocolUnsupported`
+(`grok-4.6` also refused `/chat/completions`, not tried on Responses;
+`claude-haiku-5-5` refused both). On `main` (not in 0.1.14) the preset sends a
+session id kept for the browser session, picks the protocol per model, and
+defaults to `gpt-6-luna`. The same live-check measurement as `npm run eval` (14
+fixtures in one request, the real prompt and parser) over the Responses API, five
+runs each:
+
+| Model | Live check | False alarms | Median per 14-sentence check | Output tokens |
+|---|---|---|---|---|
+| `gpt-6-luna` | **14.0/14** (14 on every run) | 0 | 3.5 s | 358 |
+| `gpt-5.6-luna` | 13.6/14 | 0 | 4.6 s | 320 |
+| `grok-4.7` | 14.0/14 | 0 | 12.7 s | 2,113 (it reasons) |
+
+OpenCode's own page for Go says it "is designed for OpenCode and other coding
+agents that produce similar types of requests" and that "traffic is monitored
+for abuse". Proofreading is not coding-agent traffic: read their terms before
+you rely on a Go key here. Everything below this paragraph was measured on
+2026-08-01, over `/chat/completions`, before both changes; several of those
+models have since left the plan (`grok-4.5`, `minimax-m2.5`).
+
 The short version: **this is a catalogue of coding models, and it shows.** Every
 one of the sixteen plan models held the contract over ten runs and not one
 produced a false alarm — a cleaner sweep than any other provider on this page —
