@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated: 27 September 2026**
+**Last updated: 8 October 2026**
 
 ProofKey is a browser extension published by Jiru Labs. This policy describes
 what it does with your data. It is short because the extension does very little.
