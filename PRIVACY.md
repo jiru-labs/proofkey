@@ -64,7 +64,7 @@ operates nor can read that channel. With Sync off, or not signed in, they stay
 on this computer. The downloaded in-browser model never syncs.
 
 Your API keys are also copied to `chrome.storage.local`, by connection, and the
-copy is removed when you clear a key (on `main`, not in 0.1.13). This copy is
+copy is removed when you clear a key (since 0.1.14). This copy is
 the first step in keeping keys off the browser's sync: sync still holds them for
 now, so this changes nothing about where they travel.
 

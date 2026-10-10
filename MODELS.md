@@ -1396,8 +1396,8 @@ a check saved little, and the check sent again at the next pause paid the 3.7 s
 again. Sent as one continuing conversation instead — the earlier checks and their
 replies kept, the new sentence added — WebLLM reuses what it already computed and
 reads only the new part. A check then takes under a second of GPU in all and ends
-before typing resumes, so there is nothing left to interrupt. On `main` (not in
-0.1.13) checks continue one conversation and are never stopped; quick actions
+before typing resumes, so there is nothing left to interrupt. Since 0.1.14,
+checks continue one conversation and are never stopped; quick actions
 start it again. Quality held: on the 14 live-check fixtures, one sentence per
 request in shuffled order, **258/280** chained against **260/280** sent fresh,
 no false alarms and no broken replies either way (`Qwen3.5-4B` Q4_K_M on
@@ -1430,7 +1430,7 @@ the 6,000-character limit:
 | Brave, warming as well | 0; 0 | 0 | 12; 11; 12 | 3 of 3,343 |
 | Edge, warming as well | 49; 0 | 0 | 12; 13; 9 | 0 of 3,343 |
 
-Warming, on `main` (not in 0.1.13): a page with live checking on asks for the
+Warming, since 0.1.14: a page with live checking on asks for the
 model when it loads (and a field taking focus asks again), so it is loaded and the
 conversation started before the first sentence; typing keeps it from being
 unloaded; and after a quick action, or once the conversation outgrew its limit,
@@ -1676,7 +1676,7 @@ every model besides `gemini-2.5-flash` on mixed-language text, apart from the
 two local models below; every provider besides Google Gemini and a local
 llama.cpp server.
 
-### Naming the words to keep (on `main`, not in 0.1.13)
+### Naming the words to keep (since 0.1.14)
 
 Rewording the rule failed twice (above), so on 2026-10-08 the question changed:
 does the model keep the words when it is told **which** ones? On
