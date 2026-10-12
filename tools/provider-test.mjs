@@ -114,16 +114,21 @@ const probe = (id) => {
   const shadow = document.getElementById('proofkey-root')?.shadowRoot;
   const field = document.getElementById(id);
   const marks = shadow ? [...shadow.querySelectorAll('.pk-u')].map((mark) => mark.getBoundingClientRect().toJSON()) : [];
-  const ranges = ['proofkey-grammar', 'proofkey-spelling', 'proofkey-style']
+  // Only what is drawn. Ranges from text that has since been deleted stay in
+  // the registry, collapsed, until the next check replaces them: they paint
+  // nothing and take no click, and counting them sent the Lexical case to 0,0.
+  const live = ['proofkey-grammar', 'proofkey-spelling', 'proofkey-style']
     .flatMap((name) => [...(CSS.highlights.get(name) ?? [])])
-    .filter((range) => field.contains(range.startContainer))
-    .map((range) => range.getBoundingClientRect().toJSON());
+    .filter((range) => field.contains(range.startContainer) && !range.collapsed);
+  const ranges = live.map((range) => range.getBoundingClientRect().toJSON());
   const badge = shadow?.querySelector('.pk-badge');
   return {
     mounted: !!shadow,
     rects: field instanceof HTMLTextAreaElement ? marks : ranges,
     badge: badge && !badge.hidden ? badge.textContent : null,
     text: field.value ?? field.innerText,
+    // What each underline covers, for a failure line to say what was clicked.
+    words: field instanceof HTMLTextAreaElement ? [] : live.map((range) => range.toString()),
   };
 };
 
@@ -374,7 +379,18 @@ async function run() {
         const r = shadow.querySelector('.pk-btn--primary').getBoundingClientRect();
         return { x: r.x + r.width / 2, y: r.y + r.height / 2, before: shadow.querySelector('.pk-card__before')?.textContent, after: shadow.querySelector('.pk-card__after')?.textContent };
       });
-      check('clicking an underline opens its card', !!button, button ? `${JSON.stringify(button.before)} → ${JSON.stringify(button.after)}` : 'no card');
+      let missed = 'no card';
+      if (!button) {
+        const x = rect.x + rect.width / 2;
+        const y = rect.y + rect.height / 2;
+        const now = await page.evaluate(probe, 'lexical');
+        const at = await page.evaluate(([x, y]) => {
+          const node = document.elementFromPoint(x, y);
+          return node ? `<${node.tagName.toLowerCase()}${node.id ? `#${node.id}` : ''}>` : 'nothing';
+        }, [x, y]);
+        missed = `no card; clicked ${JSON.stringify(found.words[0])} at ${Math.round(x)},${Math.round(y)} on ${at}; underlines ${JSON.stringify(found.words)}, now ${JSON.stringify(now.words)}, badge ${JSON.stringify(now.badge)}`;
+      }
+      check('clicking an underline opens its card', !!button, button ? `${JSON.stringify(button.before)} → ${JSON.stringify(button.after)}` : missed);
       if (button) {
         await page.mouse.click(button.x, button.y);
         const applied = await waitFor(page, probe, 'lexical', (s) => s.text !== before, 5_000);
