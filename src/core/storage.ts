@@ -114,13 +114,23 @@ const KEY_API_KEYS = 'proofkey:apiKeys';
  * as before. The release that stops writing keys to sync will read them from
  * here: every computer that ran this one has its copy by then, where it would
  * otherwise lose its key the moment another computer saved settings without it.
+ *
+ * "Gone" needs care for that release to be safe. 0.1.14 and 0.1.15 drop the
+ * copy whenever sync shows a connection with no key, so a computer still on
+ * one of them when another strips the keys deletes its own. From here on a
+ * connection only loses its copy when it is removed, or when its key is
+ * cleared in settings that do not carry `apiKeysLocal` — the mark the
+ * stripping release writes, so an empty key it leaves behind is not read as
+ * the user clearing it.
  */
 export async function mirrorApiKeys(): Promise<void> {
   const settings = await loadSettings();
-  const keys = Object.fromEntries(
-    settings.connections.filter((c) => c.apiKey).map((c) => [c.id, c.apiKey]),
-  );
-  const stored = (await chrome.storage.local.get(KEY_API_KEYS))[KEY_API_KEYS] ?? {};
+  const stored = ((await chrome.storage.local.get(KEY_API_KEYS))[KEY_API_KEYS] ?? {}) as Record<string, string>;
+  const keys: Record<string, string> = {};
+  for (const connection of settings.connections) {
+    const key = connection.apiKey || (settings.apiKeysLocal ? stored[connection.id] : undefined);
+    if (key) keys[connection.id] = key;
+  }
   if (JSON.stringify(stored) === JSON.stringify(keys)) return;
   if (Object.keys(keys).length > 0) await chrome.storage.local.set({ [KEY_API_KEYS]: keys });
   else await chrome.storage.local.remove(KEY_API_KEYS);

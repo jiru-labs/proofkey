@@ -66,7 +66,10 @@ on this computer. The downloaded in-browser model never syncs.
 Your API keys are also copied to `chrome.storage.local`, by connection, and the
 copy is removed when you clear a key (since 0.1.14). This copy is
 the first step in keeping keys off the browser's sync: sync still holds them for
-now, so this changes nothing about where they travel.
+now, so this changes nothing about where they travel. On `main` (not in 0.1.15),
+the copy is also kept when settings arriving from sync carry the mark a later
+release will write when it stops putting keys there, so a computer that
+receives those settings keeps its key instead of losing it.
 
 One more thing is kept, in `chrome.storage.local`, which never syncs: how many
 suggestions you have applied, when you applied the first, and whether ProofKey

@@ -1459,7 +1459,8 @@ async function run() {
 
   // ------------------------------------------------------------ key mirror
   // The first half of keeping keys off sync: every key saved to settings gets
-  // a copy in storage.local, and the copy follows when a key is cleared. Sync
+  // a copy in storage.local, and the copy follows when a key is cleared — unless
+  // the settings carry apiKeysLocal, where an empty key is not a cleared one. Sync
   // is written the way another computer's would be, so the worker has to
   // notice it on its own.
   console.log('\nAPI keys copied to local storage:');
@@ -1491,6 +1492,25 @@ async function run() {
     const cleared = await settle({ 'test-connection': 'test-key-123' });
     check('a key cleared in settings leaves storage.local too',
       JSON.stringify(cleared) === JSON.stringify({ 'test-connection': 'test-key-123' }), JSON.stringify(cleared));
+
+    // What the release that stops syncing keys will write: empty keys and the
+    // mark. A third connection's key is the witness that the worker has run.
+    const third = { ...settings.connections[0], id: 'third-connection', apiKey: 'third-key-789' };
+    await page.evaluate(
+      (value) => chrome.storage.sync.set({ 'proofkey:settings': value }),
+      { ...settings, apiKeysLocal: true, connections: [{ ...settings.connections[0], apiKey: '' }, third] },
+    );
+    const kept = await settle({ 'test-connection': 'test-key-123', 'third-connection': 'third-key-789' });
+    check('with apiKeysLocal, an empty key in sync keeps its copy in storage.local',
+      kept?.['test-connection'] === 'test-key-123' && kept?.['third-connection'] === 'third-key-789', JSON.stringify(kept));
+
+    await page.evaluate(
+      (value) => chrome.storage.sync.set({ 'proofkey:settings': value }),
+      { ...settings, apiKeysLocal: true, connections: [{ ...third, apiKey: '' }] },
+    );
+    const removed = await settle({ 'third-connection': 'third-key-789' });
+    check('with apiKeysLocal, a connection that is removed loses its copy',
+      JSON.stringify(removed) === JSON.stringify({ 'third-connection': 'third-key-789' }), JSON.stringify(removed));
 
     await page.evaluate(() => chrome.storage.sync.clear());
     const none = await settle(undefined);
