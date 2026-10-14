@@ -1727,6 +1727,58 @@ prompt as "leave the following exactly as written". With each fixture's words
 there, `Qwen3-4B` kept the mixture in 45/64 across the eight actions, against
 26–27 without; not measured on Gemini.
 
+### English words inside Spanish, French or Portuguese (on `main`, not in 0.1.15)
+
+The block above names only what rules can see. An English `deadline` inside
+Spanish is in the same script, so on 2026-10-13 the question was whether a
+dictionary can find it. `chrome.i18n.detectLanguage` cannot: asked word by word
+it answered `isReliable: false` every time, with languages at random
+(`deadline` → Norwegian, `draft` → Korean). What works is a rule over two word
+lists: a word of three letters or more that **is** an English word and **is
+not** a word of the text's language, with or without its accents. The text's
+language is guessed from its commonest short words (`el`, `que`, `pour`, `não`…).
+
+`src/core/borrowed.ts` does that, from data built by `tools/build-lexicon.mjs`:
+the English list from SCOWL (127,610 words, 1.2 MB, 358 KB compressed; its
+licence allows redistribution), and per language one bit per English word
+saying it is absent from that language's Hunspell dictionary (16 KB each). The
+Spanish, French and Portuguese dictionaries are read only at build time; no word
+of them ships. The worker reads the list only for a text in one of those three
+languages. German is left out: its dictionary already holds `Meeting`, `Team`
+and `Bug`, so the rule would find almost nothing. The other direction — Spanish
+`mañana` inside English — is not covered.
+
+**Measured, with the real composed prompt** (`tools/action-eval.ts` passes the
+same words the worker would):
+
+| | `main` before | With the words named | Named by hand |
+|---|---|---|---|
+| `Qwen3-4B`, six actions, 25 mixed texts (the 8 fixtures + 17 more), one run, 2026-10-13 prototype | 127/150 | **137/150** | 140/150 |
+| `gemini-2.5-flash`, the five rewording actions, 8 fixtures, 10 runs, 2026-10-14 | 246/400 | **321/400** | — |
+| `Qwen3-4B`, the five rewording actions, 8 fixtures, 3 runs at temperature 0, 2026-10-14 | 66/120 | **79/120** | — |
+
+The Gemini pair ran through OpenRouter (served by Google, `reasoning_effort:
+"none"`), the control from a worktree of `c0beb48`; both runs cost $0.18, read
+off `/api/v1/key`. By fixture, the gain is the two Spanish ones: **21/100 →
+96/100**. Portuguese stayed at 42/50: `deploy` and `rollback` were kept, but
+Expand added `implantação` and `reversão` beside them, which the scorer counts
+as a translation. The fixtures whose prompt does not change (French, German,
+Japanese, the quote, English base) moved by at most one check. Per action:
+Improve writing 65 → 69, Make professional 48 → 69, Make friendly 47 → 63,
+Simplify 51 → 70, Expand 35 → 50. On `Qwen3-4B` (llama.cpp, the same control
+worktree) the two Spanish fixtures went 9/30 → 21/30 and the rest moved by one
+check (German).
+
+**The cost, and why Fix grammar does not get it.** On 28 texts in one language
+with typos, the rule as shipped named one misspelling that happens to be an
+English word: `boy` for Spanish `voy` (the prototype, which also searched
+English text for words of other languages, named `havent` too; that direction
+was not shipped). A named word is kept as written, so a rewrite would leave
+that typo. Fix grammar exists to fix exactly those, and
+already kept the mixture in 69/80 on Gemini, so it is not given the list; nor
+is the live check. Summarize, bullet points and custom actions are not
+either: unmeasured.
+
 ### Text in one language
 
 Every fixture above mixes two languages, so nothing had ever sent a quick action
