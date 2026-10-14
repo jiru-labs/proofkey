@@ -34,6 +34,7 @@ import {
   TARGET_LANGUAGE,
 } from '../core/prompts';
 import { runCompletion, validateConnection } from '../core/providers';
+import { baseLanguage, borrowedWords, isBorrowedBase, KEEPS_BORROWED_WORDS, loadLexicon, type Lexicon } from '../core/borrowed';
 import { emptyReviewState, recordApplied, reviewUrl, type ReviewState } from '../core/review';
 import type { WritingAction } from '../core/types';
 import { askOffscreen, warmLiveCheck } from '../core/providers/inBrowser';
@@ -678,6 +679,29 @@ async function setLive(
   return { ok: true, value: enabled };
 }
 
+let lexicon: Promise<Lexicon> | undefined;
+
+/**
+ * English words in a Spanish, French or Portuguese text (`borrowed.ts`). The
+ * 1.2 MB word list is read from the package only for a text in one of those
+ * languages, once per worker. A failure costs the naming, not the action.
+ */
+async function findBorrowedWords(text: string): Promise<string[]> {
+  if (!isBorrowedBase(baseLanguage(text))) return [];
+  lexicon ??= loadLexicon(async (file) => {
+    const response = await fetch(chrome.runtime.getURL(`lexicon/${file}`));
+    if (!response.ok) throw new Error(`lexicon/${file}: HTTP ${response.status}`);
+    return response.arrayBuffer();
+  });
+  try {
+    return borrowedWords(text, await lexicon);
+  } catch (error) {
+    lexicon = undefined;
+    console.warn('ProofKey: could not read the word list', error);
+    return [];
+  }
+}
+
 async function runAction(actionId: string, text: string): Promise<Result<RunResult>> {
   if (!text.trim()) return { ok: false, error: 'Nothing to work on.' };
 
@@ -701,7 +725,8 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
   // action's id, so a user who edits Translate's prompt to name a language
   // outright stops being asked for one, and a custom action that uses the token
   // gets the same check for free.
-  const systemPrompt = composeSystemPrompt(action, settings.profile, text);
+  const borrowed = KEEPS_BORROWED_WORDS.has(action.id) ? await findBorrowedWords(text) : [];
+  const systemPrompt = composeSystemPrompt(action, settings.profile, text, borrowed);
   if (systemPrompt.includes(TARGET_LANGUAGE)) {
     return {
       ok: false,

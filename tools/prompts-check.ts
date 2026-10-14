@@ -269,7 +269,7 @@ equal('a Japanese word inside English',
   keptPassages('We had 寿司 after the standup.'), ['寿司']);
 equal('an apostrophe is not a quotation', keptPassages("Don't touch it, it's fine."), []);
 equal('one script and no quotation: nothing', keptPassages('Merci pour ton retour, je regarde le document demain.'), []);
-equal('a mixture in one script is not found here — Terms never to flag is for that',
+equal('a mixture in one script is not found here — the word list in borrowed.ts finds it',
   keptPassages('El deadline es mañana pero todavia no tengo el draft.'), []);
 check('long and many are capped',
   keptPassages(Array.from({ length: 20 }, (_, i) => `"quote number ${i}"`).join(' ')).length === 12 &&

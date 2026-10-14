@@ -57,6 +57,9 @@
  * This spends real money. It is `runs x actions x fixtures` small requests.
  */
 
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { borrowedWords, KEEPS_BORROWED_WORDS, loadLexicon } from '../src/core/borrowed.ts';
 import {
   BUILT_IN_ACTIONS,
   composeSystemPrompt,
@@ -168,6 +171,15 @@ function fixturesFor(action: WritingAction, set: string): Fixture[] {
   return set === 'monolingual' ? MONOLINGUAL_FIXTURES : FIXTURES;
 }
 
+// The words the worker names to a rewrite (`borrowed.ts`), from the same files.
+const lexicon = loadLexicon(async (file) => {
+  const bytes = await readFile(fileURLToPath(new URL(`../public/lexicon/${file}`, import.meta.url)));
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+});
+async function borrowedFor(action: WritingAction, text: string): Promise<string[]> {
+  return KEEPS_BORROWED_WORDS.has(action.id) ? borrowedWords(text, await lexicon) : [];
+}
+
 async function runOne(
   action: WritingAction,
   fixture: Fixture,
@@ -177,7 +189,7 @@ async function runOne(
   const body = {
     model,
     messages: [
-      { role: 'system', content: composeSystemPrompt(action, profile, fixture.input) },
+      { role: 'system', content: composeSystemPrompt(action, profile, fixture.input, await borrowedFor(action, fixture.input)) },
       { role: 'user', content: fixture.input },
     ],
     max_tokens: maxTokens,

@@ -317,6 +317,7 @@ export function composeSystemPrompt(
   action: WritingAction,
   profile: WritingProfile,
   text = '',
+  borrowed: readonly string[] = [],
 ): string {
   // Applied to any action whose text contains the token, not to one id, so that
   // a custom action the user wrote themselves can use it too.
@@ -377,7 +378,9 @@ export function composeSystemPrompt(
   // actions still translated these; told which words, they kept them (issue #1).
   // Last, after the output contract: on Qwen3-4B that placement scored 38/64 on
   // the mixed set against 36 just before it and 27 without the block.
-  const kept = translating ? [] : keptPassages(text);
+  // `borrowed` is what `borrowedWords` found in the text, passed in by the
+  // caller because finding it needs a word list loaded from the package.
+  const kept = translating ? [] : keptPassages(text, borrowed);
   if (kept.length > 0) {
     blocks.push(
       [
@@ -402,11 +405,11 @@ const OTHER_SCRIPT_RUN = /(?:(?!\p{Script=Latin})\p{L})[\p{L}\p{M}]*(?:[ \t]+(?:
  * model: quotations, and words in another script than most of the text — the
  * `cancel` inside Japanese, the 寿司 inside English. The words of a mixture in
  * one script (an English `deadline` in Spanish) are not found here: that needs
- * telling languages apart, and a 4B model asked to list them missed most and
- * listed misspellings, which keeping as written would leave uncorrected
- * (MODELS.md, 2026-10-08). Terms never to flag is the place for those.
+ * a dictionary (`borrowed.ts`), and the caller passes what it found as
+ * `borrowed`. A 4B model asked to list them instead missed most and listed
+ * misspellings (MODELS.md, 2026-10-08).
  */
-export function keptPassages(text: string): string[] {
+export function keptPassages(text: string, borrowed: readonly string[] = []): string[] {
   const found: string[] = [];
   for (const match of text.matchAll(QUOTED)) {
     const quoted = match.slice(1).find((group) => group !== undefined)?.trim() ?? '';
@@ -418,6 +421,9 @@ export function keptPassages(text: string): string[] {
   if (letters > 0 && latin > 0 && latin < letters) {
     found.push(...(text.match(latin * 2 < letters ? LATIN_RUN : OTHER_SCRIPT_RUN) ?? []));
   }
+  // A word already inside a quotation is kept with it; naming it again only
+  // lengthens the list.
+  found.push(...borrowed.filter((word) => !found.some((passage) => passage.includes(word))));
 
   return [...new Set(found.map((passage) => passage.trim()))]
     .filter((passage) => passage.length > 0 && passage.length <= MAX_KEPT_LENGTH)

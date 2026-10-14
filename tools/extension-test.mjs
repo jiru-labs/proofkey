@@ -1339,6 +1339,21 @@ async function run() {
     JSON.stringify(always),
   );
 
+  // English words in Spanish text are named to a rewrite, from the word list the
+  // worker reads out of the package (issue #1), and not to Fix grammar, where a
+  // Spanish typo that is an English word would be kept uncorrected.
+  console.log('\nborrowed words:');
+  const mixed = 'El deadline es mañana pero todavia no tengo el draft.';
+  const systemFor = async (actionId) => {
+    seen.length = 0;
+    await page.evaluate((m) => chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: m.actionId, text: m.text }), { actionId, text: mixed });
+    return String(seen[0]?.body?.messages?.[0]?.content ?? '');
+  };
+  const improveSystem = await systemFor('improve-writing');
+  check('a rewrite of Spanish text is told the English words in it', /- deadline\n- draft\s*$/.test(improveSystem), improveSystem.slice(-120));
+  const fixSystem = await systemFor('fix-grammar');
+  check('Fix grammar is not', !fixSystem.includes('- deadline'), fixSystem.slice(-120));
+
   // The setting is only worth having if it is visible and says what it did.
   await page.reload();
   const thinkingHint = await page
