@@ -1746,7 +1746,7 @@ Spanish, French and Portuguese dictionaries are read only at build time; no word
 of them ships. The worker reads the list only for a text in one of those three
 languages. German is left out: its dictionary already holds `Meeting`, `Team`
 and `Bug`, so the rule would find almost nothing. The other direction — Spanish
-`mañana` inside English — is not covered.
+`mañana` inside English — is below.
 
 **Measured, with the real composed prompt** (`tools/action-eval.ts` passes the
 same words the worker would):
@@ -1778,6 +1778,51 @@ that typo. Fix grammar exists to fix exactly those, and
 already kept the mixture in 69/80 on Gemini, so it is not given the list; nor
 is the live check. Summarize, bullet points and custom actions are not
 either: unmeasured.
+
+**The other direction: Spanish, French, Portuguese or German inside English**
+(2026-10-15). After the run above, the fixture that still failed on every
+rewording action was "I told her mañana works better, pero she wants to meet
+today": 3/50 checks, `mañana` → `tomorrow`, `pero` → `but`. The English list
+cannot find those, and SCOWL would not help the other way round: it lists
+`fiesta`, `amigo`, `bueno`, `adios`, `pour` and `son` as English. So for a text
+whose commonest short words are English, `foreignWordsInEnglish` names, with no
+word list loaded:
+
+- a word with a Latin letter English spells without (`mañana`, `déjà`, `não`,
+  `für`), and
+- one of 75 common Spanish, French, Portuguese and German words
+  (`pero`, `gracias`, `merci`, `muito`, `aber`…), written by hand, leaving out
+  the ones English uses too (`son`, `die`, `pour`, `solo`, `todo`, `algo`).
+
+Its cost, measured on English prose with no other language in it: over 2,532
+paragraphs of `/usr/share/common-licenses` and the READMEs under
+`/usr/share/doc` on this Debian, it named words in one — `Fernández` and
+`Peña`, names, which a rewrite should keep as written anyway. On the five
+English texts with typos in the 2026-10-13 corpus, nothing.
+
+| `gemini-2.5-flash`, five rewording actions, 8 fixtures, 10 runs, 2026-10-15 | `main` (`108aabe`) | With it |
+|---|---|---|
+| English base, Spanish inserted | 3/50 | **33/50** |
+| French clause + English clause (base guessed English; names `après`) | 28/50 | 35/50 |
+| The six fixtures whose prompt is identical under both | 280/300 | 284/300 |
+| **Total** | **311/400** | **352/400** |
+
+Both ran the same morning in parallel through OpenRouter (served by Google,
+`reasoning_effort: "none"`), the control from a worktree of `108aabe`; $0.18
+for both, read off `/api/v1/key`. The six unchanged fixtures moving by four is
+that morning's noise; the control's 311 against the 321 of 2026-10-14 for the
+same code is the day-to-day spread. Per action: Improve writing 72 → 80, Make
+professional 59 → 71, Make friendly 62 → 72, Simplify 70 → 80, Expand 48 → 49.
+Expand kept `mañana` but glossed it ("mañana, meaning tomorrow") in 7 of 10
+runs, which the scorer counts as a translation.
+
+On `Qwen3-4B` (llama.cpp CPU, temperature 0, one run, same five actions, the
+control from the same worktree) the total did not move: 27/40 under both. The
+English-base fixture went 1/5 → 3/5 (both misses: `pero` → `but`, with
+`mañana` kept, in quotes); the French-and-English one failed 5/5 under both; and
+two fixtures whose prompt is identical under both (German, the first Spanish
+one) each lost a check, so temperature 0 on that server is not deterministic
+and one run cannot separate a two-check change from noise.
 
 ### Text in one language
 

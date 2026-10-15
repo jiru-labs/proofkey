@@ -650,7 +650,10 @@ Gemini 2.5 Flash through OpenRouter, 2026-10-14, mixed set, 10 runs: 246/400 →
 321/400 across those five — Improve writing 69, Make professional 69, Make
 friendly 63, Simplify 70, Expand 50 — all of the gain on the two Spanish
 fixtures. Details in MODELS.md, "English words inside Spanish, French or
-Portuguese".
+Portuguese". Also on `main`: words of those languages (and German) inside
+English text are named the same way. Same model and set, 2026-10-15, control
+and change run side by side: 311/400 → 352/400 — the English-base fixture
+3/50 → 33/50, the French-and-English one 28 → 35, the six others 280 → 284.
 
 `fix-grammar`, `summarize` and `bullet-points` are marked `Verified` on the same
 looser basis the Providers section above already uses that tier on: a script
