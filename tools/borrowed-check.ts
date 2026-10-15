@@ -4,9 +4,9 @@
  *
  *     node --experimental-strip-types tools/borrowed-check.ts
  *
- * The cases are the mixed fixtures of issue #1, plus what must not be found:
- * an English or German text, a text in one language, a word the language has
- * with an accent.
+ * The cases are the mixed fixtures of issue #1, both directions, plus what
+ * must not be found: a German text, a text in one language, a word the
+ * language has with an accent, an English word the other languages share.
  */
 
 import { readFile } from 'node:fs/promises';
@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import {
   baseLanguage,
   borrowedWords,
+  foreignWordsInEnglish,
   KEEPS_BORROWED_WORDS,
   loadLexicon,
 } from '../src/core/borrowed.ts';
@@ -68,10 +69,20 @@ equal('English words in French',
   borrowedWords('Je regarde le feedback de la review demain, puis on fait le merge.', lexicon),
   ['feedback', 'review', 'merge']);
 
+console.log('\nthe other direction, in English text:');
+equal('Spanish words in English',
+  borrowedWords('I told her mañana works better, pero she wants to meet today.', lexicon), ['mañana', 'pero']);
+equal('loanwords English lists are named too: keeping them costs nothing',
+  borrowedWords('She said gracias and left, the fiesta was over.', lexicon), ['gracias', 'fiesta']);
+equal('a word with a letter English spells without', foreignWordsInEnglish('We had a little déjà vu moment during the meeting.'), ['déjà']);
+equal('nothing in English alone', borrowedWords('I will send the report tomorrow morning before the meeting.', lexicon), []);
+equal('nor in English typos', borrowedWords('Their is alot of things we needs to discuss tomorow.', lexicon), []);
+equal('nor the words English shares with them',
+  foreignWordsInEnglish('My son will pour the coffee, play a solo and die laughing at the todo list.'), []);
+
 console.log('\nwhat is not:');
 equal('a text in Spanish alone', borrowedWords('Mañana tenemos la reunión con el equipo a las nueve.', lexicon), []);
 equal('a word the language has with its accent (menú)', borrowedWords('El menu del restaurante está bien.', lexicon), []);
-equal('anything in English text', borrowedWords('I told her mañana works better, pero she wants to meet today.', lexicon), []);
 equal('anything in German text — no data for it',
   borrowedWords('Der Kunde hat gefragt ob wir das feature flag vor dem release aktivieren.', lexicon), []);
 // The cost, kept visible: a Spanish typo that is an English word is named, and

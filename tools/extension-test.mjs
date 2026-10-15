@@ -1344,15 +1344,18 @@ async function run() {
   // Spanish typo that is an English word would be kept uncorrected.
   console.log('\nborrowed words:');
   const mixed = 'El deadline es mañana pero todavia no tengo el draft.';
-  const systemFor = async (actionId) => {
+  const systemFor = async (actionId, text = mixed) => {
     seen.length = 0;
-    await page.evaluate((m) => chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: m.actionId, text: m.text }), { actionId, text: mixed });
+    await page.evaluate((m) => chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: m.actionId, text: m.text }), { actionId, text });
     return String(seen[0]?.body?.messages?.[0]?.content ?? '');
   };
   const improveSystem = await systemFor('improve-writing');
   check('a rewrite of Spanish text is told the English words in it', /- deadline\n- draft\s*$/.test(improveSystem), improveSystem.slice(-120));
   const fixSystem = await systemFor('fix-grammar');
   check('Fix grammar is not', !fixSystem.includes('- deadline'), fixSystem.slice(-120));
+  // The other direction needs no word list: accents and a short list of words.
+  const englishSystem = await systemFor('improve-writing', 'I told her mañana works better, pero she wants to meet today.');
+  check('a rewrite of English text is told the Spanish words in it', /- mañana\n- pero\s*$/.test(englishSystem), englishSystem.slice(-120));
 
   // The setting is only worth having if it is visible and says what it did.
   await page.reload();

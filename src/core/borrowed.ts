@@ -10,11 +10,12 @@
  * `tools/build-lexicon.mjs`: an English word list, and per language one bit per
  * English word saying it is absent from that language.
  *
- * Measured on Qwen3-4B, six actions × 25 mixed texts (2026-10-13): 127/150
- * without it, 137 with it, 140 when the words were named by hand. On 28 texts
- * in one language with typos it named two misspellings that happen to be
- * English (`boy` for `voy`), which a rewrite then leaves as written — so it is
- * used for the rewording actions only, never for Fix grammar or the live check.
+ * Measured with this data, five rewording actions on the mixed fixtures
+ * (2026-10-14, MODELS.md "Naming the words to keep"): Gemini 2.5 Flash 246/400
+ * without it, 321 with it; Qwen3-4B 66/120 → 79. On 28 texts in one language
+ * with typos it named one misspelling that happens to be English (`boy` for
+ * `voy`), which a rewrite then leaves as written — so it is used for the
+ * rewording actions only, never for Fix grammar or the live check.
  */
 
 /** The languages there is data for. German is not one: see the build tool. */
@@ -74,9 +75,43 @@ export function isBorrowedBase(language: string | undefined): language is Borrow
   return (BASES as readonly string[]).includes(language ?? '');
 }
 
-/** The English words in `text`, as written, first occurrence of each. */
+/**
+ * The other direction: Spanish, French, Portuguese or German words inside
+ * English text — the `mañana` and `pero` in «I told her mañana works better,
+ * pero she wants to meet today», which every rewording action translated on
+ * Gemini 2.5 Flash (2026-10-14). There is no word list for it: a word with a
+ * letter English spells without (ñ, é, ç, ã, ß…), or one of the common words
+ * below. Those were checked against the English list, and the ones English
+ * also uses (`son`, `die`, `pour`, `solo`, `todo`) left out; loanwords it
+ * lists (`fiesta`, `amigo`) stay, since keeping one as written costs nothing.
+ */
+const NOT_ENGLISH = words(
+  'pero muy porque cuando donde ahora entonces siempre nunca tengo tenemos tiene tambien manana ' +
+    'gracias hola adios bueno nada mucho luego vamos pues eso esta este estos que los una amigo amigos fiesta ' +
+    'mais avec dans merci bien alors aussi toujours demain peut ici bonjour comme quoi pourquoi donc ' +
+    "c'est muito obrigado obrigada hoje isso ainda depois nao tudo voce " +
+    'aber und nicht auch noch doch schon heute danke bitte sehr ich wir',
+);
+const NOT_ENGLISH_LETTER = /[^\P{Script=Latin}a-z]/u;
+
+/** The non-English words in an English `text`, as written, first occurrence of each. */
+export function foreignWordsInEnglish(text: string): string[] {
+  const found = new Map<string, string>();
+  for (const token of text.match(WORD) ?? []) {
+    const word = token.toLowerCase();
+    if (!found.has(word) && (NOT_ENGLISH.has(word) || NOT_ENGLISH_LETTER.test(word))) found.set(word, token);
+  }
+  return [...found.values()];
+}
+
+/**
+ * The English words in a Spanish, French or Portuguese `text` — or, in an
+ * English one, the words of those languages (`foreignWordsInEnglish`) — as
+ * written, first occurrence of each.
+ */
 export function borrowedWords(text: string, lexicon: Lexicon): string[] {
   const base = baseLanguage(text);
+  if (base === 'en') return foreignWordsInEnglish(text);
   if (!isBorrowedBase(base)) return [];
   const mask = lexicon.absentFrom[base];
 

@@ -34,7 +34,7 @@ import {
   TARGET_LANGUAGE,
 } from '../core/prompts';
 import { runCompletion, validateConnection } from '../core/providers';
-import { baseLanguage, borrowedWords, isBorrowedBase, KEEPS_BORROWED_WORDS, loadLexicon, type Lexicon } from '../core/borrowed';
+import { baseLanguage, borrowedWords, foreignWordsInEnglish, isBorrowedBase, KEEPS_BORROWED_WORDS, loadLexicon, type Lexicon } from '../core/borrowed';
 import { emptyReviewState, recordApplied, reviewUrl, type ReviewState } from '../core/review';
 import type { WritingAction } from '../core/types';
 import { askOffscreen, warmLiveCheck } from '../core/providers/inBrowser';
@@ -682,12 +682,15 @@ async function setLive(
 let lexicon: Promise<Lexicon> | undefined;
 
 /**
- * English words in a Spanish, French or Portuguese text (`borrowed.ts`). The
- * 1.2 MB word list is read from the package only for a text in one of those
- * languages, once per worker. A failure costs the naming, not the action.
+ * English words in a Spanish, French or Portuguese text, or words of those
+ * languages in an English one (`borrowed.ts`). The 1.2 MB word list is read
+ * from the package only for a text in Spanish, French or Portuguese — English
+ * needs none — once per worker. A failure costs the naming, not the action.
  */
 async function findBorrowedWords(text: string): Promise<string[]> {
-  if (!isBorrowedBase(baseLanguage(text))) return [];
+  const base = baseLanguage(text);
+  if (base === 'en') return foreignWordsInEnglish(text);
+  if (!isBorrowedBase(base)) return [];
   lexicon ??= loadLexicon(async (file) => {
     const response = await fetch(chrome.runtime.getURL(`lexicon/${file}`));
     if (!response.ok) throw new Error(`lexicon/${file}: HTTP ${response.status}`);
