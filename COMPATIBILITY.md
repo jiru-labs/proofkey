@@ -644,13 +644,13 @@ night, per action: Fix grammar 79/80, Summarize 78, Convert to bullet points 80,
 Improve writing 65, Make professional 45, Make friendly 50, Simplify 55,
 Expand 35. Details in MODELS.md, "Naming the words to keep".
 
-On `main` (not in 0.1.15), English words inside Spanish, French or Portuguese
+Since 0.1.16, English words inside Spanish, French or Portuguese
 text are also named to the five rewording actions, found with a word list.
 Gemini 2.5 Flash through OpenRouter, 2026-10-14, mixed set, 10 runs: 246/400 →
 321/400 across those five — Improve writing 69, Make professional 69, Make
 friendly 63, Simplify 70, Expand 50 — all of the gain on the two Spanish
 fixtures. Details in MODELS.md, "English words inside Spanish, French or
-Portuguese". Also on `main`: words of those languages (and German) inside
+Portuguese". Also since 0.1.16: words of those languages (and German) inside
 English text are named the same way. Same model and set, 2026-10-15, control
 and change run side by side: 311/400 → 352/400 — the English-base fixture
 3/50 → 33/50, the French-and-English one 28 → 35, the six others 280 → 284.

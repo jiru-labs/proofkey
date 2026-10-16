@@ -1727,7 +1727,7 @@ prompt as "leave the following exactly as written". With each fixture's words
 there, `Qwen3-4B` kept the mixture in 45/64 across the eight actions, against
 26–27 without; not measured on Gemini.
 
-### English words inside Spanish, French or Portuguese (on `main`, not in 0.1.15)
+### English words inside Spanish, French or Portuguese (since 0.1.16)
 
 The block above names only what rules can see. An English `deadline` inside
 Spanish is in the same script, so on 2026-10-13 the question was whether a
