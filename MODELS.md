@@ -1824,6 +1824,84 @@ two fixtures whose prompt is identical under both (German, the first Spanish
 one) each lost a check, so temperature 0 on that server is not deterministic
 and one run cannot separate a two-check change from noise.
 
+### A text that switches language clause by clause (on `main`, not in 0.1.16)
+
+The fixture still failing most after the two lists above was "Je t'envoie le
+rapport après le standup, but I still need to review the numbers first":
+Gemini 2.5 Flash kept it in 35 of 50 checks (2026-10-15) and `Qwen3-4B` in 0 of
+15 (2026-10-17), and both failed the same way, writing the whole text in
+French. No single word in it is out of place, so neither list names anything
+useful. Its short common words tie, three each, so the text reads as English
+and only `après` gets named.
+
+`mixedClauses` (`src/core/borrowed.ts`) splits the text at punctuation and
+gives a clause a language only when its short common words leave no doubt.
+For English that means two or more, plus two more than any other language
+has, not counting the ones German, French, Spanish or Portuguese share (`in`,
+`was`, `on`, `as`…). For the others it means two or more, none of English's,
+and more than the runner-up. When one clause is English and another is one
+language of the other four, the five rewording actions get, last in the
+prompt:
+
+```
+This text changes language from one part to the next on purpose. Keep each
+part in the language it is written in, even where you reword it:
+- "Je t'envoie le rapport après le standup" (French)
+- "but I still need to review the numbers first" (English)
+```
+
+No word list is loaded for it. Fix grammar, the live check, Summarize, bullet
+points, Translate and custom actions do not get it.
+
+**Where it fires.** Over 14,161 paragraphs in one language, it named parts in
+13 and none of them were false. The corpus: the Debian 13 man pages in
+Spanish (1,246), French (3,115), German (3,247) and Portuguese (2,716), plus
+3,837 English paragraphs from `/usr/share/common-licenses` and the READMEs
+under `/usr/share/doc`. All 13 were translated man pages with an English
+paragraph or dpkg's English output format left in, which is a real mixture.
+The first version also fired on German `was … in` and on the letters of
+`-o default -o`, and the second, once shared words stopped counting as English,
+on `as a whole`. Each of those now has a check in `tools/borrowed-check.ts`, and
+each check fails under the version that let it through. Of the
+eight mixed fixtures, it fires only on the French-and-English one. **How often
+it finds a real clause mixture is not measured:** the six texts below were
+written next to it, and two rules (contractions such as `I'll`, and leaving
+shared words out on both sides) were added after it missed two of them.
+
+**Measured.** `--fixtures clauses` adds those six texts, English with
+Spanish, French, German and Portuguese. The control came from a worktree of
+`4e35911`, run with the same eval tool and fixtures:
+
+| | Control | With the parts named |
+|---|---|---|
+| `gemini-2.5-flash` through OpenRouter (served by Google, `reasoning_effort: "none"`), five rewording actions, 6 texts, 10 runs, 2026-10-17 | 232/300 | **272/300** |
+| `Qwen3-4B-Instruct-2507` Q4_K_M, llama.cpp CPU, temperature 0, 3 runs, same day | 3/90 | **36/90** |
+
+Per action on Gemini: Improve writing 60 → 60, Make professional 41 → 59,
+Make friendly 39 → 60, Simplify 60 → 60, Expand 32 → 33. On Qwen: 0 → 3,
+0 → 9, 2 → 6, 0 → 12, 1 → 6. Every one of the six texts went up on both models.
+Expand did not move on Gemini. It adds sentences, sometimes in the other
+language, and the scorer counts any `almuerzo` or `yet` it adds as a
+translation, so on this set its number is a floor.
+
+On the mixed set, Gemini, the same day and settings with the change: 357/400.
+The French-and-English fixture went 35 → 46 of 50 against 2026-10-15. The
+other seven get a byte-identical prompt and moved 317 → 311, which is the
+day-to-day spread. Both Gemini runs together cost $0.24, read off
+`/api/v1/key`.
+
+**Tried first, and dropped.** Adding "and do not add a translation or an
+explanation of it anywhere in the text" to the word list block, aimed at Expand's
+glosses (`mañana, meaning tomorrow`), made `Qwen3-4B` worse on the mixed set:
+91/120 → 82/120, with Expand 13 → 7 of 24 (3 runs, temperature 0, 2026-10-17).
+It was dropped there, before a paid run.
+
+**German needed nothing.** The German fixture, with English `feature flag` and
+`release` in it, kept them without any list: 50/50 and 49/50 on Gemini
+(2026-10-15, two runs of the same prompt) and 14/15 on `Qwen3-4B`
+(2026-10-17). That is one fixture, so it says nothing about German in general.
+Words to keep in German text still go in **Terms never to flag**.
+
 ### Text in one language
 
 Every fixture above mixes two languages, so nothing had ever sent a quick action
