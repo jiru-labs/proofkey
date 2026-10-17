@@ -59,7 +59,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { borrowedWords, KEEPS_BORROWED_WORDS, loadLexicon } from '../src/core/borrowed.ts';
+import { borrowedWords, KEEPS_BORROWED_WORDS, loadLexicon, mixedClauses } from '../src/core/borrowed.ts';
 import {
   BUILT_IN_ACTIONS,
   composeSystemPrompt,
@@ -67,6 +67,7 @@ import {
 } from '../src/core/prompts.ts';
 import type { WritingAction, WritingProfile } from '../src/core/types.ts';
 import {
+  CLAUSE_FIXTURES,
   FIXTURES,
   isTranslating,
   MONOLINGUAL_FIXTURES,
@@ -165,10 +166,10 @@ interface Options {
 }
 
 
-/** `--fixtures mixed` (the default, so earlier numbers stay comparable) or `monolingual`. */
+/** `--fixtures mixed` (the default, so earlier numbers stay comparable), `monolingual` or `clauses`. */
 function fixturesFor(action: WritingAction, set: string): Fixture[] {
   if (isTranslating(action)) return TRANSLATE_FIXTURES;
-  return set === 'monolingual' ? MONOLINGUAL_FIXTURES : FIXTURES;
+  return set === 'monolingual' ? MONOLINGUAL_FIXTURES : set === 'clauses' ? CLAUSE_FIXTURES : FIXTURES;
 }
 
 // The words the worker names to a rewrite (`borrowed.ts`), from the same files.
@@ -189,7 +190,16 @@ async function runOne(
   const body = {
     model,
     messages: [
-      { role: 'system', content: composeSystemPrompt(action, profile, fixture.input, await borrowedFor(action, fixture.input)) },
+      {
+        role: 'system',
+        content: composeSystemPrompt(
+          action,
+          profile,
+          fixture.input,
+          await borrowedFor(action, fixture.input),
+          KEEPS_BORROWED_WORDS.has(action.id) ? mixedClauses(fixture.input) : [],
+        ),
+      },
       { role: 'user', content: fixture.input },
     ],
     max_tokens: maxTokens,
@@ -252,8 +262,8 @@ async function main(): Promise<void> {
   const temperature = temperatureArg === undefined ? undefined : Number(temperatureArg);
   const targetLanguage = arg('target-language') ?? DEFAULT_TARGET_LANGUAGE;
   const fixtureSet = arg('fixtures') ?? 'mixed';
-  if (fixtureSet !== 'mixed' && fixtureSet !== 'monolingual') {
-    console.error(`Unknown --fixtures "${fixtureSet}". Use mixed or monolingual.`);
+  if (fixtureSet !== 'mixed' && fixtureSet !== 'monolingual' && fixtureSet !== 'clauses') {
+    console.error(`Unknown --fixtures "${fixtureSet}". Use mixed, monolingual or clauses.`);
     process.exit(1);
   }
 
@@ -265,7 +275,9 @@ async function main(): Promise<void> {
   if (actions.some((action) => !isTranslating(action))) {
     console.log(fixtureSet === 'monolingual'
       ? `Fixtures: ${MONOLINGUAL_FIXTURES.length} monolingual, ${runs} run(s) each`
-      : `Fixtures: ${FIXTURES.length} mixed-language, ${runs} run(s) each`);
+      : fixtureSet === 'clauses'
+        ? `Fixtures: ${CLAUSE_FIXTURES.length} clause-mixed, ${runs} run(s) each`
+        : `Fixtures: ${FIXTURES.length} mixed-language, ${runs} run(s) each`);
   }
   if (actions.some(isTranslating)) {
     console.log(`Target:   ${targetLanguage} (translating actions use ${TRANSLATE_FIXTURES.length} fixtures of their own)`);

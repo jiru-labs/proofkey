@@ -34,7 +34,7 @@ import {
   TARGET_LANGUAGE,
 } from '../core/prompts';
 import { runCompletion, validateConnection } from '../core/providers';
-import { baseLanguage, borrowedWords, foreignWordsInEnglish, isBorrowedBase, KEEPS_BORROWED_WORDS, loadLexicon, type Lexicon } from '../core/borrowed';
+import { baseLanguage, borrowedWords, foreignWordsInEnglish, isBorrowedBase, KEEPS_BORROWED_WORDS, loadLexicon, mixedClauses, type Lexicon } from '../core/borrowed';
 import { emptyReviewState, recordApplied, reviewUrl, type ReviewState } from '../core/review';
 import type { WritingAction } from '../core/types';
 import { askOffscreen, warmLiveCheck } from '../core/providers/inBrowser';
@@ -728,8 +728,10 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
   // action's id, so a user who edits Translate's prompt to name a language
   // outright stops being asked for one, and a custom action that uses the token
   // gets the same check for free.
-  const borrowed = KEEPS_BORROWED_WORDS.has(action.id) ? await findBorrowedWords(text) : [];
-  const systemPrompt = composeSystemPrompt(action, settings.profile, text, borrowed);
+  const keepsMixture = KEEPS_BORROWED_WORDS.has(action.id);
+  const borrowed = keepsMixture ? await findBorrowedWords(text) : [];
+  const parts = keepsMixture ? mixedClauses(text) : [];
+  const systemPrompt = composeSystemPrompt(action, settings.profile, text, borrowed, parts);
   if (systemPrompt.includes(TARGET_LANGUAGE)) {
     return {
       ok: false,

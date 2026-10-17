@@ -7,6 +7,8 @@
  * The cases are the mixed fixtures of issue #1, both directions, plus what
  * must not be found: a German text, a text in one language, a word the
  * language has with an accent, an English word the other languages share.
+ * Then the clauses of a text that switches language from clause to clause
+ * (`mixedClauses`), and the texts it must leave alone.
  */
 
 import { readFile } from 'node:fs/promises';
@@ -17,6 +19,7 @@ import {
   foreignWordsInEnglish,
   KEEPS_BORROWED_WORDS,
   loadLexicon,
+  mixedClauses,
 } from '../src/core/borrowed.ts';
 import { BUILT_IN_ACTIONS, composeSystemPrompt, emptyProfile, keptPassages } from '../src/core/prompts.ts';
 
@@ -102,6 +105,38 @@ check('a rewrite is told each word by name, last',
 equal('a word inside a quotation is not named twice',
   keptPassages('Le dije "we will ship it on Friday" y no se.', ['will', 'ship', 'Friday', 'deadline']),
   ['we will ship it on Friday', 'deadline']);
+
+console.log('\nclause by clause:');
+const clauses = "Je t'envoie le rapport après le standup, but I still need to review the numbers first.";
+equal('a French clause and an English clause, each named', mixedClauses(clauses), [
+  { passage: "Je t'envoie le rapport après le standup", language: 'French' },
+  { passage: 'but I still need to review the numbers first', language: 'English' },
+]);
+equal('a short English clause, by its contraction (I\'ll)',
+  mixedClauses("I'll call you tonight, mais je ne sais pas encore à quelle heure.").map((part) => part.language),
+  ['English', 'French']);
+equal('a short English clause whose `on` is French too',
+  mixedClauses('We can meet on Friday, se você ainda estiver na cidade.').map((part) => part.language),
+  ['English', 'Portuguese']);
+equal('nothing for borrowed words in one clause', mixedClauses('El deadline es mañana pero todavia no tengo el draft.'), []);
+equal('nothing for a text in one language, clause after clause',
+  mixedClauses('Ich schicke dir die Unterlagen morgen früh, dann koennen wir am Freitag darüber sprechen.'), []);
+equal('nothing for German whose `was` and `in` are English words too',
+  mixedClauses('Die Option ist neu und nicht getestet, was Ganzzahlwerte in Kilobyte pro Sekunde akzeptiert.'), []);
+equal('nothing for English whose `as a` is Portuguese too',
+  mixedClauses('As a result, we do not recommend it, and the protocol may change.'), []);
+equal('nothing for the letters of a command line', mixedClauses('Use it like this: complete -o default -o bashdefault, and that is all.'), []);
+equal('nothing for two languages neither of which is English',
+  mixedClauses('Ya terminé el informe, mais je ne sais pas encore à quelle heure.'), []);
+const parts = mixedClauses(clauses);
+const clausePrompt = composeSystemPrompt(improve, emptyProfile(), clauses, [], parts);
+check('a rewrite is told each part and its language, last',
+  clausePrompt.trim().endsWith('- "but I still need to review the numbers first" (English)') &&
+    clausePrompt.includes(`- "Je t'envoie le rapport après le standup" (French)`));
+const translateAction = BUILT_IN_ACTIONS.find((action) => action.id === 'translate')!;
+check('a translation is not told to keep them',
+  !composeSystemPrompt(translateAction, { ...emptyProfile(), translateLanguage: 'German' }, clauses, [], parts)
+    .includes('changes language from one part'));
 
 console.log(failures === 0 ? '\nBorrowed-word checks passed.' : `\n${failures} check(s) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

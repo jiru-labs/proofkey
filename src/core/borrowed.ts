@@ -104,6 +104,84 @@ export function foreignWordsInEnglish(text: string): string[] {
   return [...found.values()];
 }
 
+/** A run of the text in one language, as written, and that language's name. */
+export interface LanguagePart {
+  passage: string;
+  language: string;
+}
+
+const LANGUAGE_NAMES: Record<string, string> = {
+  en: 'English',
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  pt: 'Portuguese',
+};
+const CLAUSE = /[^,;:.!?¿¡()\n]+/g;
+const MAX_PARTS = 6;
+const MAX_PART_LENGTH = 200;
+
+/** English short words that are German, French, Spanish or Portuguese words too. */
+const SHARED_WITH_ENGLISH = words('in was so am an as on me he');
+/** Contractions, which no other of the five languages writes: a short clause has little else. */
+const ENGLISH_CONTRACTIONS = words("i'm i'll i've i'd don't doesn't didn't can't won't isn't aren't wasn't it's that's there's we're you're they're let's");
+const WHOLE_WORD = /^\p{L}+(?:['’]\p{L}+)?$/u;
+
+/**
+ * The language of one clause, only when its short common words leave no doubt:
+ * English with two or more of them, not counting the ones other languages
+ * share (German `was`, `in`) on either side, and two more than any other
+ * language has;
+ * another language with two or more, none of English's, shared or not (`as a
+ * whole` is not Portuguese), and more than the
+ * runner-up (French and Spanish share `le`, `la`, `de`). Each word counts
+ * once, and only a whole word between spaces, so the letters of `-o` or
+ * `ddd0a9e494` in a command line are not Portuguese.
+ */
+function clauseLanguage(clause: string): string | undefined {
+  const tokens = new Set(
+    clause
+      .split(/\s+/)
+      .map((token) => token.replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, '').replace('’', "'").toLowerCase())
+      .filter((token) => WHOLE_WORD.test(token)),
+  );
+  const count = (list: ReadonlySet<string>) => [...tokens].filter((token) => list.has(token));
+  const plain = (found: string[]) => found.filter((token) => !SHARED_WITH_ENGLISH.has(token)).length;
+  const others = Object.entries(FUNCTION_WORDS)
+    .filter(([language]) => language !== 'en')
+    .map(([language, list]) => [language, count(list)] as const)
+    .sort((a, b) => b[1].length - a[1].length);
+  const english = [...count(FUNCTION_WORDS.en!), ...count(ENGLISH_CONTRACTIONS)];
+  const otherwise = Math.max(...others.map(([, found]) => plain(found)));
+  if (plain(english) >= 2 && plain(english) >= otherwise + 2) return 'en';
+  if (english.length > 0) return undefined;
+  const [first, second] = others;
+  return first![1].length >= 2 && first![1].length > second![1].length ? first![0] : undefined;
+}
+
+/**
+ * The clauses of a text that switches between English and one other language
+ * from clause to clause — «Je t'envoie le rapport après le standup, but I still
+ * need to review the numbers first» — each with its language, or nothing for a
+ * text in one language. On that line the commonest short words tie, the text
+ * reads as English, and the five rewording actions wrote it all in French:
+ * Qwen3-4B kept the mixture in 0 of 15 checks, Gemini 2.5 Flash in 35 of 50
+ * (2026-10-15/17). The borrowed words cannot help, as no single word is out of
+ * place. Clauses are split at punctuation, and those whose language is not
+ * clear are left out. Measured in MODELS.md, "A text that switches language".
+ */
+export function mixedClauses(text: string): LanguagePart[] {
+  const parts: LanguagePart[] = [];
+  for (const match of text.match(CLAUSE) ?? []) {
+    const passage = match.trim();
+    const language = clauseLanguage(passage);
+    if (language && passage.length <= MAX_PART_LENGTH) parts.push({ passage, language });
+  }
+  const languages = new Set(parts.map((part) => part.language));
+  if (languages.size !== 2 || !languages.has('en')) return [];
+  return parts.slice(0, MAX_PARTS).map(({ passage, language }) => ({ passage, language: LANGUAGE_NAMES[language]! }));
+}
+
 /**
  * The English words in a Spanish, French or Portuguese `text` — or, in an
  * English one, the words of those languages (`foreignWordsInEnglish`) — as

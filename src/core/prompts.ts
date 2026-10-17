@@ -1,3 +1,4 @@
+import type { LanguagePart } from './borrowed';
 import type { WritingAction, WritingProfile } from './types';
 
 /**
@@ -318,6 +319,7 @@ export function composeSystemPrompt(
   profile: WritingProfile,
   text = '',
   borrowed: readonly string[] = [],
+  parts: readonly LanguagePart[] = [],
 ): string {
   // Applied to any action whose text contains the token, not to one id, so that
   // a custom action the user wrote themselves can use it too.
@@ -387,6 +389,19 @@ export function composeSystemPrompt(
         'These words and phrases are in another language or quoted on purpose. Keep',
         'each one exactly as written, in its own language, wherever it appears:',
         kept.map((passage) => `- ${passage}`).join('\n'),
+      ].join('\n'),
+    );
+  }
+
+  // A text that switches language clause by clause (`mixedClauses`): no word
+  // in it is out of place, so the list above names nothing, and the rewrite
+  // put the whole text in one of the two languages.
+  if (!translating && parts.length > 0) {
+    blocks.push(
+      [
+        'This text changes language from one part to the next on purpose. Keep each',
+        'part in the language it is written in, even where you reword it:',
+        parts.map(({ passage, language }) => `- "${passage}" (${language})`).join('\n'),
       ].join('\n'),
     );
   }

@@ -1356,6 +1356,16 @@ async function run() {
   // The other direction needs no word list: accents and a short list of words.
   const englishSystem = await systemFor('improve-writing', 'I told her mañana works better, pero she wants to meet today.');
   check('a rewrite of English text is told the Spanish words in it', /- mañana\n- pero\s*$/.test(englishSystem), englishSystem.slice(-120));
+  // A text that switches language clause by clause gets each part named.
+  const clauses = 'Ya terminé el informe, I just need to send it to Laura before lunch.';
+  const clauseSystem = await systemFor('improve-writing', clauses);
+  check(
+    'a rewrite of a text that switches language is told each part and its language',
+    /- "Ya terminé el informe" \(Spanish\)\n- "I just need to send it to Laura before lunch" \(English\)\s*$/.test(clauseSystem),
+    clauseSystem.slice(-160),
+  );
+  const clauseFixSystem = await systemFor('fix-grammar', clauses);
+  check('Fix grammar is not', !clauseFixSystem.includes('changes language from one part'), clauseFixSystem.slice(-120));
 
   // The setting is only worth having if it is visible and says what it did.
   await page.reload();

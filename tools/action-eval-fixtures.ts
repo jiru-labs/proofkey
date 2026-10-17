@@ -136,6 +136,56 @@ export const MONOLINGUAL_FIXTURES: Fixture[] = [
 ];
 
 /**
+ * A clause in English and a clause in another language, with `--fixtures
+ * clauses`. The mixed set has one of these (the French and English line):
+ * Qwen3-4B never kept it (0 of 15 checks) and Gemini 2.5 Flash lost it in 15
+ * of 50, writing the whole text in one language. These six were written on
+ * 2026-10-17 next to `mixedClauses`, which names the parts to the rewrite, so
+ * they measure what naming them does once found, not how often they are
+ * found.
+ *
+ * `mustNotAppear` holds what each clause turns into in the other language.
+ */
+export const CLAUSE_FIXTURES: Fixture[] = [
+  {
+    input: 'Ya terminé el informe, I just need to send it to Laura before lunch.',
+    mustSurvive: ['informe', 'send', 'lunch'],
+    mustNotAppear: ['report', 'enviar', 'mandar', 'almuerzo', 'comida'],
+    tests: 'Spanish clause, then English',
+  },
+  {
+    input: "I'll call you tonight, mais je ne sais pas encore à quelle heure.",
+    mustSurvive: ['tonight', 'heure'],
+    mustNotAppear: ['ce soir', 'appellerai', 'what time', 'yet'],
+    tests: 'English clause, then French',
+  },
+  {
+    input: 'Ich schicke dir die Datei morgen, but please do not share it with the client yet.',
+    mustSurvive: ['Datei', 'share', 'client'],
+    mustNotAppear: ['teilen', 'Kunden', 'tomorrow', 'noch nicht'],
+    tests: 'German clause, then English',
+  },
+  {
+    input: 'Te mando las fotos ahora, they are from the trip we took last summer.',
+    mustSurvive: ['fotos', 'trip', 'summer'],
+    mustNotAppear: ['viaje', 'verano', 'photos', 'pictures'],
+    tests: 'Spanish clause, then English, informal',
+  },
+  {
+    input: 'We can meet on Friday, se você ainda estiver na cidade.',
+    mustSurvive: ['Friday', 'cidade'],
+    mustNotAppear: ['sexta', 'podemos', 'in town', 'city'],
+    tests: 'English clause, then Portuguese',
+  },
+  {
+    input: 'El cliente ya aprobó el diseño que le mandamos, so we can start building the new version next week.',
+    mustSurvive: ['diseño', 'building', 'version'],
+    mustNotAppear: ['design', 'construir', 'versión', 'semana', 'approved'],
+    tests: 'Spanish clause, then English, longer',
+  },
+];
+
+/**
  * Fixtures for a translating action, which is the one case where the whole
  * point is that the language changes. The `Fixture` shape needs no changes and
  * neither does the scoring: `mustSurvive` becomes the payload that has to
