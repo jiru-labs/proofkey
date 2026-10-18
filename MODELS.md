@@ -1896,6 +1896,24 @@ glosses (`mañana, meaning tomorrow`), made `Qwen3-4B` worse on the mixed set:
 91/120 → 82/120, with Expand 13 → 7 of 24 (3 runs, temperature 0, 2026-10-17).
 It was dropped there, before a paid run.
 
+**Also dropped, 2026-10-18: telling Expand which language to write its additions
+in.** Expand's failures on the clause set are additions. The English clause comes
+back in Spanish inside a longer Spanish sentence, or the French clause in English
+inside a longer English one. Two wordings were tried on `Qwen3-4B`, against
+unchanged `main` as the control, with 3 runs at temperature 0 on the six
+clause-mixed fixtures:
+
+| Wording | All five actions | Expand |
+|---|---|---|
+| Control (unchanged) | 35/90 | 5/18 |
+| "Write anything you add in the language of the part it develops." after the list | 17/90 | 6/18 |
+| The same instruction in the sentence that leads the list | 33/90 | 6/18 |
+
+Put after the list, the line halved the score: the list does its work by being
+the last thing in the prompt. Inside the lead sentence it changed nothing beyond the
+spread between runs (35 today, 36 on 2026-10-17 with the same prompt). Neither
+earned a paid run. Expand stays a floor here.
+
 **German needed nothing.** The German fixture, with English `feature flag` and
 `release` in it, kept them without any list: 50/50 and 49/50 on Gemini
 (2026-10-15, two runs of the same prompt) and 14/15 on `Qwen3-4B`
