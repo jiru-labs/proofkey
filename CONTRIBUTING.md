@@ -84,6 +84,12 @@ chromium`). `test:ext` specifically needs the `chromium` channel: the default
 headless build loads no extensions at all and the MV3 service worker never
 registers.
 
+The same `npm run verify` runs in GitHub Actions on every push to `main` and on
+every pull request ([.github/workflows/verify.yml](.github/workflows/verify.yml)).
+It runs `node tools/fetch-webllm-lib.mjs` first to fetch the in-browser model
+library, which is not in git, so a check that needs that library is not skipped
+there the way it can be on a checkout that never fetched it.
+
 ## Fixing a bug
 
 The workflow, in order. It is stricter than it looks and the strictness is
