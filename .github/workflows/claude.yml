@@ -52,7 +52,6 @@ jobs:
         # guide; checked locally with `claude -p` on 2026-10-19.
         env:
           GH_TOKEN: ${{ github.token }}
-          TASK: ${{ github.event.inputs.task }}
           ANTHROPIC_BASE_URL: https://openrouter.ai/api
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.OPENROUTER_API_KEY }}
           ANTHROPIC_MODEL: '~anthropic/claude-sonnet-latest[1m]'
@@ -70,7 +69,15 @@ jobs:
           prompt: |
             You are maintaining ProofKey in this repository. Read CLAUDE.md first and follow it.
 
-            The task is in the environment variable TASK. If it is empty, do the weekly review:
+            Run every command on its own, without pipes, `;` or `&&`: only plain commands are
+            allowed here. Verify prints a summary line per suite, so read its whole output.
+
+            The task, written by the maintainer when starting this run by hand (empty on the
+            weekly schedule), is between the markers:
+            <<<TASK
+            ${{ github.event.inputs.task }}
+            TASK>>>
+            If it is empty, do the weekly review:
             1. Run `xvfb-run -a npm run verify`. If anything fails, find the cause and fix it.
             2. Run `npm outdated` and `npm audit`. Take a patch or minor update within the
                declared range only if verify stays green afterwards. No new dependencies.
