@@ -129,6 +129,20 @@ equal('nothing for English whose `as a` is Portuguese too',
 equal('nothing for the letters of a command line', mixedClauses('Use it like this: complete -o default -o bashdefault, and that is all.'), []);
 equal('nothing for two languages neither of which is English',
   mixedClauses('Ya terminé el informe, mais je ne sais pas encore à quelle heure.'), []);
+const longEnglish =
+  'I looked at the report this morning, and it is not what we had agreed on. We should talk about it with the team, because they will want to know. ' +
+  'I think that the numbers are wrong, but I have not checked them yet. It is a problem for the whole project, and we will need more time. ' +
+  'They said that this was fine, but it is not. We can meet on Monday, if you are free.';
+const longThenSpanish = `${longEnglish} Pero no tengo tiempo para esto, y es muy tarde para mí.`;
+const longParts = mixedClauses(longThenSpanish);
+check('the part cap does not leave out the one language that is not English',
+  longParts.length <= 6 && longParts.some((part) => part.language === 'Spanish') && longParts.some((part) => part.language === 'English'),
+  JSON.stringify(longParts.map((part) => part.language)));
+check('so a rewrite of a long text that dropped its Spanish is still seen as losing it',
+  lostMixture(longThenSpanish, 'I looked at the report this morning, and it is not what we had agreed on. I have little time for this, and it is late.'));
+equal('a French contraction with a typographic apostrophe, as with a straight one',
+  [foreignWordsInEnglish('I said c’est la vie to her.'), foreignWordsInEnglish("I said c'est la vie to her.")],
+  [['c’est'], ["c'est"]]);
 const parts = mixedClauses(clauses);
 const clausePrompt = composeSystemPrompt(improve, emptyProfile(), clauses, [], parts);
 check('a rewrite is told each part and its language, last',

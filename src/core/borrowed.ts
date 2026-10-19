@@ -98,7 +98,7 @@ const NOT_ENGLISH_LETTER = /[^\P{Script=Latin}a-z]/u;
 export function foreignWordsInEnglish(text: string): string[] {
   const found = new Map<string, string>();
   for (const token of text.match(WORD) ?? []) {
-    const word = token.toLowerCase();
+    const word = token.toLowerCase().replace('’', "'");
     if (!found.has(word) && (NOT_ENGLISH.has(word) || NOT_ENGLISH_LETTER.test(word))) found.set(word, token);
   }
   return [...found.values()];
@@ -179,7 +179,15 @@ export function mixedClauses(text: string): LanguagePart[] {
   }
   const languages = new Set(parts.map((part) => part.language));
   if (languages.size !== 2 || !languages.has('en')) return [];
-  return parts.slice(0, MAX_PARTS).map(({ passage, language }) => ({ passage, language: LANGUAGE_NAMES[language]! }));
+  // The cap must not cut the text's other language out: a long English text
+  // with its Spanish at the end would otherwise name English parts only.
+  const capped = parts.slice(0, MAX_PARTS);
+  for (const language of languages) {
+    if (!capped.some((part) => part.language === language)) {
+      capped[capped.length - 1] = parts.find((part) => part.language === language)!;
+    }
+  }
+  return capped.map(({ passage, language }) => ({ passage, language: LANGUAGE_NAMES[language]! }));
 }
 
 /**
