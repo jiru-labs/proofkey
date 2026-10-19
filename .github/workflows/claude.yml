@@ -65,7 +65,7 @@ jobs:
           # environment, and issue text is public input.
           claude_args: >-
             --max-turns 80
-            --allowedTools "Read,Glob,Grep,Edit,Write,MultiEdit,Bash(npm run:*),Bash(npm ci),Bash(npm outdated:*),Bash(npm audit:*),Bash(npm install:*),Bash(xvfb-run -a npm run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git switch:*),Bash(git checkout -b:*),Bash(git add:*),Bash(git commit:*),Bash(git push -u origin claude/:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh pr create:*)"
+            --allowedTools "Read,Glob,Grep,Edit,Write,MultiEdit,Bash(npm run:*),Bash(npm ci),Bash(npm outdated:*),Bash(npm audit:*),Bash(npm install:*),Bash(xvfb-run -a npm run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git switch:*),Bash(git checkout -b:*),Bash(git add:*),Bash(git commit:*),Bash(git push -u origin:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh pr create:*)"
           prompt: |
             You are maintaining ProofKey in this repository. Read CLAUDE.md first and follow it.
 
