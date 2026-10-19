@@ -59,7 +59,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { borrowedWords, KEEPS_BORROWED_WORDS, loadLexicon, mixedClauses } from '../src/core/borrowed.ts';
+import { borrowedWords, KEEPS_BORROWED_WORDS, loadLexicon, lostMixture, mixedClauses } from '../src/core/borrowed.ts';
 import {
   BUILT_IN_ACTIONS,
   composeSystemPrompt,
@@ -131,6 +131,10 @@ interface Attempt {
   survived: string[];
   lost: string[];
   appeared: string[];
+  /** Asked a second time, as the worker does, because the first reply lost the mixture. */
+  retried: boolean;
+  /** The first reply's score: what the check would be without that second request. */
+  firstOk: boolean;
   /**
    * The strong signal, and the only one this harness will call a translation:
    * a word from `mustNotAppear` is present. That is the model having reached
@@ -208,25 +212,38 @@ async function runOne(
     ...(temperature === undefined ? {} : { temperature }),
   };
 
+  const ask = async () => {
+    const response = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const retryAfter = response.headers.get('retry-after');
+      const suffix = retryAfter ? ` (retry-after: ${retryAfter})` : '';
+      throw new Error(`HTTP ${response.status}${suffix} — ${(await response.text()).slice(0, 300)}`);
+    }
+    const payload = await response.json();
+    return {
+      output: (payload?.choices?.[0]?.message?.content ?? '') as string,
+      usage: (payload?.usage ?? {}) as Record<string, unknown>,
+    };
+  };
+
   const started = Date.now();
-  const response = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-    body: JSON.stringify(body),
-  });
+  let { output, usage } = await ask();
+  // What the worker does (runAction): a text that switches language clause by
+  // clause, rewritten all in one of them, is asked for once more, unchanged.
+  let retried = false;
+  const firstOk = scoreOutput(action, fixture, output).ok;
+  if (KEEPS_BORROWED_WORDS.has(action.id) && temperature !== 0 && lostMixture(fixture.input, output)) {
+    retried = true;
+    const again = await ask().catch(() => undefined);
+    if (again && !lostMixture(fixture.input, again.output)) ({ output, usage } = again);
+  }
   const ms = Date.now() - started;
 
-  if (!response.ok) {
-    const retryAfter = response.headers.get('retry-after');
-    const suffix = retryAfter ? ` (retry-after: ${retryAfter})` : '';
-    throw new Error(`HTTP ${response.status}${suffix} — ${(await response.text()).slice(0, 300)}`);
-  }
-
-  const payload = await response.json();
-  const output: string = payload?.choices?.[0]?.message?.content ?? '';
-  const usage = (payload?.usage ?? {}) as Record<string, unknown>;
-
-  return { fixture, output: output.trim(), ms, usage, ...scoreOutput(action, fixture, output) };
+  return { fixture, output: output.trim(), ms, usage, retried, firstOk, ...scoreOutput(action, fixture, output) };
 }
 
 function resolveActions(requested: string[]): WritingAction[] {
@@ -287,6 +304,8 @@ async function main(): Promise<void> {
   let totalChecks = 0;
   let totalPassed = 0;
   let totalAdded = 0;
+  let totalFirst = 0;
+  let totalRetried = 0;
 
   for (const model of models) {
     for (const action of actions) {
@@ -301,6 +320,8 @@ async function main(): Promise<void> {
       let passed = 0;
       let attempted = 0;
       let added = 0;
+      let retried = 0;
+      let firstPassed = 0;
       const failures = new Map<string, number>();
 
       const fixtures = fixturesFor(action, fixtureSet);
@@ -324,6 +345,8 @@ async function main(): Promise<void> {
             results.push(attempt);
             if (attempt.ok) passed++;
             if (attempt.added) added++;
+            if (attempt.retried) retried++;
+            if (attempt.firstOk) firstPassed++;
             const seen = distinct.get(attempt.output) ?? 0;
             distinct.set(attempt.output, seen + 1);
           } catch (error) {
@@ -372,10 +395,15 @@ async function main(): Promise<void> {
       totalChecks += attempted;
       totalPassed += passed;
       totalAdded += added;
+      totalFirst += firstPassed;
+      totalRetried += retried;
 
       console.log(`\n  ${passed}/${attempted} checks kept the mixture intact (translation only)`);
       if (added > 0) {
         console.log(`  ${added} of the ${attempted - passed} failed kept every listed word and added the other language beside it`);
+      }
+      if (retried > 0) {
+        console.log(`  ${retried} of ${attempted} came back in one language and were asked again, as the extension does; without that, ${firstPassed}/${attempted}`);
       }
       if (distinct.size > fixtures.length) {
         console.log(
@@ -390,6 +418,9 @@ async function main(): Promise<void> {
 
   console.log(`\n${'='.repeat(74)}`);
   console.log(`Total: ${totalPassed}/${totalChecks} checks kept the mixture intact`);
+  if (totalRetried > 0) {
+    console.log(`Asked again ${totalRetried} time(s), as the extension does; without that: ${totalFirst}/${totalChecks}`);
+  }
   if (totalAdded > 0) {
     console.log(`Of the ${totalChecks - totalPassed} failed, ${totalAdded} kept every listed word and only added the other language.`);
   }

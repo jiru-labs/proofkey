@@ -40,6 +40,7 @@ const check = (name, ok, detail = '') => {
 /** Records every request so the test can assert on it. */
 function startStubProvider() {
   const seen = [];
+  const mixAsked = new Set();
   const handle = (request, response) => {
     let body = '';
     request.on('data', (chunk) => (body += chunk));
@@ -112,6 +113,17 @@ function startStubProvider() {
             usage: { prompt_tokens: 10, completion_tokens: 5 },
           }),
         );
+        return;
+      }
+
+      // A rewrite of a text that switches language clause by clause: "mix-kept"
+      // answers with both languages, "mix-always" all in Spanish, "mix-once" all
+      // in Spanish the first time it sees the text and with both after that.
+      if (/mix-(kept|once|always)$/.test(askedUser)) {
+        const collapse = askedUser.endsWith('mix-always') || (askedUser.endsWith('mix-once') && !mixAsked.has(askedUser));
+        mixAsked.add(askedUser);
+        const content = collapse ? 'Ya terminé el informe, solo necesito enviárselo a Laura antes del almuerzo.' : askedUser;
+        response.end(JSON.stringify({ model: 'stub-openai', choices: [{ message: { content }, finish_reason: 'stop' }] }));
         return;
       }
 
@@ -1366,6 +1378,29 @@ async function run() {
   );
   const clauseFixSystem = await systemFor('fix-grammar', clauses);
   check('Fix grammar is not', !clauseFixSystem.includes('changes language from one part'), clauseFixSystem.slice(-120));
+
+  // A rewrite of it that comes back all in one language is asked for once more.
+  const rewrite = async (marker) => {
+    seen.length = 0;
+    return page.evaluate((t) => chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'expand', text: t }), `${clauses} ${marker}`);
+  };
+  const mixKept = await rewrite('mix-kept');
+  check('a rewrite that keeps both languages costs one request', mixKept?.ok === true && seen.length === 1, `${seen.length} request(s)`);
+  const mixOnce = await rewrite('mix-once');
+  check('one that comes back in one language is asked again, and the answer that keeps both is used',
+    mixOnce?.ok === true && seen.length === 2 && mixOnce.value.text.includes('I just need to send it'), JSON.stringify(mixOnce));
+  check('the second request is the first one, unchanged',
+    JSON.stringify(seen[0]?.body?.messages) === JSON.stringify(seen[1]?.body?.messages));
+  const mixAlways = await rewrite('mix-always');
+  check('if the second is in one language too, that rewrite is shown, after two requests and no third',
+    mixAlways?.ok === true && seen.length === 2 && mixAlways.value.text.includes('almuerzo'), JSON.stringify(mixAlways));
+  const beforeCold = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+  await page.evaluate((value) => chrome.storage.sync.set({ 'proofkey:settings': value }),
+    { ...beforeCold, connections: beforeCold.connections.map((c) => ({ ...c, temperature: 0 })) });
+  const mixCold = await rewrite('mix-always');
+  check('at temperature 0, where the same request gives the same reply, it is not asked again',
+    mixCold?.ok === true && seen.length === 1, `${seen.length} request(s)`);
+  await page.evaluate((value) => chrome.storage.sync.set({ 'proofkey:settings': value }), beforeCold);
 
   // The setting is only worth having if it is visible and says what it did.
   await page.reload();

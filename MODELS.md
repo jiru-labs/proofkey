@@ -1924,6 +1924,43 @@ spread between runs (35 today, 36 on 2026-10-17 with the same prompt). Neither
 earned a paid run. Expand's failures on this set are mostly the clause being
 replaced, not additions (see the re-score above), so it stays open in #1.
 
+**Asked again when the rewrite loses the mixture, 2026-10-19 (on `main`, not
+in 0.1.16).** Since wording was not the lever, the worker now checks the reply:
+`lostMixture` (`src/core/borrowed.ts`) counts the short common words of English
+and of the other language across the whole rewrite, and when either has none
+left, the same request is sent once more, unchanged, and the second reply is
+used if it keeps both. Counted over the whole text, not clause by clause,
+because a rewrite that keeps both often switches mid-clause ("por lo que
+podemos start building the new version next week"). Read against the stored
+outputs of 2026-10-17/18 (both models, five actions, the six clause fixtures),
+it named 190 of the 191 that lost the mixture and none of the 194 that kept
+it. `a` is not counted: it is French, Spanish and Portuguese too, and with it
+an all-English rewrite of the French fixture read as keeping the French (185
+of 191 named). A clause-by-clause version named all 191 but 15 good ones too.
+Nothing is asked again at temperature 0, where the same request returns the
+same reply, and a failed second request leaves the first reply in place.
+
+Measured with the harness doing what the worker does, so both numbers come
+from the same replies: the first reply scored as it came, then after the
+second request where one was sent. Gemini 2.5 Flash through OpenRouter
+(served by Google, `reasoning_effort: "none"`), six clause fixtures, 10 runs,
+the five rewording actions, the check as shipped:
+
+| | All five actions | Expand | Second requests |
+|---|---|---|---|
+| First reply only (the prompt on `main`, no second request) | 271/300 | 33/60 | — |
+| Asked again when the mixture is lost | **281/300** | **42/60** | 27 of 300: 25 Expand, 2 Make professional |
+
+Make professional went 58 → 59 and the other three kept 60/60 without a
+second request. Expand by fixture afterwards: Spanish-then-English 4/10, the
+French clause 6/10, German 10/10, the informal Spanish 4/10, Portuguese 10/10,
+the longer Spanish 8/10; 4 of its 18 remaining failures kept every listed word
+and added the other language beside them. A first run the same day, with `a`
+still counted, gave 273 → 284 and Expand 33 → 44, with 19 second requests;
+the two runs together cost $0.157 for 646 requests, read off `/api/v1/key`.
+The cost to a user is a second request on Expand on four texts in ten, and
+only on a text that switches language clause by clause.
+
 **German needed nothing.** The German fixture, with English `feature flag` and
 `release` in it, kept them without any list: 50/50 and 49/50 on Gemini
 (2026-10-15, two runs of the same prompt) and 14/15 on `Qwen3-4B`

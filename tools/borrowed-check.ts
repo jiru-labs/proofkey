@@ -19,6 +19,7 @@ import {
   foreignWordsInEnglish,
   KEEPS_BORROWED_WORDS,
   loadLexicon,
+  lostMixture,
   mixedClauses,
 } from '../src/core/borrowed.ts';
 import { BUILT_IN_ACTIONS, composeSystemPrompt, emptyProfile, keptPassages } from '../src/core/prompts.ts';
@@ -137,6 +138,20 @@ const translateAction = BUILT_IN_ACTIONS.find((action) => action.id === 'transla
 check('a translation is not told to keep them',
   !composeSystemPrompt(translateAction, { ...emptyProfile(), translateLanguage: 'German' }, clauses, [], parts)
     .includes('changes language from one part'));
+
+console.log('\na rewrite of it that kept both languages, or did not:');
+const spanishFirst = 'Ya terminé el informe, I just need to send it to Laura before lunch.';
+check('both kept', !lostMixture(spanishFirst, 'Ya terminé el informe; I just need to send it to Laura before lunch.'));
+check('both kept with the switch inside a clause, where no comma splits it',
+  !lostMixture('El cliente ya aprobó el diseño, so we can start building next week.',
+    'El cliente aprobó el diseño que le enviamos, por lo que podemos start building the new version next week.'));
+check('all in Spanish', lostMixture(spanishFirst, 'Ya terminé el informe, solo necesito enviárselo a Laura antes del almuerzo.'));
+check('all in English', lostMixture("I'll call you tonight, mais je ne sais pas encore à quelle heure.",
+  "I'll call you tonight, but I don't know yet at what time."));
+check('nothing to lose in a text in one language',
+  !lostMixture('Ich schicke dir die Unterlagen morgen früh, dann koennen wir am Freitag darüber sprechen.', 'Ich schicke dir die Unterlagen morgen.'));
+check('nor in one with borrowed words only',
+  !lostMixture('El deadline es mañana pero todavia no tengo el draft.', 'El plazo es mañana pero todavía no tengo el borrador.'));
 
 console.log(failures === 0 ? '\nBorrowed-word checks passed.' : `\n${failures} check(s) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

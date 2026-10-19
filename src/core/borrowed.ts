@@ -183,6 +183,30 @@ export function mixedClauses(text: string): LanguagePart[] {
 }
 
 /**
+ * Whether a rewrite of a text that `mixedClauses` splits came back in one of
+ * its two languages: not one short common word of English, or not one of the
+ * other language, left in it. Counted over the whole rewrite rather than clause
+ * by clause, because a rewrite that keeps both often switches mid-clause
+ * («por lo que podemos start building the new version next week») where no
+ * punctuation splits it. On the stored outputs of 2026-10-17/18 for the six
+ * clause fixtures (Gemini 2.5 Flash and Qwen3-4B, five actions), it named 190
+ * of the 191 that lost the mixture and none of the 194 that kept it.
+ */
+export function lostMixture(text: string, rewrite: string): boolean {
+  const other = mixedClauses(text).find((part) => part.language !== LANGUAGE_NAMES.en)?.language;
+  const code = Object.keys(LANGUAGE_NAMES).find((key) => LANGUAGE_NAMES[key] === other);
+  if (!code) return false;
+  const tokens = rewrite
+    .split(/\s+/)
+    .map((token) => token.replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, '').replace('’', "'").toLowerCase())
+    // `a` is French, Spanish and Portuguese as well as English: counted, an
+    // all-English rewrite of a French text read as keeping the French.
+    .filter((token) => !SHARED_WITH_ENGLISH.has(token) && token !== 'a');
+  const english = tokens.some((token) => FUNCTION_WORDS.en!.has(token) || ENGLISH_CONTRACTIONS.has(token));
+  return !english || !tokens.some((token) => FUNCTION_WORDS[code]!.has(token));
+}
+
+/**
  * The English words in a Spanish, French or Portuguese `text` — or, in an
  * English one, the words of those languages (`foreignWordsInEnglish`) — as
  * written, first occurrence of each.

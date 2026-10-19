@@ -660,6 +660,10 @@ each part named with its language. Same model, 2026-10-17, six such texts
 (`--fixtures clauses`), 10 runs, control alongside: 232/300 → 272/300 — Make
 professional 41 → 59, Make friendly 39 → 60, Expand 32 → 33, the other two
 60/60 under both; the mixed set's French-and-English fixture 35 → 46 of 50.
+A rewrite that comes back in one of the two languages is asked for once more:
+2026-10-19, same replies scored before and after, 271/300 → 281/300, Expand
+33/60 → 42/60, with a second request on 25 of 60 Expand checks and 2 of the
+240 others.
 Details in MODELS.md, "A text that switches language clause by clause".
 
 `fix-grammar`, `summarize` and `bullet-points` are marked `Verified` on the same

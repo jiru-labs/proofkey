@@ -34,7 +34,7 @@ import {
   TARGET_LANGUAGE,
 } from '../core/prompts';
 import { runCompletion, validateConnection } from '../core/providers';
-import { baseLanguage, borrowedWords, foreignWordsInEnglish, isBorrowedBase, KEEPS_BORROWED_WORDS, loadLexicon, mixedClauses, type Lexicon } from '../core/borrowed';
+import { baseLanguage, borrowedWords, foreignWordsInEnglish, isBorrowedBase, KEEPS_BORROWED_WORDS, loadLexicon, lostMixture, mixedClauses, type Lexicon } from '../core/borrowed';
 import { emptyReviewState, recordApplied, reviewUrl, type ReviewState } from '../core/review';
 import type { WritingAction } from '../core/types';
 import { askOffscreen, warmLiveCheck } from '../core/providers/inBrowser';
@@ -759,6 +759,18 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
           error: `${action.label} came back in a different language from your text, so ProofKey left your text as it was. Try again, or use a provider with a key.`,
         };
       }
+    }
+
+    // A text that switches language clause by clause, rewritten all in one of
+    // them, is asked for once more, unchanged: on Gemini 2.5 Flash Expand kept
+    // such a mixture in about half its runs, so a second sample usually does.
+    // A line added to the prompt instead was measured to make it worse
+    // (MODELS.md). At temperature 0 the same request returns the same reply.
+    if (parts.length > 0 && result.connection.temperature !== 0 && lostMixture(text, result.text)) {
+      // The first reply is still a rewrite the user can read and refuse, so a
+      // failed second request does not cost them it.
+      const again = await runCompletion(chain, { systemPrompt, userText: text }).catch(() => undefined);
+      if (again && !lostMixture(text, again.text)) result = again;
     }
 
     return {
