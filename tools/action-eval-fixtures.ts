@@ -271,6 +271,14 @@ export interface Score {
   dropped: boolean;
   /** A token is gone with no translation in its place: usually orthography, reported apart. */
   respelled: boolean;
+  /**
+   * Translated, but every `mustSurvive` word is still there: the other language
+   * was added beside the user's words, not put in their place. Still a failed
+   * check — the headline does not move — but a different failure, and Expand,
+   * which writes new sentences, is where it shows. Counted apart so a reader
+   * can tell how much of a low number is that.
+   */
+  added: boolean;
   /** The headline: the mixture was not collapsed into one language. */
   ok: boolean;
 }
@@ -290,5 +298,6 @@ export function scoreOutput(action: WritingAction, fixture: Fixture, output: str
   const respelled = lost.length > 0 && !translated && !translating;
 
   // A respelling does not fail it — see the note on `respelled` in action-eval.ts.
-  return { survived, lost, appeared, translated, dropped, respelled, ok: !translated && !dropped };
+  const added = translated && lost.length === 0;
+  return { survived, lost, appeared, translated, dropped, respelled, added, ok: !translated && !dropped };
 }

@@ -1880,9 +1880,18 @@ Spanish, French, German and Portuguese. The control came from a worktree of
 Per action on Gemini: Improve writing 60 → 60, Make professional 41 → 59,
 Make friendly 39 → 60, Simplify 60 → 60, Expand 32 → 33. On Qwen: 0 → 3,
 0 → 9, 2 → 6, 0 → 12, 1 → 6. Every one of the six texts went up on both models.
-Expand did not move on Gemini. It adds sentences, sometimes in the other
-language, and the scorer counts any `almuerzo` or `yet` it adds as a
-translation, so on this set its number is a floor.
+Expand did not move on Gemini, and its failures here are real. Re-scored on
+2026-10-19 with the split the harness now prints (a failed check whose listed
+words all survived, so the other language was added beside them rather than
+put in their place): 3 of Gemini's 27 failed outputs were additions; the other
+24 replaced the user's clause, "I just need to send it to Laura before lunch"
+coming back as "solo necesito enviárselo a Laura antes del almuerzo". On
+`Qwen3-4B`, 1 of 8. On the word-level mixed set it is the other way round:
+17 of Gemini's 29 failed Expand outputs that day, and 12 to 20 of 30 to 45 on
+the runs of 2026-10-14 and 2026-10-15, kept every listed word and added a gloss
+or a sentence in the other language — so there the number is a floor, and on
+clauses it is not. Counted over distinct outputs, which for Gemini at 10 runs
+is 58 of 60 here.
 
 On the mixed set, Gemini, the same day and settings with the change: 357/400.
 The French-and-English fixture went 35 → 46 of 50 against 2026-10-15. The
@@ -1912,7 +1921,8 @@ clause-mixed fixtures:
 Put after the list, the line halved the score: the list does its work by being
 the last thing in the prompt. Inside the lead sentence it changed nothing beyond the
 spread between runs (35 today, 36 on 2026-10-17 with the same prompt). Neither
-earned a paid run. Expand stays a floor here.
+earned a paid run. Expand's failures on this set are mostly the clause being
+replaced, not additions (see the re-score above), so it stays open in #1.
 
 **German needed nothing.** The German fixture, with English `feature flag` and
 `release` in it, kept them without any list: 50/50 and 49/50 on Gemini

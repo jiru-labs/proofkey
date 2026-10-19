@@ -286,6 +286,7 @@ async function main(): Promise<void> {
 
   let totalChecks = 0;
   let totalPassed = 0;
+  let totalAdded = 0;
 
   for (const model of models) {
     for (const action of actions) {
@@ -299,6 +300,7 @@ async function main(): Promise<void> {
       const distinct = new Map<string, number>();
       let passed = 0;
       let attempted = 0;
+      let added = 0;
       const failures = new Map<string, number>();
 
       const fixtures = fixturesFor(action, fixtureSet);
@@ -321,6 +323,7 @@ async function main(): Promise<void> {
             });
             results.push(attempt);
             if (attempt.ok) passed++;
+            if (attempt.added) added++;
             const seen = distinct.get(attempt.output) ?? 0;
             distinct.set(attempt.output, seen + 1);
           } catch (error) {
@@ -368,8 +371,12 @@ async function main(): Promise<void> {
 
       totalChecks += attempted;
       totalPassed += passed;
+      totalAdded += added;
 
       console.log(`\n  ${passed}/${attempted} checks kept the mixture intact (translation only)`);
+      if (added > 0) {
+        console.log(`  ${added} of the ${attempted - passed} failed kept every listed word and added the other language beside it`);
+      }
       if (distinct.size > fixtures.length) {
         console.log(
           `  ${distinct.size} distinct outputs across ${fixtures.length} fixtures — the model is not stable here`,
@@ -383,6 +390,9 @@ async function main(): Promise<void> {
 
   console.log(`\n${'='.repeat(74)}`);
   console.log(`Total: ${totalPassed}/${totalChecks} checks kept the mixture intact`);
+  if (totalAdded > 0) {
+    console.log(`Of the ${totalChecks - totalPassed} failed, ${totalAdded} kept every listed word and only added the other language.`);
+  }
   console.log(
     'Only a translation fails a check. Respellings are printed but not scored, and\ntoken survival is a floor rather than a proof — read the outputs before quoting this.\n',
   );
