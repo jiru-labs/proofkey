@@ -25,4 +25,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      # Not in git; fetched and hash-checked. Without it the check that the
+      # bundled library is the pinned one is skipped and nothing says so.
+      - run: node tools/fetch-webllm-lib.mjs
       - run: xvfb-run -a npm run verify
