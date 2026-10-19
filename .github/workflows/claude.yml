@@ -16,6 +16,10 @@ on:
         description: What to work on (leave empty for the weekly review)
         required: false
         default: ''
+      debug:
+        description: Print the agent's full output in the log (public)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -57,6 +61,7 @@ jobs:
           github_token: ${{ github.token }}
           bot_name: nyakojiru
           bot_id: '37882157'
+          show_full_output: ${{ github.event.inputs.debug == 'true' }}
           # Only what the job needs. No curl, no node -e: the keys are in this
           # environment, and issue text is public input.
           claude_args: >-
