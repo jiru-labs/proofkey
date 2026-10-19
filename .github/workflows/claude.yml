@@ -1,7 +1,9 @@
-# Claude, unattended: once a week, or by hand with a task. It works on a branch
-# and opens a pull request; it never pushes to main and never releases. Pull
-# requests are reviewed and merged from ct/108 with plain git, so main keeps one
-# author and committer. Rules for the agent are in CLAUDE.md.
+# Claude, unattended: once a week, or by hand with a task. It pushes a
+# `claude/*` branch and nothing else; it never pushes to main (the ruleset stops
+# it) and never releases. Branches are reviewed and merged from ct/108 with plain
+# git, so main keeps one author and committer. No pull request: the workflow
+# token would need the repository setting that also lets Actions approve them.
+# Rules for the agent are in CLAUDE.md.
 #
 # No @claude trigger on purpose: that mode posts as the Claude app and asks for a
 # "Generated with" line in the pull request body.
@@ -23,7 +25,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
   issues: read
 
 concurrency:
@@ -65,7 +66,7 @@ jobs:
           # environment, and issue text is public input.
           claude_args: >-
             --max-turns 80
-            --allowedTools "Read,Glob,Grep,Edit,Write,MultiEdit,Bash(npm run:*),Bash(npm ci),Bash(npm outdated:*),Bash(npm audit:*),Bash(npm install:*),Bash(xvfb-run -a npm run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git switch:*),Bash(git checkout -b:*),Bash(git add:*),Bash(git commit:*),Bash(git push -u origin:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh pr create:*)"
+            --allowedTools "Read,Glob,Grep,Edit,Write,MultiEdit,Bash(npm run:*),Bash(npm ci),Bash(npm outdated:*),Bash(npm audit:*),Bash(npm install:*),Bash(xvfb-run -a npm run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git switch:*),Bash(git checkout -b:*),Bash(git add:*),Bash(git commit:*),Bash(git push -u origin:*),Bash(gh issue list:*),Bash(gh issue view:*)"
           prompt: |
             You are maintaining ProofKey in this repository. Read CLAUDE.md first and follow it.
 
@@ -91,9 +92,8 @@ jobs:
 
             If you changed anything: create a branch named `claude/<short-topic>-<YYYY-MM-DD>`,
             commit with plain `git commit` (no Co-Authored-By trailer, no "Generated with" line),
-            push it with `git push -u origin <branch>`, and open a pull request with
-            `gh pr create --base main`. The body says what
-            was wrong, what changed, and what you measured (verify totals before and after).
-            No AI attribution in the body.
+            and push it with `git push -u origin <branch>`. Do not open a pull request. The
+            commit message says what was wrong, what changed, and what you measured (verify
+            before and after); the maintainer reads the branch from it.
 
-            If nothing needed changing, change nothing and open nothing.
+            If nothing needed changing, change nothing and push nothing.
