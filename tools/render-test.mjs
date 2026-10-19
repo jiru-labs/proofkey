@@ -17,10 +17,13 @@
  */
 
 import { chromium } from 'playwright';
+import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 const BASE = 'http://localhost:8777/tools/harness.html';
 const SHOTS = new URL('../.test-shots/', import.meta.url).pathname;
+const ROOT = new URL('..', import.meta.url).pathname;
 
 const MIRRORED = [
   'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'wordSpacing',
@@ -199,16 +202,34 @@ const probe = ([id, props]) => {
   }
 };
 
-async function run() {
-  const reachable = await fetch('http://localhost:8777/dist/content.js')
+const serving = () =>
+  fetch('http://localhost:8777/dist/content.js', { signal: AbortSignal.timeout(700) })
     .then((response) => response.ok)
     .catch(() => false);
-  if (!reachable) {
-    console.error(
-      'Nothing on http://localhost:8777. Run `npm run build` then `npm run serve` first.',
-    );
-    process.exit(1);
+
+// The harness is served over http. Reuse `npm run serve` if it is up; otherwise
+// start the same server here and take it down on exit, so `npm run verify` does
+// not depend on a second terminal and never leaves a listener behind.
+async function ensureServer() {
+  if (await serving()) return;
+  const server = spawn('python3', ['-m', 'http.server', '8777', '--bind', '127.0.0.1'], {
+    cwd: ROOT,
+    stdio: 'ignore',
+  });
+  process.on('exit', () => server.kill());
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, () => process.exit(1));
   }
+  for (let i = 0; i < 50; i++) {
+    if (await serving()) return;
+    await sleep(100);
+  }
+  console.error('Could not serve http://localhost:8777/dist/content.js. Run `npm run build` first.');
+  process.exit(1);
+}
+
+async function run() {
+  await ensureServer();
 
   await mkdir(SHOTS, { recursive: true });
   // PROOFKEY_BROWSER renders in another Chromium build, e.g. Microsoft Edge.

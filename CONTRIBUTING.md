@@ -40,14 +40,13 @@ npm run typecheck
 ## The tests
 
 ```bash
-npm run serve          # in one terminal — a static server on 8777
-npm run verify         # in another: everything below, in order. Run this before opening a PR
+npm run verify         # everything below, in order. Run this before opening a PR
 ```
 
 | Command | What it covers | Needs |
 |---|---|---|
 | `npm test` | The word diff, in Node. Invariant: applying the changes to the original reproduces the rewrite exactly. Then the shortcut chords: a chord survives a round trip through storage, matches only the event it was recorded from, and the unusable ones are refused | nothing |
-| `npm run test:render` | The real built `dist/content.js` against `tools/harness.html`: underline rendering, overlay alignment, the card, apply, whole-field rewrite, and a bound key actually pressed | `npm run serve` on 8777, Playwright |
+| `npm run test:render` | The real built `dist/content.js` against `tools/harness.html`: underline rendering, overlay alignment, the card, apply, whole-field rewrite, and a bound key actually pressed | a static server on 8777 — reuses `npm run serve` if it is up, otherwise starts one and stops it after; Playwright |
 | `npm run test:ext` | The **actual** extension loaded in Chromium — real service worker, real provider code — pointed at a stub that records requests, so the wire format is asserted rather than assumed. Also that a recorded shortcut reaches `chrome.storage` and that removing it clears it | Playwright with `channel: 'chromium'` |
 
 `test:render` loads `dist/content.js` as the browser would, so it tests the last

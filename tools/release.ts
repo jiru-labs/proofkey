@@ -6,10 +6,9 @@
 //
 // The store rejects a package whose version is not strictly greater than the
 // published one, so the bump is the first thing checked and the first thing done.
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync, rmSync, statSync } from 'node:fs'
-import { setTimeout as sleep } from 'node:timers/promises'
 import { readEnv, requireKeys } from './env.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
@@ -50,53 +49,6 @@ const step = (msg: string) => console.log(`\n\x1b[1m${msg}\x1b[0m`)
 const run = (cmd: string, cmdArgs: string[]) =>
   execFileSync(cmd, cmdArgs, { cwd: ROOT, stdio: 'inherit' })
 
-// test:render drives a page served over http, so verify only passes with the
-// static server up. Start one if the port is bare, and take it down again after
-// — a release must not leave a listener behind.
-const SERVE_URL = 'http://127.0.0.1:8777'
-const isServing = async () => {
-  try {
-    await fetch(SERVE_URL, { signal: AbortSignal.timeout(700) })
-    return true
-  } catch {
-    return false
-  }
-}
-
-let server: ChildProcess | null = null
-if (await isServing()) {
-  console.log(`Reusing the server already on ${SERVE_URL}`)
-} else {
-  step(`Starting a static server on ${SERVE_URL}`)
-  server = spawn('python3', ['-m', 'http.server', '8777', '--bind', '127.0.0.1'], {
-    cwd: ROOT,
-    stdio: 'ignore',
-  })
-  let up = false
-  for (let i = 0; i < 40 && !up; i++) {
-    await sleep(100)
-    up = await isServing()
-  }
-  if (!up) {
-    server.kill()
-    console.error(`Could not get a server up on ${SERVE_URL}`)
-    process.exit(1)
-  }
-}
-const stopServer = () => {
-  if (server && !server.killed) {
-    server.kill()
-    server = null
-  }
-}
-process.on('exit', stopServer)
-for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, () => {
-    stopServer()
-    process.exit(1)
-  })
-}
-
 const originals = new Map<string, string>()
 step(`Bumping ${current} -> ${version}`)
 for (const file of [MANIFEST, PACKAGE]) {
@@ -117,7 +69,6 @@ for (const file of [MANIFEST, PACKAGE]) {
 // state this whole dance exists to avoid.
 const rollBack = (why: string): never => {
   for (const [file, raw] of originals) writeFileSync(file, raw)
-  stopServer()
   console.error(`\n${why} — rolled the version back to ${current}.`)
   process.exit(1)
 }
@@ -135,7 +86,6 @@ try {
 } catch {
   rollBack('verify failed, and nothing was sent')
 }
-stopServer()
 
 // The in-browser model's compiled WebGPU library has to be inside the package:
 // MV3 forbids code fetched at run time. It is not in git, so a fresh checkout

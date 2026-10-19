@@ -232,7 +232,7 @@ Up to 0.1.9 only shortcut origins were registered, so live checking switched on 
 npm run build       # production build into dist/
 npm run dev         # rebuild on change
 npm run typecheck   # tsc --noEmit
-npm run verify      # typecheck, build, and the browser tests (needs `npm run serve` alongside)
+npm run verify      # typecheck, build, and the browser tests
 ```
 
 [CONTRIBUTING.md](CONTRIBUTING.md) covers what each test actually asserts, and the workflow for fixing a bug — reproduce it in `tools/harness.html` first, and confirm the new test fails *before* the fix. Two tests here passed while asserting nothing until that check was applied.
