@@ -1114,10 +1114,16 @@ async function run() {
       }, [enabled, blocked]);
     await setLiveOrigins([]);
     await setOrigins([]);
-    await page.waitForTimeout(900);
+    // Polled, not a fixed wait: two sync writes each wake the worker, and on a
+    // slow GitHub runner 900 ms was once not enough (2026-10-19, run 39294335781).
+    let lingering = true;
+    for (let i = 0; i < 50 && lingering; i++) {
+      await page.waitForTimeout(100);
+      lingering = (await registeredIds()).some((entry) => entry.id === 'proofkey-shortcuts');
+    }
     check(
       'removing the origin unregisters it again',
-      !(await registeredIds()).some((entry) => entry.id === 'proofkey-shortcuts'),
+      !lingering,
       'a listener the user thinks they removed must not survive',
     );
 
