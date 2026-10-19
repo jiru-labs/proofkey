@@ -251,10 +251,11 @@ export interface Settings {
    */
   frameOrigins: Record<string, string[]>;
   /**
-   * Set by a release that keeps API keys in `chrome.storage.local` only. It
-   * tells every copy reading these settings that an empty `apiKey` here means
-   * "each computer holds its own", not "the user cleared it", so the local copy
-   * is kept rather than dropped. See `mirrorApiKeys`.
+   * Set whenever settings are saved with the API keys kept in
+   * `chrome.storage.local` only. It tells every copy reading these settings
+   * that an empty `apiKey` here means "each computer holds its own", not "the
+   * user cleared it", so the local copy is kept rather than dropped. See
+   * `mirrorApiKeys`.
    */
   apiKeysLocal?: boolean;
 }

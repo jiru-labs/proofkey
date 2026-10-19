@@ -392,9 +392,10 @@ function renderConnectionBody(connection: Connection, problem: string | null): H
         placeholder: getPreset(connection.presetId).requiresApiKey ? 'required' : 'not required',
         on: { input: (e) => (connection.apiKey = (e.target as HTMLInputElement).value) },
       }),
-      getPreset(connection.presetId).docsUrl
-        ? `Get one at ${getPreset(connection.presetId).docsUrl}`
-        : undefined,
+      [
+        'Kept on this computer only: it does not sync to your other browsers.',
+        getPreset(connection.presetId).docsUrl ? `Get one at ${getPreset(connection.presetId).docsUrl}` : '',
+      ].join(' ').trim(),
     ),
 
     el(

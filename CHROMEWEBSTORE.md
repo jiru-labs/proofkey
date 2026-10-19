@@ -42,9 +42,9 @@ pinned Hugging Face revision with integrity checks on the config, tokenizer and 
 - **Text you write or select:** sent only to the provider you configured, when you invoke an
   action or have live checking on for that site. With the built-in or in-browser model it
   never leaves the computer.
-- **Authentication information (your API keys):** stored in `chrome.storage.sync`, sent only
-  to the provider each key belongs to. With Chrome Sync on, the browser syncs it between
-  your own signed-in browsers (see PRIVACY.md).
+- **Authentication information (your API keys):** stored in `chrome.storage.local` on `main`
+  (in `chrome.storage.sync` up to 0.1.16, so Chrome Sync carried it between your own
+  signed-in browsers), sent only to the provider each key belongs to (see PRIVACY.md).
 - **A count of applied suggestions,** kept in `chrome.storage.local` only to ask once for a
   rating. It never leaves the device, so it is not data the form counts as collected.
 - **Nothing else:** no analytics, telemetry, crash reporting or usage statistics, and no

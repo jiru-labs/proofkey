@@ -63,8 +63,14 @@ export function defaultSettings(): Settings {
   };
 }
 
+/**
+ * Settings as the rest of the extension sees them: what sync holds, with each
+ * connection's API key filled in from this computer's own copy. A key still in
+ * sync wins — it was written by a computer that has not stopped syncing keys
+ * yet, and `mirrorApiKeys` takes it out of sync and into the copy.
+ */
 export async function loadSettings(): Promise<Settings> {
-  const stored = await chrome.storage.sync.get(KEY_SETTINGS);
+  const [stored, keys] = await Promise.all([chrome.storage.sync.get(KEY_SETTINGS), localApiKeys()]);
   const raw = stored[KEY_SETTINGS] as Partial<Settings> | undefined;
   if (!raw) return defaultSettings();
 
@@ -77,7 +83,10 @@ export async function loadSettings(): Promise<Settings> {
     profile: { ...defaults.profile, ...(raw.profile ?? {}) },
     liveCheck: { ...defaults.liveCheck, ...(raw.liveCheck ?? {}) },
     connections: raw.connections?.length
-      ? raw.connections.map(migrateConnection)
+      ? raw.connections.map((connection) => ({
+          ...migrateConnection(connection),
+          apiKey: connection.apiKey || keys[connection.id] || '',
+        }))
       : defaults.connections,
     activeConnectionId: raw.activeConnectionId ?? defaults.activeConnectionId,
   };
@@ -101,42 +110,73 @@ function migrateConnection(stored: Connection): Connection {
   return { ...stored, model: liveModel(stored), thinking: partial.thinking ?? 'off' };
 }
 
+/**
+ * Saves settings with every API key kept on this computer only: the keys go to
+ * `chrome.storage.local`, which never syncs, and sync gets the rest with the
+ * keys emptied and `apiKeysLocal` set. The caller's object keeps its keys.
+ *
+ * Local is written first, so when the sync write wakes `mirrorApiKeys` on this
+ * computer the copy it finds is already the new one.
+ */
 export async function saveSettings(settings: Settings): Promise<void> {
-  await chrome.storage.sync.set({ [KEY_SETTINGS]: settings });
+  const keys: Record<string, string> = {};
+  for (const connection of settings.connections) {
+    if (connection.apiKey) keys[connection.id] = connection.apiKey;
+  }
+  await writeLocalApiKeys(await localApiKeys(), keys);
+  await chrome.storage.sync.set({ [KEY_SETTINGS]: withoutApiKeys(settings) });
 }
 
 /** API keys by connection id, in `chrome.storage.local`, which never syncs. */
 const KEY_API_KEYS = 'proofkey:apiKeys';
 
-/**
- * Copies every API key into `chrome.storage.local`, and drops the copy of any
- * key that is gone from settings.
- *
- * The first half of keeping keys off the browser's sync. Sync still holds them
- * and is still what is read, so a browser signed in on two computers behaves
- * as before. The release that stops writing keys to sync will read them from
- * here: every computer that ran this one has its copy by then, where it would
- * otherwise lose its key the moment another computer saved settings without it.
- *
- * "Gone" needs care for that release to be safe. 0.1.14 and 0.1.15 drop the
- * copy whenever sync shows a connection with no key, so a computer still on
- * one of them when another strips the keys deletes its own. From here on a
- * connection only loses its copy when it is removed, or when its key is
- * cleared in settings that do not carry `apiKeysLocal` — the mark the
- * stripping release writes, so an empty key it leaves behind is not read as
- * the user clearing it.
- */
-export async function mirrorApiKeys(): Promise<void> {
-  const settings = await loadSettings();
-  const stored = ((await chrome.storage.local.get(KEY_API_KEYS))[KEY_API_KEYS] ?? {}) as Record<string, string>;
-  const keys: Record<string, string> = {};
-  for (const connection of settings.connections) {
-    const key = connection.apiKey || (settings.apiKeysLocal ? stored[connection.id] : undefined);
-    if (key) keys[connection.id] = key;
-  }
+async function localApiKeys(): Promise<Record<string, string>> {
+  return ((await chrome.storage.local.get(KEY_API_KEYS))[KEY_API_KEYS] ?? {}) as Record<string, string>;
+}
+
+async function writeLocalApiKeys(stored: Record<string, string>, keys: Record<string, string>): Promise<void> {
   if (JSON.stringify(stored) === JSON.stringify(keys)) return;
   if (Object.keys(keys).length > 0) await chrome.storage.local.set({ [KEY_API_KEYS]: keys });
   else await chrome.storage.local.remove(KEY_API_KEYS);
+}
+
+function withoutApiKeys<T extends Partial<Settings>>(settings: T): T {
+  return {
+    ...settings,
+    apiKeysLocal: true,
+    connections: settings.connections?.map((connection) => ({ ...connection, apiKey: '' })),
+  };
+}
+
+/**
+ * Keeps this computer's copy of the keys in step with sync, and takes any key
+ * still in sync out of it.
+ *
+ * A key reaches sync two ways now: settings written before this release, and a
+ * computer still running an older one. Either way it is copied here first,
+ * then sync is rewritten without it. From 0.1.16 a computer that sees the
+ * emptied key with `apiKeysLocal` keeps its own copy and picks it up when it
+ * updates; 0.1.14 and 0.1.15 drop theirs, which is why this waited until 0.1.16
+ * had been out for weeks.
+ *
+ * Without the mark, an empty key is a key the user cleared, and the copy goes
+ * too. With it, a copy only goes when its connection is removed.
+ */
+export async function mirrorApiKeys(): Promise<void> {
+  const readSync = async () => (await chrome.storage.sync.get(KEY_SETTINGS))[KEY_SETTINGS] as Partial<Settings> | undefined;
+  const raw = await readSync();
+  const stored = await localApiKeys();
+  const keys: Record<string, string> = {};
+  for (const connection of raw?.connections ?? []) {
+    const key = connection.apiKey || (raw?.apiKeysLocal ? stored[connection.id] : undefined);
+    if (key) keys[connection.id] = key;
+  }
+  await writeLocalApiKeys(stored, keys);
+  if (!raw?.connections?.some((connection) => connection.apiKey)) return;
+  // Settings saved in the meantime are newer than these and already hold no
+  // keys; writing these back over them would undo that save.
+  if (JSON.stringify(await readSync()) !== JSON.stringify(raw)) return;
+  await chrome.storage.sync.set({ [KEY_SETTINGS]: withoutApiKeys(raw) });
 }
 
 /**
