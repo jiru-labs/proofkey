@@ -1486,22 +1486,26 @@ async function run() {
   }
 
   // ------------------------------------------------------------ key mirror
-  // The first half of keeping keys off sync: every key saved to settings gets
-  // a copy in storage.local, and the copy follows when a key is cleared — unless
-  // the settings carry apiKeysLocal, where an empty key is not a cleared one. Sync
-  // is written the way another computer's would be, so the worker has to
-  // notice it on its own.
-  console.log('\nAPI keys copied to local storage:');
+  // Keys stay on this computer: a key that arrives in sync — from settings saved
+  // before this release, or from a computer still on an older one — is copied to
+  // storage.local and taken out of sync, and requests still carry it. An empty
+  // key without apiKeysLocal is a cleared one and its copy goes; with the mark
+  // it is kept. Sync is written the way another computer's would be, so the
+  // worker has to notice it on its own.
+  console.log('\nAPI keys kept in local storage only:');
   {
     const localKeys = () => page.evaluate(async () => (await chrome.storage.local.get('proofkey:apiKeys'))['proofkey:apiKeys']);
-    const settle = async (want) => {
+    const syncSettings = () => page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+    const until = async (read, done) => {
       for (let i = 0; i < 20; i++) {
-        const keys = await localKeys();
-        if (JSON.stringify(keys) === JSON.stringify(want)) return keys;
+        const value = await read();
+        if (done(value)) return value;
         await page.waitForTimeout(100);
       }
-      return localKeys();
+      return read();
     };
+    const settle = (want) => until(localKeys, (keys) => JSON.stringify(keys) === JSON.stringify(want));
+    const stripped = () => until(syncSettings, (value) => value?.connections?.every((c) => c.apiKey === ''));
     const settings = settingsFor('chat_completions');
     const second = { ...settings.connections[0], id: 'second-connection', apiKey: 'second-key-456' };
     await page.evaluate(
@@ -1512,17 +1516,34 @@ async function run() {
     check('a key that arrives in sync is copied to storage.local, by connection',
       copied?.['test-connection'] === 'test-key-123' && copied?.['second-connection'] === 'second-key-456',
       JSON.stringify(copied));
+    const afterCopy = await stripped();
+    check('and taken out of sync, which is marked apiKeysLocal',
+      afterCopy?.apiKeysLocal === true && !/test-key|second-key/.test(JSON.stringify(afterCopy)),
+      JSON.stringify(afterCopy?.connections?.map((c) => c.apiKey)));
+    check('the rest of the settings survive the rewrite',
+      afterCopy?.connections?.length === 2 && afterCopy.activeConnectionId === settings.activeConnectionId
+        && afterCopy.connections[0].baseUrl === settings.connections[0].baseUrl,
+      JSON.stringify(afterCopy?.connections?.map((c) => c.id)));
 
+    seen.length = 0;
+    const reply = await page.evaluate(() =>
+      chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: 'Their is alot of things to do.' }),
+    );
+    check('a request still carries the key, read from storage.local',
+      reply?.ok === true && seen[0]?.headers['authorization'] === 'Bearer test-key-123',
+      reply?.ok ? seen[0]?.headers['authorization'] : reply?.error);
+
+    // Settings from before the mark: an empty key there is one the user cleared.
     await page.evaluate(
       (value) => chrome.storage.sync.set({ 'proofkey:settings': value }),
       { ...settings, connections: [settings.connections[0], { ...second, apiKey: '' }] },
     );
     const cleared = await settle({ 'test-connection': 'test-key-123' });
-    check('a key cleared in settings leaves storage.local too',
+    check('without apiKeysLocal, a key cleared in settings leaves storage.local too',
       JSON.stringify(cleared) === JSON.stringify({ 'test-connection': 'test-key-123' }), JSON.stringify(cleared));
 
-    // What the release that stops syncing keys will write: empty keys and the
-    // mark. A third connection's key is the witness that the worker has run.
+    // What every save writes now: empty keys and the mark. A third connection's
+    // key is the witness that the worker has run.
     const third = { ...settings.connections[0], id: 'third-connection', apiKey: 'third-key-789' };
     await page.evaluate(
       (value) => chrome.storage.sync.set({ 'proofkey:settings': value }),
@@ -1534,11 +1555,25 @@ async function run() {
 
     await page.evaluate(
       (value) => chrome.storage.sync.set({ 'proofkey:settings': value }),
-      { ...settings, apiKeysLocal: true, connections: [{ ...third, apiKey: '' }] },
+      { ...settings, apiKeysLocal: true, activeConnectionId: 'third-connection', connections: [{ ...third, apiKey: '' }] },
     );
     const removed = await settle({ 'third-connection': 'third-key-789' });
     check('with apiKeysLocal, a connection that is removed loses its copy',
       JSON.stringify(removed) === JSON.stringify({ 'third-connection': 'third-key-789' }), JSON.stringify(removed));
+
+    // The options page shows this computer's key, and Save keeps it out of sync.
+    await page.reload();
+    await page.waitForTimeout(500);
+    const shown = await page.locator('input[type="password"]').first().inputValue();
+    check('the options page shows the key kept on this computer', shown === 'third-key-789', shown);
+    await page.locator('input[type="password"]').first().fill('third-key-new');
+    await page.locator('button', { hasText: 'Save' }).last().click();
+    await page.waitForTimeout(600);
+    const savedSync = JSON.stringify(await syncSettings());
+    const savedLocal = await localKeys();
+    check('Save writes the key to storage.local and not to sync',
+      savedLocal?.['third-connection'] === 'third-key-new' && !savedSync.includes('third-key') && savedSync.includes('"apiKeysLocal":true'),
+      `${JSON.stringify(savedLocal)} / ${savedSync.slice(0, 120)}`);
 
     await page.evaluate(() => chrome.storage.sync.clear());
     const none = await settle(undefined);

@@ -55,21 +55,24 @@ Stored using the browser's own extension storage, on your device:
 - if you downloaded the in-browser model, its files, in the browser's storage
   for the extension. **Remove the downloaded model** in settings deletes them.
 
-All of the settings above — **your API keys included** — are kept in
-`chrome.storage.sync` (`src/core/storage.ts`). If you are signed in to the
-browser with Chrome Sync switched on for extensions, the browser copies them
-through your Google account's sync servers to your other signed-in browsers.
-That is the browser's mechanism and its provider's policy; ProofKey neither
-operates nor can read that channel. With Sync off, or not signed in, they stay
-on this computer. The downloaded in-browser model never syncs.
+**Your API keys stay on this computer** (on `main`, not in 0.1.16): each one is
+kept in `chrome.storage.local`, by connection, which never syncs
+(`src/core/storage.ts`). Every other setting above is kept in
+`chrome.storage.sync`. If you are signed in to the browser with Chrome Sync
+switched on for extensions, the browser copies those settings — with every API
+key emptied — through your Google account's sync servers to your other
+signed-in browsers. That is the browser's mechanism and its provider's policy;
+ProofKey neither operates nor can read that channel. With Sync off, or not
+signed in, they stay on this computer. The downloaded in-browser model never
+syncs. A key has to be entered once on each computer you use ProofKey on.
 
-Your API keys are also copied to `chrome.storage.local`, by connection, and the
-copy is removed when you clear a key (since 0.1.14). This copy is
-the first step in keeping keys off the browser's sync: sync still holds them for
-now, so this changes nothing about where they travel. Since 0.1.16,
-the copy is also kept when settings arriving from sync carry the mark a later
-release will write when it stops putting keys there, so a computer that
-receives those settings keeps its key instead of losing it.
+Up to 0.1.16, the version in the store today, the keys were also kept in
+`chrome.storage.sync` and travelled with the rest. The first time the version
+on `main` runs, it moves each key it finds there into `chrome.storage.local`
+and rewrites the synced settings without it, marked as holding no keys. A
+computer on 0.1.16 that receives those settings keeps its own local copy (it
+has made one since 0.1.14, and keeps it under that mark since 0.1.16) and uses
+it again once it updates; until then it reads the emptied key and asks for one.
 
 One more thing is kept, in `chrome.storage.local`, which never syncs: how many
 suggestions you have applied, when you applied the first, and whether ProofKey
@@ -111,8 +114,9 @@ What ProofKey protects you from, and what it does not, in the terms
 
 - **The provider you pick.** With an API key, the text you check goes to that
   provider, under its own privacy policy, tied to your account and billing.
-- **Your browser's own sync.** Settings, API keys included, travel through your
-  Google account's sync servers if Chrome Sync is on for extensions (see above).
+- **Your browser's own sync.** Settings travel through your Google account's
+  sync servers if Chrome Sync is on for extensions (see above). API keys do not
+  on `main`; up to 0.1.16 they did.
 - **The browser and the page.** Chrome's built-in model is Chrome's code; the
   site you type into already sees what you type there; another extension, or
   malware on the device, can read the same fields ProofKey does.
