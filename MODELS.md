@@ -426,7 +426,11 @@ every action over the mixed-language fixtures, 5 runs, 330/340 checks kept the
 mixture against 254/340 — Expand 32/40 against 18/40, every other action
 39–40 of 40 or 20/20 — and the one-language fixtures 177/180 against 175/180.
 Four of its misses were requests that never came back (`fetch failed`,
-`terminated`), not answers. `openai/gpt-6-luna`, OpenAI's
+`terminated`), not answers. Those runs left thinking at OpenAI's default
+(medium); the preset turns it off on this model, which measured the same day
+14.0/14 at $0.33 per 1,000 requests with no reasoning tokens, every action
+327/340 on mixed text with every request answered — Expand 29/40, three
+fewer than with thinking — and 180/180 on one-language text. `openai/gpt-6-luna`, OpenAI's
 named replacement, also scored 14.0/14 but took 3.8s a check.
 
 | Use | Model | Why |

@@ -131,6 +131,14 @@ export const PRESETS: readonly Preset[] = [
     // OpenRouter (served by OpenAI), 10 runs: gpt-5.6-luna 14.0/14 at 620ms
     // against gpt-4.1-mini's 12.8/14, and far fewer borrowed words translated.
     defaultModel: 'openai/gpt-5.6-luna',
+    // Without it OpenAI's default effort, medium, applies. Measured the same
+    // day, 5 runs each: 14.0/14 either way, but $0.33 per 1k requests with it
+    // against $0.56 without (4.1-mini $0.52); every action 327/340 on mixed
+    // text against 330, Expand the only one to lose (29/40 against 32/40).
+    // Only on the id it was measured on: OpenRouter forwards it upstream, and
+    // upstreams differ on whether they take it.
+    disableThinking: (model) =>
+      model === 'openai/gpt-5.6-luna' ? { reasoning_effort: 'none' } : undefined,
     extraHeaders: { 'X-Title': 'ProofKey' },
     group: 'primary',
     hint: 'Models are namespaced, e.g. anthropic/claude-haiku-4.5 or meta-llama/llama-3.3-70b-instruct.',

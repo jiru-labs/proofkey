@@ -82,6 +82,17 @@ check(
   effort(connectionFor('xai', 'grok-build-0.1')) === undefined,
 );
 
+console.log('\nOpenRouter — only on the id it was measured on:');
+
+check(
+  "the preset's default, gpt-5.6-luna, is told not to think",
+  effort(connectionFor('openrouter', getPreset('openrouter').defaultModel)) === 'none',
+);
+check(
+  'a model it was not measured on is sent nothing',
+  effort(connectionFor('openrouter', 'openai/gpt-4.1-mini')) === undefined,
+);
+
 console.log('\nThe guard — a switch measured on one endpoint is not sent to another:');
 
 check(
