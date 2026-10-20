@@ -1824,7 +1824,7 @@ two fixtures whose prompt is identical under both (German, the first Spanish
 one) each lost a check, so temperature 0 on that server is not deterministic
 and one run cannot separate a two-check change from noise.
 
-### A text that switches language clause by clause (on `main`, not in 0.1.16)
+### A text that switches language clause by clause (since 0.1.17)
 
 The fixture still failing most after the two lists above was "Je t'envoie le
 rapport après le standup, but I still need to review the numbers first":
@@ -1924,8 +1924,8 @@ spread between runs (35 today, 36 on 2026-10-17 with the same prompt). Neither
 earned a paid run. Expand's failures on this set are mostly the clause being
 replaced, not additions (see the re-score above), so it stays open in #1.
 
-**Asked again when the rewrite loses the mixture, 2026-10-19 (on `main`, not
-in 0.1.16).** Since wording was not the lever, the worker now checks the reply:
+**Asked again when the rewrite loses the mixture, 2026-10-19 (since
+0.1.17).** Since wording was not the lever, the worker now checks the reply:
 `lostMixture` (`src/core/borrowed.ts`) counts the short common words of English
 and of the other language across the whole rewrite, and when either has none
 left, the same request is sent once more, unchanged, and the second reply is
@@ -1948,7 +1948,7 @@ the five rewording actions, the check as shipped:
 
 | | All five actions | Expand | Second requests |
 |---|---|---|---|
-| First reply only (the prompt on `main`, no second request) | 271/300 | 33/60 | — |
+| First reply only (the 0.1.17 prompt, no second request) | 271/300 | 33/60 | — |
 | Asked again when the mixture is lost | **281/300** | **42/60** | 27 of 300: 25 Expand, 2 Make professional |
 
 Make professional went 58 → 59 and the other three kept 60/60 without a

@@ -655,7 +655,7 @@ Portuguese". Also since 0.1.16: words of those languages (and German) inside
 English text are named the same way. Same model and set, 2026-10-15, control
 and change run side by side: 311/400 → 352/400 — the English-base fixture
 3/50 → 33/50, the French-and-English one 28 → 35, the six others 280 → 284.
-On `main` (not in 0.1.16): a text that switches language clause by clause gets
+Since 0.1.17: a text that switches language clause by clause gets
 each part named with its language. Same model, 2026-10-17, six such texts
 (`--fixtures clauses`), 10 runs, control alongside: 232/300 → 272/300 — Make
 professional 41 → 59, Make friendly 39 → 60, Expand 32 → 33, the other two
