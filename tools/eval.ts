@@ -140,6 +140,12 @@ interface Options {
   reasoning: string;
   maxTokens: number;
   temperature: number | undefined;
+  /**
+   * OpenRouter only: pin the upstream (`--provider groq`), so a model is
+   * measured on the route a preset's user would actually reach, not on
+   * whichever host OpenRouter picks that run.
+   */
+  provider: string | undefined;
 }
 
 async function once({
@@ -149,6 +155,7 @@ async function once({
   reasoning,
   maxTokens,
   temperature,
+  provider,
 }: Options): Promise<Run> {
   const inputs = FIXTURES.map((f) => f.input);
   const body = {
@@ -162,6 +169,7 @@ async function once({
     ...(reasoning === 'off' ? {} : { reasoning_effort: reasoning }),
     // Omitted unless asked for, matching `chatCompletions.ts`.
     ...(temperature === undefined ? {} : { temperature }),
+    ...(provider === undefined ? {} : { provider: { only: [provider], allow_fallbacks: false } }),
   };
 
   const started = Date.now();
@@ -323,6 +331,7 @@ async function main(): Promise<void> {
   const maxTokens = Number(arg('max-tokens') ?? DEFAULT_MAX_TOKENS);
   const temperatureArg = arg('temperature');
   const temperature = temperatureArg === undefined ? DEFAULT_TEMPERATURE : Number(temperatureArg);
+  const provider = arg('provider');
   if (temperature !== undefined && !Number.isFinite(temperature)) {
     console.error(`--temperature ${temperatureArg} is not a number.`);
     process.exit(1);
@@ -351,7 +360,7 @@ async function main(): Promise<void> {
     const failures = new Map<string, number>();
     for (let i = 0; i < runs; i++) {
       try {
-        const run = await once({ base, key, model, reasoning, maxTokens, temperature });
+        const run = await once({ base, key, model, reasoning, maxTokens, temperature, provider });
         collected.push(run);
         process.stdout.write(run.contractBroken ? 'x' : '.');
       } catch (error) {
