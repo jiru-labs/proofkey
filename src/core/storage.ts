@@ -1,4 +1,4 @@
-import { getPreset, PRESETS } from './presets';
+import { getPreset, liveModel, PRESETS } from './presets';
 import { ACTIONS_ON_BUILTIN_MODEL } from './providers/chromeBuiltin';
 import { ACTIONS_ON_IN_BROWSER_MODEL } from './providers/inBrowserModel';
 import { BUILT_IN_ACTIONS, DEFAULT_ACTION_ID, emptyProfile } from './prompts';
@@ -92,10 +92,13 @@ export async function loadSettings(): Promise<Settings> {
  * what they send. That is intended: it is the setting they would have wanted,
  * and anyone who deliberately set `reasoning_effort` by hand keeps it, because
  * `extraBody` is merged after this and wins.
+ *
+ * A model the provider has shut down moves to its replacement (`liveModel`):
+ * Groq's preset default stopped answering on 2026-08-16.
  */
 function migrateConnection(stored: Connection): Connection {
   const partial = stored as Partial<Connection>;
-  return { ...stored, thinking: partial.thinking ?? 'off' };
+  return { ...stored, model: liveModel(stored), thinking: partial.thinking ?? 'off' };
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {

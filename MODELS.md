@@ -415,9 +415,19 @@ both.
 
 ### If you are on OpenRouter
 
-One key, seven model vendors reached through it, and the preset default (`openai/gpt-4.1-mini`) is a
-defensible but expensive choice — it costs 28× the cheapest model measured to
-score one fixture better.
+One key, seven model vendors reached through it. The preset default was
+`openai/gpt-4.1-mini` until 0.1.17 — a defensible but expensive choice, 28× the
+cheapest model measured for one fixture better — and OpenAI shuts it down on
+2027-01-14. On `main` (not in 0.1.17) it is `openai/gpt-5.6-luna`. Measured
+2026-10-20 in one session, served by OpenAI both times: the live-check
+fixtures, 10 runs, 14.0/14 at 620ms against 12.8/14 at 849ms, $0.55 against
+$0.52 per 1,000 of those requests (146 reasoning tokens a request, included);
+every action over the mixed-language fixtures, 5 runs, 330/340 checks kept the
+mixture against 254/340 — Expand 32/40 against 18/40, every other action
+39–40 of 40 or 20/20 — and the one-language fixtures 177/180 against 175/180.
+Four of its misses were requests that never came back (`fetch failed`,
+`terminated`), not answers. `openai/gpt-6-luna`, OpenAI's
+named replacement, also scored 14.0/14 but took 3.8s a check.
 
 | Use | Model | Why |
 |---|---|---|

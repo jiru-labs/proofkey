@@ -52,6 +52,13 @@ export interface Preset {
    * to every request lacking `x-opencode-session` since about 2026-09-17.
    */
   sessionHeader?: string;
+  /**
+   * Model ids the provider has already shut down, each with the id a stored
+   * connection moves to. A connection saved with one fails every request, so
+   * moving it leaves no one worse off. An id only scheduled for shutdown does
+   * not belong here until its date has passed.
+   */
+  shutDown?: Readonly<Record<string, string>>;
   /** `primary` presets are listed first in the options page. */
   group: 'primary' | 'more';
   /** Shown under the fields in the options page. */
@@ -120,14 +127,24 @@ export const PRESETS: readonly Preset[] = [
     docsUrl: 'https://platform.openai.com/api-keys',
   }),
   openaiCompatible('openrouter', 'OpenRouter', 'https://openrouter.ai/api/v1', {
-    defaultModel: 'openai/gpt-4.1-mini',
+    // OpenAI shuts gpt-4.1-mini down on 2027-01-14. Measured 2026-10-20 through
+    // OpenRouter (served by OpenAI), 10 runs: gpt-5.6-luna 14.0/14 at 620ms
+    // against gpt-4.1-mini's 12.8/14, and far fewer borrowed words translated.
+    defaultModel: 'openai/gpt-5.6-luna',
     extraHeaders: { 'X-Title': 'ProofKey' },
     group: 'primary',
     hint: 'Models are namespaced, e.g. anthropic/claude-haiku-4.5 or meta-llama/llama-3.3-70b-instruct.',
     docsUrl: 'https://openrouter.ai/keys',
   }),
   openaiCompatible('groq', 'Groq', 'https://api.groq.com/openai/v1', {
-    defaultModel: 'llama-3.3-70b-versatile',
+    // Groq shut llama-3.3-70b-versatile down on 2026-08-16 for free and
+    // developer tiers. Measured 2026-10-20 through OpenRouter pinned to Groq,
+    // 12 runs: 13.9/14, no false alarms, ~310ms, reasoning it cannot skip.
+    defaultModel: 'openai/gpt-oss-120b',
+    shutDown: {
+      'llama-3.3-70b-versatile': 'openai/gpt-oss-120b',
+      'llama-3.1-8b-instant': 'openai/gpt-oss-120b',
+    },
     group: 'primary',
     docsUrl: 'https://console.groq.com/keys',
   }),
@@ -194,7 +211,10 @@ export const PRESETS: readonly Preset[] = [
     },
   ),
   openaiCompatible('deepseek', 'DeepSeek', 'https://api.deepseek.com/v1', {
-    defaultModel: 'deepseek-chat',
+    // DeepSeek scheduled `deepseek-chat` to stop on 2026-07-24 and names
+    // `deepseek-flash` as current. Taken from its docs, not measured: no key.
+    defaultModel: 'deepseek-flash',
+    hint: 'deepseek-flash thinks by default. DeepSeek documents {"thinking": {"type": "disabled"}} to turn that off; ProofKey has not measured it, so it is not sent — add it under Extra body fields if you want it.',
   }),
   openaiCompatible('mistral', 'Mistral', 'https://api.mistral.ai/v1', {
     defaultModel: 'mistral-small-latest',
@@ -286,6 +306,19 @@ export const PRESETS: readonly Preset[] = [
 
 export function getPreset(id: PresetId): Preset {
   return PRESETS.find((preset) => preset.id === id) ?? PRESETS[0]!;
+}
+
+/**
+ * The model a stored connection should send: its own, unless the provider has
+ * shut that one down. Guarded on the base URL like `disableThinkingBody`, so a
+ * connection repointed at a server of its own keeps the id it chose there.
+ */
+export function liveModel(connection: Connection): string {
+  const preset = getPreset(connection.presetId);
+  const replacement = preset.shutDown?.[connection.model.trim()];
+  if (!replacement || !preset.baseUrl) return connection.model;
+  if (normalizeBaseUrl(preset.baseUrl) !== normalizeBaseUrl(connection.baseUrl)) return connection.model;
+  return replacement;
 }
 
 /**
