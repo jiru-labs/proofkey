@@ -11,6 +11,7 @@
  * drag a custom endpoint onto a protocol it never offered.
  */
 
+import * as presets from '../src/core/presets.ts';
 import { effectiveTransport, getPreset } from '../src/core/presets.ts';
 import type { Connection, PresetId } from '../src/core/types.ts';
 
@@ -46,6 +47,26 @@ check(
 check('other presets keep their transport', effectiveTransport(connection('openrouter', 'gpt-5.6-luna')) === 'chat_completions');
 check('Go asks for a session header', getPreset('opencode-go').sessionHeader === 'x-opencode-session');
 check('no other preset does', getPreset('openrouter').sessionHeader === undefined && getPreset('anthropic').sessionHeader === undefined);
+
+// OpenAI's reasoning models refuse `max_tokens` and take `max_completion_tokens`
+// (per OpenAI's API reference, not measured: no key). The default, gpt-4.1-mini,
+// keeps the field it was measured with.
+console.log('\noutput limit field');
+const outputLimitBody = (presets as Record<string, unknown>)['outputLimitBody'] as
+  | ((c: Connection) => Record<string, number>)
+  | undefined;
+check('there is a per-model output limit field', typeof outputLimitBody === 'function');
+if (outputLimitBody) {
+  const limit = (c: Connection) => JSON.stringify(outputLimitBody(c));
+  check('OpenAI gpt-5.6-luna → max_completion_tokens', limit(connection('openai', 'gpt-5.6-luna')) === '{"max_completion_tokens":512}', limit(connection('openai', 'gpt-5.6-luna')));
+  check('OpenAI o4-mini → max_completion_tokens', limit(connection('openai', 'o4-mini')) === '{"max_completion_tokens":512}');
+  check('OpenAI gpt-4.1-mini, the default, keeps max_tokens', limit(connection('openai', 'gpt-4.1-mini')) === '{"max_tokens":512}');
+  check(
+    'not once its base URL points elsewhere — a proxy may only know max_tokens',
+    limit(connection('openai', 'gpt-5.6-luna', { baseUrl: 'http://localhost:9999/v1' })) === '{"max_tokens":512}',
+  );
+  check('OpenRouter keeps max_tokens on the same model id', limit(connection('openrouter', 'openai/gpt-5.6-luna')) === '{"max_tokens":512}');
+}
 
 if (failures) {
   console.log(`\n${failures} check(s) FAILED`);

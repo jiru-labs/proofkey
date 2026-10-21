@@ -53,6 +53,13 @@ export interface Preset {
    */
   sessionHeader?: string;
   /**
+   * The body field that carries the output limit, where a model refuses
+   * `max_tokens`; undefined means `max_tokens`. OpenAI's API reference deprecates
+   * `max_tokens` in favour of `max_completion_tokens` and says its reasoning
+   * models do not take it at all — taken from the docs, not measured: no key.
+   */
+  outputLimitField?: (model: string) => 'max_completion_tokens' | undefined;
+  /**
    * Model ids the provider has already shut down, each with the id a stored
    * connection moves to. A connection saved with one fails every request, so
    * moving it leaves no one worse off. An id only scheduled for shutdown does
@@ -123,6 +130,9 @@ export const PRESETS: readonly Preset[] = [
   }),
   openaiCompatible('openai', 'OpenAI', 'https://api.openai.com/v1', {
     defaultModel: 'gpt-4.1-mini',
+    // Only on the reasoning families, so a request to gpt-4.1-mini, the one
+    // model measured here, stays byte for byte what it was.
+    outputLimitField: (model) => (/^(o\d|gpt-[5-9])/.test(model) ? 'max_completion_tokens' : undefined),
     group: 'primary',
     docsUrl: 'https://platform.openai.com/api-keys',
   }),
@@ -363,6 +373,21 @@ export function effectiveTransport(connection: Connection): Transport {
   if (!preset.transportFor || !preset.baseUrl) return connection.transport;
   if (normalizeBaseUrl(preset.baseUrl) !== normalizeBaseUrl(connection.baseUrl)) return connection.transport;
   return preset.transportFor(connection.model.trim());
+}
+
+/**
+ * The output-limit field for this connection's requests: the preset's choice
+ * for its model while the connection still points at that preset's endpoint,
+ * `max_tokens` everywhere else.
+ */
+export function outputLimitBody(connection: Connection): Record<string, number> {
+  const preset = getPreset(connection.presetId);
+  const sameEndpoint =
+    !!preset.outputLimitField &&
+    !!preset.baseUrl &&
+    normalizeBaseUrl(preset.baseUrl) === normalizeBaseUrl(connection.baseUrl);
+  const field = (sameEndpoint && preset.outputLimitField?.(connection.model.trim())) || 'max_tokens';
+  return { [field]: connection.maxOutputTokens };
 }
 
 export function disableThinkingBody(

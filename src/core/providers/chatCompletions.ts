@@ -1,4 +1,4 @@
-import { disableThinkingBody } from '../presets';
+import { disableThinkingBody, outputLimitBody } from '../presets';
 import type { Connection } from '../types';
 import {
   buildHeaders,
@@ -26,7 +26,7 @@ export async function complete(
       { role: 'system', content: request.systemPrompt },
       { role: 'user', content: request.userText },
     ],
-    max_tokens: connection.maxOutputTokens,
+    ...outputLimitBody(connection),
     stream: false,
     // Before `extraBody`, so a field the user typed by hand still wins over the
     // preset's default.

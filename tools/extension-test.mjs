@@ -1292,6 +1292,7 @@ async function run() {
       );
       check('user text sent as the second message', request.body.messages?.[1]?.role === 'user');
       check('temperature omitted', !('temperature' in request.body));
+      check('max_tokens sent', request.body.max_tokens === 512 && !('max_completion_tokens' in request.body), JSON.stringify(request.body.max_tokens));
     }
 
     check(

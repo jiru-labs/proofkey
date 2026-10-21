@@ -609,9 +609,12 @@ MiniMax (China) — and the rest use `chat_completions`.
   default; DeepSeek documents `{"thinking": {"type": "disabled"}}` to turn that
   off, which ProofKey does not send because nobody here has measured it.
 - **OpenAI**: `gpt-4.1-mini`, the default, shuts down on 2027-01-14. It stays
-  until a replacement has been measured on `api.openai.com` with a real key;
-  OpenAI's reasoning models may refuse the `max_tokens` field this preset sends.
-  The check fails from 2026-12-15 if it is still the default.
+  until a replacement has been measured on `api.openai.com` with a real key.
+  The check fails from 2026-12-15 if it is still the default. OpenAI's API
+  reference says its reasoning models refuse `max_tokens`; on `main` (not in
+  0.1.17) the preset sends `max_completion_tokens` instead on `o*` and `gpt-5`
+  and later, and still `max_tokens` on `gpt-4.1-mini`. Taken from the docs,
+  **not measured** — no key.
 
 If you have a key for any of them, confirming it takes about a minute — settings
 page, paste key, **Fetch models**, then one quick action on a page. That is a
