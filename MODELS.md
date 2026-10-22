@@ -1975,6 +1975,34 @@ the two runs together cost $0.157 for 646 requests, read off `/api/v1/key`.
 The cost to a user is a second request on Expand on four texts in ten, and
 only on a text that switches language clause by clause.
 
+**Asked again, told why, 2026-10-22 (on `main`, not in 0.1.17).** The second
+request now carries one more sentence, put in front of the parts block's lead
+so the list of parts is still the last thing in the prompt: "An earlier
+rewrite of this text put all of it in one language, which was wrong."
+(`askAgainForMixture`, `src/core/prompts.ts`). Measured paired first: Gemini
+2.5 Flash through OpenRouter, `reasoning_effort: "none"`, Expand on the six
+clause fixtures, 20 runs. Each of the 59 first replies that lost the mixture
+was asked again both ways:
+
+| Second request | Kept the mixture |
+|---|---|
+| Unchanged (0.1.17) | 10 of 59 |
+| Told the first rewrite was in one language | **26 of 59** |
+
+18 second requests kept it only when told, and 2 only unchanged. Then the five
+rewording actions, the six fixtures, 10 runs, with the harness doing what the
+worker now does: 267/300 on first replies → **282/300** after, Expand 28/60 →
+42/60 with 32 second requests, Make professional 59 → 60 with 1, the other
+three 60/60 without any. That Expand total matches 2026-10-19's 42/60, but it
+started lower (28 against 33 first replies kept), and first replies are the
+same request on both days, so this headline cannot separate the two second
+requests; the paired table can. Over both days the told second request kept
+the mixture in 40 of 91 and the unchanged one in 19 of 86. None of the 300
+outputs apologised or mentioned an earlier rewrite. Expand's remaining 18
+failures are 9 on the informal Spanish fixture, 5 on Spanish-then-English and
+2 each on German and the longer Spanish. Both runs cost $0.145, read off
+`/api/v1/key`.
+
 **German needed nothing.** The German fixture, with English `feature flag` and
 `release` in it, kept them without any list: 50/50 and 49/50 on Gemini
 (2026-10-15, two runs of the same prompt) and 14/15 on `Qwen3-4B`

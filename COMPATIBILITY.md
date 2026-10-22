@@ -690,6 +690,9 @@ A rewrite that comes back in one of the two languages is asked for once more:
 2026-10-19, same replies scored before and after, 271/300 → 281/300, Expand
 33/60 → 42/60, with a second request on 25 of 60 Expand checks and 2 of the
 240 others.
+On `main` (not in 0.1.17), that second request says the first rewrite was in
+one language: 2026-10-22, Expand, 59 such replies asked both ways, 26 kept the
+mixture told against 10 unchanged; all five actions 267/300 → 282/300.
 Details in MODELS.md, "A text that switches language clause by clause".
 
 `fix-grammar`, `summarize` and `bullet-points` are marked `Verified` on the same
