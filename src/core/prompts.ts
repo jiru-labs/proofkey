@@ -399,7 +399,7 @@ export function composeSystemPrompt(
   if (!translating && parts.length > 0) {
     blocks.push(
       [
-        'This text changes language from one part to the next on purpose. Keep each',
+        `${MIXTURE_LEAD} Keep each`,
         'part in the language it is written in, even where you reword it:',
         parts.map(({ passage, language }) => `- "${passage}" (${language})`).join('\n'),
       ].join('\n'),
@@ -555,6 +555,21 @@ export function dropAddedFullStops(sentences: string[], corrections: string[]): 
 export function dropAddedTrailingSpaces(original: string, rewrite: string): string {
   if (/[ \t]\r?\n|[ \t]$/.test(original)) return rewrite;
   return rewrite.replace(/[ \t]+(?=\r?\n|$)/g, '');
+}
+
+const MIXTURE_LEAD = 'This text changes language from one part to the next on purpose.';
+export const LOST_MIXTURE_NOTE = 'An earlier rewrite of this text put all of it in one language, which was wrong.';
+
+/**
+ * The prompt for the one retry after a rewrite of a clause-mixed text came
+ * back in one language: the same prompt, with a sentence saying so put in
+ * front of the parts block's lead, so the list of parts stays the last thing
+ * in it — a line after the list halved the score (MODELS.md). On Gemini 2.5
+ * Flash, Expand, 59 such rewrites asked both ways (2026-10-22): 26 kept the
+ * mixture asked this way against 10 asked unchanged.
+ */
+export function askAgainForMixture(systemPrompt: string): string {
+  return systemPrompt.replace(MIXTURE_LEAD, `${LOST_MIXTURE_NOTE} ${MIXTURE_LEAD}`);
 }
 
 /**

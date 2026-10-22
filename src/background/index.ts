@@ -31,6 +31,7 @@ import {
   parseCheckReply,
   resolveTargetLanguage,
   SAME_LANGUAGE_RETRY_NOTE,
+  askAgainForMixture,
   TARGET_LANGUAGE,
 } from '../core/prompts';
 import { runCompletion, validateConnection } from '../core/providers';
@@ -762,14 +763,14 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
     }
 
     // A text that switches language clause by clause, rewritten all in one of
-    // them, is asked for once more, unchanged: on Gemini 2.5 Flash Expand kept
-    // such a mixture in about half its runs, so a second sample usually does.
-    // A line added to the prompt instead was measured to make it worse
-    // (MODELS.md). At temperature 0 the same request returns the same reply.
+    // them, is asked for once more, told that the first rewrite did that
+    // (`askAgainForMixture`): on Gemini 2.5 Flash, Expand, that kept the
+    // mixture in 26 of 59 such second requests against 10 of 59 sent
+    // unchanged (MODELS.md). At temperature 0 nothing is sent again.
     if (parts.length > 0 && result.connection.temperature !== 0 && lostMixture(text, result.text)) {
       // The first reply is still a rewrite the user can read and refuse, so a
       // failed second request does not cost them it.
-      const again = await runCompletion(chain, { systemPrompt, userText: text }).catch(() => undefined);
+      const again = await runCompletion(chain, { systemPrompt: askAgainForMixture(systemPrompt), userText: text }).catch(() => undefined);
       if (again && !lostMixture(text, again.text)) result = again;
     }
 

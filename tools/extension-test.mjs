@@ -1396,8 +1396,14 @@ async function run() {
   const mixOnce = await rewrite('mix-once');
   check('one that comes back in one language is asked again, and the answer that keeps both is used',
     mixOnce?.ok === true && seen.length === 2 && mixOnce.value.text.includes('I just need to send it'), JSON.stringify(mixOnce));
-  check('the second request is the first one, unchanged',
-    JSON.stringify(seen[0]?.body?.messages) === JSON.stringify(seen[1]?.body?.messages));
+  const [firstSystem, secondSystem] = [seen[0]?.body?.messages?.[0]?.content ?? '', seen[1]?.body?.messages?.[0]?.content ?? ''];
+  check('the second request says the first rewrite was all in one language',
+    secondSystem.includes('An earlier rewrite of this text put all of it in one language, which was wrong. This text changes language'),
+    secondSystem.slice(-260));
+  check('and is otherwise the first one, the parts still last',
+    secondSystem.replace('An earlier rewrite of this text put all of it in one language, which was wrong. ', '') === firstSystem &&
+      /\(English\)\s*$/.test(secondSystem) &&
+      JSON.stringify(seen[0]?.body?.messages?.[1]) === JSON.stringify(seen[1]?.body?.messages?.[1]));
   const mixAlways = await rewrite('mix-always');
   check('if the second is in one language too, that rewrite is shown, after two requests and no third',
     mixAlways?.ok === true && seen.length === 2 && mixAlways.value.text.includes('almuerzo'), JSON.stringify(mixAlways));

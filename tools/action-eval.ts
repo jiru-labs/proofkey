@@ -61,6 +61,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { borrowedWords, KEEPS_BORROWED_WORDS, loadLexicon, lostMixture, mixedClauses } from '../src/core/borrowed.ts';
 import {
+  askAgainForMixture,
   BUILT_IN_ACTIONS,
   composeSystemPrompt,
   emptyProfile,
@@ -212,11 +213,11 @@ async function runOne(
     ...(temperature === undefined ? {} : { temperature }),
   };
 
-  const ask = async () => {
+  const ask = async (sent: typeof body = body) => {
     const response = await fetch(`${base}/chat/completions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-      body: JSON.stringify(body),
+      body: JSON.stringify(sent),
     });
     if (!response.ok) {
       const retryAfter = response.headers.get('retry-after');
@@ -233,12 +234,16 @@ async function runOne(
   const started = Date.now();
   let { output, usage } = await ask();
   // What the worker does (runAction): a text that switches language clause by
-  // clause, rewritten all in one of them, is asked for once more, unchanged.
+  // clause, rewritten all in one of them, is asked for once more, told so.
   let retried = false;
   const firstOk = scoreOutput(action, fixture, output).ok;
   if (KEEPS_BORROWED_WORDS.has(action.id) && temperature !== 0 && lostMixture(fixture.input, output)) {
     retried = true;
-    const again = await ask().catch(() => undefined);
+    const [system, user] = body.messages;
+    const again = await ask({
+      ...body,
+      messages: [{ ...system!, content: askAgainForMixture(String(system!.content)) }, user!],
+    }).catch(() => undefined);
     if (again && !lostMixture(fixture.input, again.output)) ({ output, usage } = again);
   }
   const ms = Date.now() - started;
