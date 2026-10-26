@@ -14,6 +14,7 @@ import { readEnv, requireKeys } from './env.ts'
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const MANIFEST = `${ROOT}/public/manifest.json`
 const PACKAGE = `${ROOT}/package.json`
+const LOCK = `${ROOT}/package-lock.json`
 
 const args = process.argv.slice(2)
 const dry = args.includes('--dry')
@@ -51,17 +52,29 @@ const run = (cmd: string, cmdArgs: string[]) =>
 
 const originals = new Map<string, string>()
 step(`Bumping ${current} -> ${version}`)
-for (const file of [MANIFEST, PACKAGE]) {
+// The lock carries the version twice, at the top and under packages[""]: its
+// first two "version" fields, before any dependency's. Every file is checked
+// before any is written, so a lock that has drifted stops the release with the
+// tree untouched instead of half-bumped.
+const bumped = new Map<string, string>()
+for (const [file, times] of [[MANIFEST, 1], [PACKAGE, 1], [LOCK, 2]] as const) {
   const raw = readFileSync(file, 'utf8')
   originals.set(file, raw)
   // Textual replace, not JSON.stringify — it keeps the file's own formatting.
-  const next = raw.replace(/("version":\s*)"[^"]+"/, `$1"${version}"`)
-  if (next === raw) {
-    console.error(`Could not find a version field to rewrite in ${file}`)
+  let seen = 0
+  let done = 0
+  const next = raw.replace(/("version":\s*)"([^"]+)"/g, (field, key: string, old: string) => {
+    if (seen++ >= times || old !== current) return field
+    done++
+    return `${key}"${version}"`
+  })
+  if (done !== times) {
+    console.error(`Expected ${times} version field(s) reading ${current} at the top of ${file}, found ${done}`)
     process.exit(1)
   }
-  writeFileSync(file, next)
+  bumped.set(file, next)
 }
+for (const [file, next] of bumped) writeFileSync(file, next)
 
 // Leave the tree as we found it, so a failed release is not a half-bumped
 // repo. Every exit after the bump goes through here: a rejected upload used to
