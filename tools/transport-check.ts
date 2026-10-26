@@ -60,7 +60,9 @@ if (outputLimitBody) {
   const limit = (c: Connection) => JSON.stringify(outputLimitBody(c));
   check('OpenAI gpt-5.6-luna → max_completion_tokens', limit(connection('openai', 'gpt-5.6-luna')) === '{"max_completion_tokens":512}', limit(connection('openai', 'gpt-5.6-luna')));
   check('OpenAI o4-mini → max_completion_tokens', limit(connection('openai', 'o4-mini')) === '{"max_completion_tokens":512}');
+  check('OpenAI gpt-10 → max_completion_tokens, two digits are a later family too', limit(connection('openai', 'gpt-10')) === '{"max_completion_tokens":512}', limit(connection('openai', 'gpt-10')));
   check('OpenAI gpt-4.1-mini, the default, keeps max_tokens', limit(connection('openai', 'gpt-4.1-mini')) === '{"max_tokens":512}');
+  check('OpenAI gpt-3.5-turbo keeps max_tokens', limit(connection('openai', 'gpt-3.5-turbo')) === '{"max_tokens":512}');
   check(
     'not once its base URL points elsewhere — a proxy may only know max_tokens',
     limit(connection('openai', 'gpt-5.6-luna', { baseUrl: 'http://localhost:9999/v1' })) === '{"max_tokens":512}',

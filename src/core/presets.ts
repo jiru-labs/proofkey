@@ -132,7 +132,8 @@ export const PRESETS: readonly Preset[] = [
     defaultModel: 'gpt-4.1-mini',
     // Only on the reasoning families, so a request to gpt-4.1-mini, the one
     // model measured here, stays byte for byte what it was.
-    outputLimitField: (model) => (/^(o\d|gpt-[5-9])/.test(model) ? 'max_completion_tokens' : undefined),
+    // gpt-5 to gpt-9, and gpt-10 onwards.
+    outputLimitField: (model) => (/^(o\d|gpt-([5-9]|[1-9]\d))/.test(model) ? 'max_completion_tokens' : undefined),
     group: 'primary',
     docsUrl: 'https://platform.openai.com/api-keys',
   }),
