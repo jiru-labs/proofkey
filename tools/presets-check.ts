@@ -63,9 +63,9 @@ const PENDING: Partial<Record<PresetId, { until: string; why: string }>> = {
   openai: {
     until: '2026-12-15',
     why:
-      'its replacement has not been measured on api.openai.com (no OpenAI key here), and ' +
-      'OpenAI\'s reasoning models may refuse `max_tokens`, which this preset sends — ' +
-      'measure with a real key before changing it',
+      'its replacement has not been measured on api.openai.com (no OpenAI key here); the ' +
+      'preset sends `max_completion_tokens` to the reasoning models since 0.1.18, from ' +
+      'OpenAI\'s docs, also unmeasured — measure with a real key before changing it',
   },
 };
 
