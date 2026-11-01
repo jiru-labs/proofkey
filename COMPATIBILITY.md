@@ -613,7 +613,7 @@ MiniMax (China) — and the rest use `chat_completions`.
   The check fails from 2026-12-15 if it is still the default. OpenAI's API
   reference says its reasoning models refuse `max_tokens`; since 0.1.18 the
   preset sends `max_completion_tokens` instead on `o*` and `gpt-5` to `gpt-9`
-  (`gpt-10` and later too on `main`, not in 0.1.18), and still `max_tokens` on
+  (`gpt-10` and later too since 0.1.19), and still `max_tokens` on
   `gpt-4.1-mini`. Taken from the docs,
   **not measured** — no key.
 

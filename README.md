@@ -196,12 +196,12 @@ Reports that it *worked* matter as much as bug reports. Nothing else moves a row
 
 ## Privacy
 
-- Your settings live in `chrome.storage.sync`; on `main` (not in 0.1.16) your API key stays in `chrome.storage.local`, on this computer only. There is no ProofKey server to send either to.
+- Your settings live in `chrome.storage.sync`; since 0.1.19 your API key stays in `chrome.storage.local`, on this computer only. There is no ProofKey server to send either to.
 - Requests go directly from your browser to the provider's endpoint. With Chrome's built-in model there is no request at all: the check runs on your computer.
 - No analytics, no error reporting, no remote logging.
 - **The extension declares no host permissions up front.** It asks for access to a specific API origin when you save a connection, and for access to a site only when you switch on inline checking there.
 
-One honest caveat: `chrome.storage.sync` means Chrome syncs your settings across devices signed into the same Google profile, encrypted in transit and at rest by Chrome. Up to 0.1.16, the version in the store, that includes the API key; on `main` it no longer does — the key is entered once per computer and never leaves it except in requests to your provider ([PRIVACY.md](PRIVACY.md)).
+One honest caveat: `chrome.storage.sync` means Chrome syncs your settings across devices signed into the same Google profile, encrypted in transit and at rest by Chrome. Up to 0.1.18 that included the API key; since 0.1.19 it no longer does — the key is entered once per computer and never leaves it except in requests to your provider ([PRIVACY.md](PRIVACY.md)).
 
 ### On cost
 

@@ -55,7 +55,7 @@ Stored using the browser's own extension storage, on your device:
 - if you downloaded the in-browser model, its files, in the browser's storage
   for the extension. **Remove the downloaded model** in settings deletes them.
 
-**Your API keys stay on this computer** (on `main`, not in 0.1.16): each one is
+**Your API keys stay on this computer** (since 0.1.19): each one is
 kept in `chrome.storage.local`, by connection, which never syncs
 (`src/core/storage.ts`). Every other setting above is kept in
 `chrome.storage.sync`. If you are signed in to the browser with Chrome Sync
@@ -66,11 +66,11 @@ ProofKey neither operates nor can read that channel. With Sync off, or not
 signed in, they stay on this computer. The downloaded in-browser model never
 syncs. A key has to be entered once on each computer you use ProofKey on.
 
-Up to 0.1.16, the version in the store today, the keys were also kept in
-`chrome.storage.sync` and travelled with the rest. The first time the version
-on `main` runs, it moves each key it finds there into `chrome.storage.local`
+Up to 0.1.18, the keys were also kept in
+`chrome.storage.sync` and travelled with the rest. The first time 0.1.19
+runs, it moves each key it finds there into `chrome.storage.local`
 and rewrites the synced settings without it, marked as holding no keys. A
-computer on 0.1.16 that receives those settings keeps its own local copy (it
+computer on 0.1.16 to 0.1.18 that receives those settings keeps its own local copy (it
 has made one since 0.1.14, and keeps it under that mark since 0.1.16) and uses
 it again once it updates; until then it reads the emptied key and asks for one.
 
@@ -116,7 +116,7 @@ What ProofKey protects you from, and what it does not, in the terms
   provider, under its own privacy policy, tied to your account and billing.
 - **Your browser's own sync.** Settings travel through your Google account's
   sync servers if Chrome Sync is on for extensions (see above). API keys do not
-  on `main`; up to 0.1.16 they did.
+  since 0.1.19; up to 0.1.18 they did.
 - **The browser and the page.** Chrome's built-in model is Chrome's code; the
   site you type into already sees what you type there; another extension, or
   malware on the device, can read the same fields ProofKey does.
