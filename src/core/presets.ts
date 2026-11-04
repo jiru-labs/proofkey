@@ -161,20 +161,6 @@ export const PRESETS: readonly Preset[] = [
     // OpenRouter (served by OpenAI), 10 runs: gpt-5.6-luna 14.0/14 at 620ms
     // against gpt-4.1-mini's 12.8/14, and far fewer borrowed words translated.
     defaultModel: 'openai/gpt-5.6-luna',
-    // OpenAI's own shutdowns, on the ids OpenRouter forwards to it.
-    shutDown: {
-      'openai/gpt-4.1-nano': 'openai/gpt-5.6-luna',
-      'openai/gpt-5': { to: 'openai/gpt-5.6-luna', from: '2026-12-11' },
-      'openai/gpt-5-mini': { to: 'openai/gpt-5.6-luna', from: '2026-12-11' },
-      'openai/gpt-5-nano': { to: 'openai/gpt-5.6-luna', from: '2026-12-11' },
-      'openai/gpt-5-pro': { to: 'openai/gpt-5.6-luna', from: '2026-12-11' },
-      'openai/o3': { to: 'openai/gpt-5.6-luna', from: '2026-12-11' },
-      'openai/o3-pro': { to: 'openai/gpt-5.6-luna', from: '2026-12-11' },
-      'openai/gpt-4o': { to: 'openai/gpt-5.6-luna', from: '2027-01-14' },
-      'openai/gpt-4o-mini': { to: 'openai/gpt-5.6-luna', from: '2027-01-14' },
-      'openai/gpt-4.1': { to: 'openai/gpt-5.6-luna', from: '2027-01-14' },
-      'openai/gpt-4.1-mini': { to: 'openai/gpt-5.6-luna', from: '2027-01-14' },
-    },
     // Without it OpenAI's default effort, medium, applies. Measured the same
     // day, 5 runs each: 14.0/14 either way, but $0.33 per 1k requests with it
     // against $0.56 without (4.1-mini $0.52); every action 327/340 on mixed

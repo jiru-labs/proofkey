@@ -46,9 +46,6 @@ const SHUTDOWNS: Shutdown[] = [
   {
     ids: {
       openai: ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-5-pro', 'o3', 'o3-pro'],
-      openrouter: [
-        'openai/gpt-5', 'openai/gpt-5-mini', 'openai/gpt-5-nano', 'openai/gpt-5-pro', 'openai/o3', 'openai/o3-pro',
-      ],
     },
     date: '2026-12-11',
     source: 'developers.openai.com/api/docs/deprecations, announced 2026-06-11, read 2026-11-02',
@@ -131,9 +128,13 @@ if (liveModel) {
     liveModel(connection('groq', 'llama-3.3-70b-versatile', { baseUrl: 'http://localhost:8080/v1' })) ===
       'llama-3.3-70b-versatile',
   );
+  // OpenRouter kept serving openai/gpt-4.1-nano from Azure after OpenAI shut it
+  // down on 2026-10-23 (measured 2026-11-04), so OpenAI's dates say nothing
+  // about OpenRouter's ids.
   check(
-    'a model only scheduled for shutdown is left alone until it is gone',
-    liveModel(connection('openrouter', 'openai/gpt-4.1-mini'), '2026-11-04') === 'openai/gpt-4.1-mini',
+    'an OpenRouter connection on an OpenAI id OpenAI has shut down is left alone',
+    liveModel(connection('openrouter', 'openai/gpt-4.1-nano'), '2026-11-04') === 'openai/gpt-4.1-nano' &&
+      liveModel(connection('openrouter', 'openai/gpt-4.1-mini'), '2027-02-01') === 'openai/gpt-4.1-mini',
   );
   // OpenAI's dates, from SHUTDOWNS above: each move happens on the day, not before.
   const moves: [PresetId, string, string][] = [
@@ -142,8 +143,6 @@ if (liveModel) {
     ['openai', 'o3', '2026-12-11'],
     ['openai', 'gpt-4.1-mini', '2027-01-14'],
     ['openai', 'gpt-4o', '2027-01-14'],
-    ['openrouter', 'openai/gpt-5-mini', '2026-12-11'],
-    ['openrouter', 'openai/gpt-4.1-mini', '2027-01-14'],
   ];
   for (const [presetId, model, date] of moves) {
     const before = new Date(Date.parse(date) - 86_400_000).toISOString().slice(0, 10);

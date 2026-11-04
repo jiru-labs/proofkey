@@ -619,8 +619,9 @@ MiniMax (China) — and the rest use `chat_completions`.
   day OpenAI turns its model off, not before: `gpt-5`, `gpt-5-mini`,
   `gpt-5-nano`, `gpt-5-pro`, `o3` and `o3-pro` on 2026-12-11; `gpt-4o`,
   `gpt-4o-mini`, `gpt-4.1` and `gpt-4.1-mini` on 2027-01-14; `gpt-4.1-nano`,
-  already gone, at once. OpenRouter connections on the same OpenAI ids move to
-  `openai/gpt-5.6-luna` on the same dates. OpenAI's API reference says its
+  already gone, at once. OpenRouter connections are not moved: OpenRouter kept
+  serving `openai/gpt-4.1-nano` from Azure after OpenAI shut it down (measured
+  2026-11-04), so OpenAI's dates do not apply there. OpenAI's API reference says its
   reasoning models refuse `max_tokens`; since 0.1.18 the preset sends
   `max_completion_tokens` instead on `o*` and `gpt-5` to `gpt-9` (`gpt-10` and
   later too since 0.1.19), and still `max_tokens` on `gpt-4.1-mini`. Taken
