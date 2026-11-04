@@ -608,14 +608,23 @@ MiniMax (China) — and the rest use `chat_completions`.
   default. Taken from DeepSeek's docs, **not measured** — no key. It thinks by
   default; DeepSeek documents `{"thinking": {"type": "disabled"}}` to turn that
   off, which ProofKey does not send because nobody here has measured it.
-- **OpenAI**: `gpt-4.1-mini`, the default, shuts down on 2027-01-14. It stays
-  until a replacement has been measured on `api.openai.com` with a real key.
-  The check fails from 2026-12-15 if it is still the default. OpenAI's API
-  reference says its reasoning models refuse `max_tokens`; since 0.1.18 the
-  preset sends `max_completion_tokens` instead on `o*` and `gpt-5` to `gpt-9`
-  (`gpt-10` and later too since 0.1.19), and still `max_tokens` on
-  `gpt-4.1-mini`. Taken from the docs,
-  **not measured** — no key.
+- **OpenAI**: OpenAI shuts `gpt-4.1-mini`, the old default, down on 2027-01-14
+  and names `gpt-6-luna` as its replacement; on `main` (not in 0.1.19) that is
+  the default. Measured 2026-11-04 on OpenCode Go's Responses API with the
+  settings this preset sends (no reasoning field, 2048 output tokens,
+  `npm run eval -- --api responses`), 10 runs: 14.0/14, no false alarms,
+  about 3.3 s, 334 output tokens of which 156 reasoning, so the output cap is
+  not at risk. That is the model; the request to `api.openai.com` itself is
+  **not measured** — no key. A stored connection moves to `gpt-6-luna` on the
+  day OpenAI turns its model off, not before: `gpt-5`, `gpt-5-mini`,
+  `gpt-5-nano`, `gpt-5-pro`, `o3` and `o3-pro` on 2026-12-11; `gpt-4o`,
+  `gpt-4o-mini`, `gpt-4.1` and `gpt-4.1-mini` on 2027-01-14; `gpt-4.1-nano`,
+  already gone, at once. OpenRouter connections on the same OpenAI ids move to
+  `openai/gpt-5.6-luna` on the same dates. OpenAI's API reference says its
+  reasoning models refuse `max_tokens`; since 0.1.18 the preset sends
+  `max_completion_tokens` instead on `o*` and `gpt-5` to `gpt-9` (`gpt-10` and
+  later too since 0.1.19), and still `max_tokens` on `gpt-4.1-mini`. Taken
+  from the docs, **not measured** — no key.
 
 If you have a key for any of them, confirming it takes about a minute — settings
 page, paste key, **Fetch models**, then one quick action on a page. That is a

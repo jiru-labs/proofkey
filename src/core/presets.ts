@@ -60,12 +60,13 @@ export interface Preset {
    */
   outputLimitField?: (model: string) => 'max_completion_tokens' | undefined;
   /**
-   * Model ids the provider has already shut down, each with the id a stored
-   * connection moves to. A connection saved with one fails every request, so
-   * moving it leaves no one worse off. An id only scheduled for shutdown does
-   * not belong here until its date has passed.
+   * Model ids the provider shuts down, each with the id a stored connection
+   * moves to. A connection saved with one fails every request, so moving it
+   * leaves no one worse off. An id only scheduled for shutdown carries its
+   * date (`from`, YYYY-MM-DD) and moves on that day, not before: until then it
+   * still answers, and the user chose it.
    */
-  shutDown?: Readonly<Record<string, string>>;
+  shutDown?: Readonly<Record<string, string | { to: string; from: string }>>;
   /** `primary` presets are listed first in the options page. */
   group: 'primary' | 'more';
   /** Shown under the fields in the options page. */
@@ -129,9 +130,27 @@ export const PRESETS: readonly Preset[] = [
     hint: 'Paste the base URL up to and including /v1. ProofKey appends /chat/completions.',
   }),
   openaiCompatible('openai', 'OpenAI', 'https://api.openai.com/v1', {
-    defaultModel: 'gpt-4.1-mini',
-    // Only on the reasoning families, so a request to gpt-4.1-mini, the one
-    // model measured here, stays byte for byte what it was.
+    // OpenAI shuts gpt-4.1-mini down on 2027-01-14 and names gpt-6-luna as its
+    // replacement. Measured 2026-11-04 on OpenCode Go's Responses API with this
+    // preset's settings (no reasoning field, 2048 output tokens), 10 runs:
+    // 14.0/14, no false alarms, ~3.3 s, 334 output tokens of which 156
+    // reasoning. Not measured on api.openai.com itself: no OpenAI key here.
+    defaultModel: 'gpt-6-luna',
+    shutDown: {
+      'gpt-4.1-nano': 'gpt-6-luna',
+      'gpt-5': { to: 'gpt-6-luna', from: '2026-12-11' },
+      'gpt-5-mini': { to: 'gpt-6-luna', from: '2026-12-11' },
+      'gpt-5-nano': { to: 'gpt-6-luna', from: '2026-12-11' },
+      'gpt-5-pro': { to: 'gpt-6-luna', from: '2026-12-11' },
+      o3: { to: 'gpt-6-luna', from: '2026-12-11' },
+      'o3-pro': { to: 'gpt-6-luna', from: '2026-12-11' },
+      'gpt-4o': { to: 'gpt-6-luna', from: '2027-01-14' },
+      'gpt-4o-mini': { to: 'gpt-6-luna', from: '2027-01-14' },
+      'gpt-4.1': { to: 'gpt-6-luna', from: '2027-01-14' },
+      'gpt-4.1-mini': { to: 'gpt-6-luna', from: '2027-01-14' },
+    },
+    // Only on the reasoning families, so a request to gpt-4.1-mini, measured
+    // here before, stays byte for byte what it was.
     // gpt-5 to gpt-9, and gpt-10 onwards.
     outputLimitField: (model) => (/^(o\d|gpt-([5-9]|[1-9]\d))/.test(model) ? 'max_completion_tokens' : undefined),
     group: 'primary',
@@ -142,6 +161,20 @@ export const PRESETS: readonly Preset[] = [
     // OpenRouter (served by OpenAI), 10 runs: gpt-5.6-luna 14.0/14 at 620ms
     // against gpt-4.1-mini's 12.8/14, and far fewer borrowed words translated.
     defaultModel: 'openai/gpt-5.6-luna',
+    // OpenAI's own shutdowns, on the ids OpenRouter forwards to it.
+    shutDown: {
+      'openai/gpt-4.1-nano': 'openai/gpt-5.6-luna',
+      'openai/gpt-5': { to: 'openai/gpt-5.6-luna', from: '2026-12-11' },
+      'openai/gpt-5-mini': { to: 'openai/gpt-5.6-luna', from: '2026-12-11' },
+      'openai/gpt-5-nano': { to: 'openai/gpt-5.6-luna', from: '2026-12-11' },
+      'openai/gpt-5-pro': { to: 'openai/gpt-5.6-luna', from: '2026-12-11' },
+      'openai/o3': { to: 'openai/gpt-5.6-luna', from: '2026-12-11' },
+      'openai/o3-pro': { to: 'openai/gpt-5.6-luna', from: '2026-12-11' },
+      'openai/gpt-4o': { to: 'openai/gpt-5.6-luna', from: '2027-01-14' },
+      'openai/gpt-4o-mini': { to: 'openai/gpt-5.6-luna', from: '2027-01-14' },
+      'openai/gpt-4.1': { to: 'openai/gpt-5.6-luna', from: '2027-01-14' },
+      'openai/gpt-4.1-mini': { to: 'openai/gpt-5.6-luna', from: '2027-01-14' },
+    },
     // Without it OpenAI's default effort, medium, applies. Measured the same
     // day, 5 runs each: 14.0/14 either way, but $0.33 per 1k requests with it
     // against $0.56 without (4.1-mini $0.52); every action 327/340 on mixed
@@ -329,15 +362,17 @@ export function getPreset(id: PresetId): Preset {
 
 /**
  * The model a stored connection should send: its own, unless the provider has
- * shut that one down. Guarded on the base URL like `disableThinkingBody`, so a
- * connection repointed at a server of its own keeps the id it chose there.
+ * shut that one down (by `today`, YYYY-MM-DD, in UTC). Guarded on the base URL
+ * like `disableThinkingBody`, so a connection repointed at a server of its own
+ * keeps the id it chose there.
  */
-export function liveModel(connection: Connection): string {
+export function liveModel(connection: Connection, today = new Date().toISOString().slice(0, 10)): string {
   const preset = getPreset(connection.presetId);
-  const replacement = preset.shutDown?.[connection.model.trim()];
-  if (!replacement || !preset.baseUrl) return connection.model;
+  const entry = preset.shutDown?.[connection.model.trim()];
+  if (!entry || !preset.baseUrl) return connection.model;
   if (normalizeBaseUrl(preset.baseUrl) !== normalizeBaseUrl(connection.baseUrl)) return connection.model;
-  return replacement;
+  if (typeof entry === 'string') return entry;
+  return today >= entry.from ? entry.to : connection.model;
 }
 
 /**

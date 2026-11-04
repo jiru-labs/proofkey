@@ -44,6 +44,16 @@ const SHUTDOWNS: Shutdown[] = [
     source: 'developers.openai.com/api/docs/deprecations, announced 2026-04-22, read 2026-10-20',
   },
   {
+    ids: {
+      openai: ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-5-pro', 'o3', 'o3-pro'],
+      openrouter: [
+        'openai/gpt-5', 'openai/gpt-5-mini', 'openai/gpt-5-nano', 'openai/gpt-5-pro', 'openai/o3', 'openai/o3-pro',
+      ],
+    },
+    date: '2026-12-11',
+    source: 'developers.openai.com/api/docs/deprecations, announced 2026-06-11, read 2026-11-02',
+  },
+  {
     ids: { groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'] },
     date: '2026-08-16',
     source: 'console.groq.com/docs/deprecations (free and developer tiers), read 2026-10-20',
@@ -59,15 +69,7 @@ const SHUTDOWNS: Shutdown[] = [
  * A preset allowed to keep a retiring default for now, and until when. The
  * date is a tripwire: past it this check fails, a month before the shutdown.
  */
-const PENDING: Partial<Record<PresetId, { until: string; why: string }>> = {
-  openai: {
-    until: '2026-12-15',
-    why:
-      'its replacement has not been measured on api.openai.com (no OpenAI key here); the ' +
-      'preset sends `max_completion_tokens` to the reasoning models since 0.1.18, from ' +
-      'OpenAI\'s docs, also unmeasured — measure with a real key before changing it',
-  },
-};
+const PENDING: Partial<Record<PresetId, { until: string; why: string }>> = {};
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -108,7 +110,7 @@ function connection(presetId: PresetId, model: string, overrides: Partial<Connec
 // request, so it moves to the preset's replacement when settings are loaded.
 console.log('\nstored connections on a shut-down model');
 const liveModel = (presets as Record<string, unknown>)['liveModel'] as
-  | ((c: Connection) => string)
+  | ((c: Connection, today?: string) => string)
   | undefined;
 check('there is a way to move a stored connection off a shut-down model', typeof liveModel === 'function');
 if (liveModel) {
@@ -131,7 +133,33 @@ if (liveModel) {
   );
   check(
     'a model only scheduled for shutdown is left alone until it is gone',
-    liveModel(connection('openrouter', 'openai/gpt-4.1-mini')) === 'openai/gpt-4.1-mini',
+    liveModel(connection('openrouter', 'openai/gpt-4.1-mini'), '2026-11-04') === 'openai/gpt-4.1-mini',
+  );
+  // OpenAI's dates, from SHUTDOWNS above: each move happens on the day, not before.
+  const moves: [PresetId, string, string][] = [
+    ['openai', 'gpt-5-mini', '2026-12-11'],
+    ['openai', 'gpt-5', '2026-12-11'],
+    ['openai', 'o3', '2026-12-11'],
+    ['openai', 'gpt-4.1-mini', '2027-01-14'],
+    ['openai', 'gpt-4o', '2027-01-14'],
+    ['openrouter', 'openai/gpt-5-mini', '2026-12-11'],
+    ['openrouter', 'openai/gpt-4.1-mini', '2027-01-14'],
+  ];
+  for (const [presetId, model, date] of moves) {
+    const before = new Date(Date.parse(date) - 86_400_000).toISOString().slice(0, 10);
+    check(
+      `${presetId} on ${model} stays put the day before ${date}`,
+      liveModel(connection(presetId, model), before) === model,
+    );
+    check(
+      `and moves to the ${presetId} default on ${date}`,
+      liveModel(connection(presetId, model), date) === getPreset(presetId).defaultModel,
+      liveModel(connection(presetId, model), date),
+    );
+  }
+  check(
+    'gpt-4.1-nano, already gone, moves today',
+    liveModel(connection('openai', 'gpt-4.1-nano'), '2026-11-04') === getPreset('openai').defaultModel,
   );
 }
 
