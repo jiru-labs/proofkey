@@ -9,6 +9,8 @@
  *     node --experimental-strip-types tools/eval.ts --base https://openrouter.ai/api/v1 --models qwen/qwen3.7-flash
  *     node --experimental-strip-types tools/eval.ts --base https://opencode.ai/zen/go/v1 --reasoning off --runs 10
  *     node --experimental-strip-types tools/eval.ts --base http://127.0.0.1:8080/v1 --models qwen3-30b --temperature 0
+ *     node --experimental-strip-types tools/eval.ts --base https://opencode.ai/zen/go/v1 --api responses \
+ *         --session x-opencode-session --models gpt-6-luna --reasoning off --max-tokens 2048
  *
  * Free models are out of scope, on every provider. Do not add them to --models:
  * a free endpoint is rate-limited, silently rerouted and withdrawn, so a score
@@ -146,6 +148,14 @@ interface Options {
    * whichever host OpenRouter picks that run.
    */
   provider: string | undefined;
+  /**
+   * `responses` speaks `POST /responses` the way `providers/responses.ts`
+   * does: system prompt as `instructions`, one user input, `max_output_tokens`.
+   * OpenCode Go serves its `gpt-*` models only this way.
+   */
+  api: 'chat' | 'responses';
+  /** A header the endpoint requires a random session id in, as the preset sends it. */
+  session: string | undefined;
 }
 
 async function once({
@@ -156,8 +166,11 @@ async function once({
   maxTokens,
   temperature,
   provider,
+  api,
+  session,
 }: Options): Promise<Run> {
   const inputs = FIXTURES.map((f) => f.input);
+  if (api === 'responses') return onceResponses({ base, key, model, reasoning, maxTokens, temperature, session });
   const body = {
     model,
     messages: [
@@ -209,6 +222,65 @@ async function once({
         finishReason,
         servedBy,
       };
+}
+
+async function onceResponses({
+  base,
+  key,
+  model,
+  reasoning,
+  maxTokens,
+  temperature,
+  session,
+}: Omit<Options, 'provider' | 'api'>): Promise<Run> {
+  const inputs = FIXTURES.map((f) => f.input);
+  const body = {
+    model,
+    instructions: composeCheckPrompt(EMPTY_PROFILE, inputs.length),
+    input: [{ role: 'user', content: formatCheckPayload(inputs) }],
+    max_output_tokens: maxTokens,
+    stream: false,
+    ...(reasoning === 'off' ? {} : { reasoning: { effort: reasoning } }),
+    ...(temperature === undefined ? {} : { temperature }),
+  };
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    authorization: `Bearer ${key}`,
+  };
+  if (session) headers[session] = crypto.randomUUID();
+
+  const started = Date.now();
+  const response = await fetch(`${base}/responses`, { method: 'POST', headers, body: JSON.stringify(body) });
+  const ms = Date.now() - started;
+  if (!response.ok) {
+    const retryAfter = response.headers.get('retry-after');
+    const suffix = retryAfter ? ` (retry-after: ${retryAfter})` : '';
+    throw new Error(`HTTP ${response.status}${suffix} — ${(await response.text()).slice(0, 300)}`);
+  }
+
+  const payload = await response.json();
+  // Reasoning items come first; only `message` items are the reply, as in the extension.
+  const output: Array<Record<string, unknown>> = Array.isArray(payload?.output) ? payload.output : [];
+  const reply = output
+    .filter((item) => item?.['type'] === 'message')
+    .flatMap((item) => (Array.isArray(item['content']) ? item['content'] : []))
+    .map((part: Record<string, unknown>) => (typeof part?.['text'] === 'string' ? part['text'] : ''))
+    .join('');
+  const finishReason =
+    payload?.status === 'incomplete' ? `incomplete: ${payload?.incomplete_details?.reason}` : payload?.status;
+  // Renamed to the chat-completions fields, so the summary reads both alike.
+  const raw = (payload?.usage ?? {}) as Record<string, any>;
+  const usage: Record<string, unknown> = {
+    prompt_tokens: raw['input_tokens'],
+    completion_tokens: raw['output_tokens'],
+    completion_tokens_details: { reasoning_tokens: raw['output_tokens_details']?.['reasoning_tokens'] },
+  };
+  const replyLines = parseCheckReply(reply, inputs.length);
+  const parsed = replyLines && dropAddedFullStops(inputs, replyLines);
+
+  return parsed
+    ? { ms, usage, contractBroken: false, outputs: parsed }
+    : { ms, usage, contractBroken: true, outputs: FIXTURES.map(() => null), rawReply: reply, finishReason };
 }
 
 interface Summary {
@@ -332,6 +404,13 @@ async function main(): Promise<void> {
   const temperatureArg = arg('temperature');
   const temperature = temperatureArg === undefined ? DEFAULT_TEMPERATURE : Number(temperatureArg);
   const provider = arg('provider');
+  const apiArg = arg('api') ?? 'chat';
+  if (apiArg !== 'chat' && apiArg !== 'responses') {
+    console.error(`--api ${apiArg}: use chat or responses.`);
+    process.exit(1);
+  }
+  const api: 'chat' | 'responses' = apiArg;
+  const session = arg('session');
   if (temperature !== undefined && !Number.isFinite(temperature)) {
     console.error(`--temperature ${temperatureArg} is not a number.`);
     process.exit(1);
@@ -360,7 +439,7 @@ async function main(): Promise<void> {
     const failures = new Map<string, number>();
     for (let i = 0; i < runs; i++) {
       try {
-        const run = await once({ base, key, model, reasoning, maxTokens, temperature, provider });
+        const run = await once({ base, key, model, reasoning, maxTokens, temperature, provider, api, session });
         collected.push(run);
         process.stdout.write(run.contractBroken ? 'x' : '.');
       } catch (error) {
