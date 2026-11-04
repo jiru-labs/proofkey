@@ -1117,14 +1117,21 @@ async function run() {
     // Polled, not a fixed wait: two sync writes each wake the worker, and on a
     // slow GitHub runner 900 ms was once not enough (2026-10-19, run 39294335781).
     let lingering = true;
+    let leftOver;
     for (let i = 0; i < 50 && lingering; i++) {
       await page.waitForTimeout(100);
-      lingering = (await registeredIds()).some((entry) => entry.id === 'proofkey-shortcuts');
+      leftOver = (await registeredIds()).find((entry) => entry.id === 'proofkey-shortcuts');
+      lingering = !!leftOver;
     }
+    // Failed twice on 2026-11-04 even with the 5 s poll, in full verify runs
+    // only, and a burst of 12 writes did not reproduce it in 6 runs. What was
+    // left registered is printed so the next failure says which origin stayed.
     check(
       'removing the origin unregisters it again',
       !lingering,
-      'a listener the user thinks they removed must not survive',
+      lingering
+        ? `still registered for ${leftOver.matches.join(', ')}`
+        : 'a listener the user thinks they removed must not survive',
     );
 
     // Live checking switched on for a site has to still be on at the next visit.
