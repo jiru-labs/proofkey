@@ -1,4 +1,4 @@
-import { effectiveTransport, getPreset } from '../presets';
+import { effectiveTransport, getPreset, replacementModel } from '../presets';
 import type { Connection } from '../types';
 import * as anthropic from './anthropic';
 import * as chatCompletions from './chatCompletions';
@@ -33,6 +33,44 @@ export interface ChainResult extends CompletionResult {
   connection: Connection;
   /** Failures from earlier connections in the chain, if any. */
   fallbackErrors: { label: string; message: string }[];
+  /** Set when the provider no longer served the stored model and `connection` carries its replacement. */
+  movedModel?: { connectionId: string; from: string; to: string };
+}
+
+/**
+ * A refused request whose model may simply be gone: 404 is OpenAI's and
+ * Gemini's answer, 400 OpenRouter's and OpenCode Go's (each measured
+ * 2026-11-04). Both also mean many other things, which is why the catalogue,
+ * not the status, decides.
+ */
+function mayBeRetiredModel(error: unknown): boolean {
+  return error instanceof ProviderError && (error.status === 400 || error.status === 404);
+}
+
+/**
+ * One more request with the preset default, when the same provider's catalogue
+ * says the stored model is gone and the default is there. The catalogue comes
+ * from the endpoint the connection already talks to, with the same key, so no
+ * request goes anywhere new. Undefined when there is nothing to move to.
+ */
+async function retryOnReplacement(
+  connection: Connection,
+  request: CompletionRequest,
+): Promise<ChainResult | undefined> {
+  const available = await listModels(connection, request.signal).catch((error: unknown) => {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    return [] as string[];
+  });
+  const to = replacementModel(connection, available);
+  if (!to) return undefined;
+  const moved = { ...connection, model: to };
+  const result = await ADAPTERS[effectiveTransport(moved)].complete(moved, request);
+  return {
+    ...result,
+    connection: moved,
+    fallbackErrors: [],
+    movedModel: { connectionId: connection.id, from: connection.model.trim(), to },
+  };
 }
 
 /**
@@ -63,7 +101,17 @@ export async function runCompletion(
       return { ...result, connection, fallbackErrors: failures };
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') throw error;
-      const message = error instanceof Error ? error.message : String(error);
+      let message = error instanceof Error ? error.message : String(error);
+      if (mayBeRetiredModel(error)) {
+        try {
+          const moved = await retryOnReplacement(connection, request);
+          if (moved) return { ...moved, fallbackErrors: failures };
+        } catch (retryError) {
+          if (retryError instanceof DOMException && retryError.name === 'AbortError') throw retryError;
+          // The replacement failed too; its reason is the current one.
+          message = retryError instanceof Error ? retryError.message : String(retryError);
+        }
+      }
       failures.push({ label: connection.label, message });
     }
   }

@@ -627,6 +627,30 @@ MiniMax (China) — and the rest use `chat_completions`.
   later too since 0.1.19), and still `max_tokens` on `gpt-4.1-mini`. Taken
   from the docs, **not measured** — no key.
 
+**A model the provider stops serving, without a dated list** (on `main`, not
+in a release yet). The list above only knows the shutdowns someone copied in.
+When a request comes back 400 or 404, ProofKey asks that same provider for
+its model list (`GET /models`, same endpoint and key, nothing new contacted).
+If the stored model is not on the list and the preset's default is, it sends
+the request once more with the default. It also saves that model to the
+connection and tells the user which model replaced which. A model still on the
+list is left alone, because the refusal was about something else. So is any
+connection whose preset has no default, or whose list is empty or fails. The
+settings page's connection test reports the swap as a failure of the model
+typed in rather than passing on the default. How it is known:
+
+- **The request flow** is tested in `test:ext` against a stub: the request,
+  the list, the retry, the saved model and the message, plus the control
+  case where a listed model is not replaced.
+- **The failure answers** were measured 2026-11-04 with a retired id: OpenRouter
+  400, OpenCode Go 400 and Gemini 404. Their model lists then had 421, 28 and
+  60 ids; Gemini's are prefixed `models/`, and the prefix is stripped before
+  comparing.
+- **OpenAI and Anthropic** answers are **not measured** — no key.
+  Anthropic pages its list, 20 ids by default per its API reference, so
+  ProofKey asks for `limit=1000`, its documented maximum. That is from the
+  docs too, not measured.
+
 If you have a key for any of them, confirming it takes about a minute — settings
 page, paste key, **Fetch models**, then one quick action on a page. That is a
 complete report.

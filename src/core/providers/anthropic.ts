@@ -113,9 +113,12 @@ export async function listModels(
   connection: Connection,
   signal?: AbortSignal,
 ): Promise<string[]> {
+  // One page of up to 1000, the documented maximum; the default page is 20
+  // (Anthropic's API reference, not measured: no key). A short page would make
+  // a valid model look gone to `replacementModel`.
   const payload = await getJson(
     connection,
-    buildUrl(connection, '/models'),
+    buildUrl(connection, '/models?limit=1000'),
     anthropicHeaders(connection),
     signal,
   );

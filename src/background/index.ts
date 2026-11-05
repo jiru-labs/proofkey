@@ -34,10 +34,10 @@ import {
   askAgainForMixture,
   TARGET_LANGUAGE,
 } from '../core/prompts';
-import { runCompletion, validateConnection } from '../core/providers';
+import { runCompletion, validateConnection, type ChainResult } from '../core/providers';
 import { baseLanguage, borrowedWords, foreignWordsInEnglish, isBorrowedBase, KEEPS_BORROWED_WORDS, loadLexicon, lostMixture, mixedClauses, type Lexicon } from '../core/borrowed';
 import { emptyReviewState, recordApplied, reviewUrl, type ReviewState } from '../core/review';
-import type { WritingAction } from '../core/types';
+import type { Connection, WritingAction } from '../core/types';
 import { askOffscreen, warmLiveCheck } from '../core/providers/inBrowser';
 import { IN_BROWSER_MODEL } from '../core/providers/inBrowserModel';
 import {
@@ -592,7 +592,7 @@ async function check(sentences: string[]): Promise<Result<CheckResult>> {
   if (sentences.length === 0) return { ok: true, value: { corrections: [] } };
 
   const settings = await loadSettings();
-  const chain = liveChain(settings);
+  let chain = liveChain(settings);
 
   try {
     const result = await runCompletion(chain, {
@@ -600,15 +600,17 @@ async function check(sentences: string[]): Promise<Result<CheckResult>> {
       userText: formatCheckPayload(sentences),
       liveCheck: true,
     });
+    const notice = await keepMovedModel(result);
+    chain = withServedConnection(chain, result);
 
     const parsed = parseCheckReply(result.text, sentences.length);
-    if (parsed) return { ok: true, value: { corrections: dropAddedFullStops(sentences, parsed) } };
+    if (parsed) return { ok: true, value: { corrections: dropAddedFullStops(sentences, parsed), notice } };
 
     if (sentences.length === 1) {
       // Nothing to fall back to; treat the reply as the correction itself.
       return {
         ok: true,
-        value: { corrections: dropAddedFullStops(sentences, [stripNumbering(result.text)]) },
+        value: { corrections: dropAddedFullStops(sentences, [stripNumbering(result.text)]), notice },
       };
     }
 
@@ -623,10 +625,33 @@ async function check(sentences: string[]): Promise<Result<CheckResult>> {
         return reply === undefined ? sentence : dropAddedFullStops([sentence], [reply])[0]!;
       }),
     );
-    return { ok: true, value: { corrections: individually } };
+    return { ok: true, value: { corrections: individually, notice } };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+/**
+ * Keeps the model a connection was moved to when its provider no longer
+ * served the stored one (`runCompletion`), so the next request goes straight
+ * there, and words what the user is told. Saved only while the stored
+ * connection still carries the refused model: an edit made meanwhile wins.
+ */
+async function keepMovedModel(result: ChainResult): Promise<string | undefined> {
+  const move = result.movedModel;
+  if (!move) return undefined;
+  const settings = await loadSettings();
+  const stored = settings.connections.find((connection) => connection.id === move.connectionId);
+  if (stored && stored.model.trim() === move.from) {
+    stored.model = move.to;
+    await saveSettings(settings);
+  }
+  return `${result.connection.label} no longer serves ${move.from}, so ProofKey switched this connection to ${move.to}, its default. Pick another model in settings if you prefer.`;
+}
+
+/** The chain with the connection that served `result` in place of its stored copy, so a moved model is not refused twice. */
+function withServedConnection(chain: Connection[], result: ChainResult): Connection[] {
+  return chain.map((connection) => (connection.id === result.connection.id ? result.connection : connection));
 }
 
 function stripNumbering(text: string): string {
@@ -741,8 +766,10 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
   }
 
   try {
-    const chain = connectionChain(settings);
+    let chain = connectionChain(settings);
     let result = await runCompletion(chain, { systemPrompt, userText: text });
+    const notice = await keepMovedModel(result);
+    chain = withServedConnection(chain, result);
 
     // Fix grammar keeps the author's words. A reply that shares almost none of
     // them is another language — a small model does this on text too broken to
@@ -780,6 +807,7 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
         text: keepOuterWhitespace(text, dropAddedTrailingSpaces(text, result.text.trim())),
         servedBy: result.connection.label,
         fallbackErrors: result.fallbackErrors,
+        notice,
       },
     };
   } catch (error) {
@@ -800,9 +828,10 @@ async function explain(original: string, replacement: string): Promise<Result<Ru
       systemPrompt: composeExplainPrompt(settings.profile),
       userText: `Written: ${original}\nSuggested: ${replacement}`,
     });
+    const notice = await keepMovedModel(result);
     return {
       ok: true,
-      value: { text: result.text.trim(), servedBy: result.connection.label, fallbackErrors: [] },
+      value: { text: result.text.trim(), servedBy: result.connection.label, fallbackErrors: [], notice },
     };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };

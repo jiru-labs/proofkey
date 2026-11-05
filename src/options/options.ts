@@ -1089,6 +1089,13 @@ async function testConnection(connection: Connection, status: HTMLElement): Prom
       systemPrompt: 'Reply with exactly: ok',
       userText: 'ping',
     });
+    // A test of the model in the form must not pass on the strength of the
+    // default the request moved to: the user is choosing this model here.
+    if (result.movedModel) {
+      status.textContent = `${connection.label} does not serve ${result.movedModel.from}; it is not in its model list. ${result.movedModel.to} answered instead — pick it or another listed model.`;
+      status.className = 'status status--error';
+      return;
+    }
     status.textContent = `Working — ${result.model} replied "${result.text.trim().slice(0, 40)}".`;
     status.className = 'status status--ok';
   } catch (error) {

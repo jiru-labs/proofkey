@@ -5,6 +5,7 @@ import type { Suggestion } from '../core/types';
 import { createCard, type SuggestionCard } from './card';
 import { createHighlighter, type FieldRef, type Highlighter } from './highlight';
 import { noteApplied } from './review';
+import { toast } from './toast';
 import { applyToTarget, flatten, offsetOfPoint } from './target';
 
 /**
@@ -315,6 +316,8 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
         setBadge('error', result.error);
         return;
       }
+
+      if (result.value.notice) toast(shadow, { kind: 'info', text: result.value.notice });
 
       batch.forEach((sentence, index) => {
         const corrected = result.value.corrections[index];

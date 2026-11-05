@@ -75,11 +75,27 @@ function startStubProvider() {
         return;
       }
 
+      // A provider that no longer serves a model: "retired-model" is refused
+      // and missing from the catalogue, "listed-model" is refused for some
+      // other reason while still listed. The catalogue for the key
+      // "recover-key" is the one that carries the preset default.
+      const askedModel = body && request.method === 'POST' ? JSON.parse(body).model : undefined;
+      if (askedModel === 'retired-model' || askedModel === 'listed-model') {
+        response.writeHead(askedModel === 'retired-model' ? 404 : 400, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ error: { message: `The model \`${askedModel}\` does not exist or you do not have access to it.` } }));
+        return;
+      }
+
       response.writeHead(200, {
         'content-type': 'application/json',
         'access-control-allow-origin': '*',
         'access-control-allow-headers': '*',
       });
+
+      if (request.url.includes('/models') && request.headers['authorization'] === 'Bearer recover-key') {
+        response.end(JSON.stringify({ object: 'list', data: [{ id: 'gpt-4.1' }, { id: 'gpt-6-luna' }, { id: 'listed-model' }] }));
+        return;
+      }
 
       // Gemini's catalogue shape: ids carry the `models/` resource prefix, and
       // `antigravity-preview-05-2026` sorts ahead of every gemini-* entry. That
@@ -1315,6 +1331,72 @@ async function run() {
       ),
       'output contract present',
     );
+  }
+
+  // ---------------------------------------------------------- retired model
+  // A provider that stops serving the stored model refuses every request, and
+  // no dated list of shutdowns stays complete. The provider's own catalogue
+  // decides instead: a refused model that the catalogue no longer lists, on a
+  // preset whose default it does list, moves to that default — once, on the
+  // same provider, and the user is told.
+  console.log('\nretired model:');
+  {
+    const recoverSettings = (model) => {
+      const base = settingsFor('chat_completions');
+      return {
+        ...base,
+        connections: [{ ...base.connections[0], presetId: 'openai', apiKey: 'recover-key', model }],
+      };
+    };
+    const storedModel = () =>
+      page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings'].connections[0].model);
+    const run = () =>
+      page.evaluate(() =>
+        chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: 'Their is alot of things to do.' }),
+      );
+
+    seen.length = 0;
+    await page.evaluate((settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }), recoverSettings('retired-model'));
+    const moved = await run();
+    const asked = seen.filter((r) => r.method === 'POST').map((r) => r.body.model);
+    check('a model the provider dropped still gets the text fixed', moved?.ok === true, moved?.ok ? moved.value.text : moved?.error);
+    check('by asking that provider for its catalogue', seen.some((r) => r.method === 'GET' && r.path === '/v1/models'), seen.map((r) => `${r.method} ${r.path}`).join(', '));
+    check('and sending once more with the preset default', JSON.stringify(asked) === '["retired-model","gpt-6-luna"]', JSON.stringify(asked));
+    check('and nothing goes anywhere but that provider', seen.every((r) => r.headers.host === `localhost:${PORT}`));
+    check(
+      'the user is told which model replaced which',
+      /retired-model/.test(moved?.value?.notice ?? '') && /gpt-6-luna/.test(moved?.value?.notice ?? ''),
+      moved?.value?.notice ?? 'no notice',
+    );
+    let saved;
+    for (let i = 0; i < 20 && saved !== 'gpt-6-luna'; i++) {
+      await page.waitForTimeout(100);
+      saved = await storedModel();
+    }
+    check('and the connection keeps the new model', saved === 'gpt-6-luna', saved);
+
+    seen.length = 0;
+    await page.evaluate((settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }), recoverSettings('listed-model'));
+    const refused = await run();
+    const askedAgain = seen.filter((r) => r.method === 'POST').map((r) => r.body.model);
+    check('a model the catalogue still lists is not replaced', refused?.ok === false && JSON.stringify(askedAgain) === '["listed-model"]', JSON.stringify(askedAgain));
+    check('and the provider\'s own error reaches the user', /listed-model/.test(refused?.error ?? ''), refused?.error);
+    check('and the stored model is left alone', (await storedModel()) === 'listed-model');
+
+    // Anthropic pages its catalogue, 20 ids by default per its API reference
+    // (not measured: no key). A valid model past the first page would read as
+    // gone, and Anthropic answers 400 for other reasons too (a low balance), so
+    // the whole list is asked for — 1000 is the documented maximum.
+    seen.length = 0;
+    const anthropicBase = settingsFor('anthropic_messages');
+    await page.evaluate((settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }), {
+      ...anthropicBase,
+      connections: [{ ...anthropicBase.connections[0], apiKey: 'recover-key', model: 'retired-model' }],
+    });
+    const anthropicRun = await run();
+    const listed = seen.find((r) => r.method === 'GET');
+    check('Anthropic\'s catalogue is asked for in one page', listed?.path === '/v1/models?limit=1000', listed?.path ?? 'not asked');
+    check('and a catalogue without the default moves nothing', anthropicRun?.ok === false && (await storedModel()) === 'retired-model', anthropicRun?.error);
   }
 
   // --------------------------------------------------------------- thinking

@@ -271,13 +271,14 @@ async function invoke(actionId: string): Promise<void> {
 
     const fallback = result.value.fallbackErrors[0];
     // Counted either way; asked only over a clean result, never over news that
-    // a connection failed.
-    if (await noteApplied(ui(), !fallback)) return;
+    // a connection failed or had its model moved.
+    if (await noteApplied(ui(), !fallback && !result.value.notice)) return;
     toast(ui(), {
       kind: 'ok',
-      text: fallback
-        ? `Applied via ${result.value.servedBy} — ${fallback.label} failed.`
-        : 'Applied.',
+      text: [
+        fallback ? `Applied via ${result.value.servedBy} — ${fallback.label} failed.` : 'Applied.',
+        result.value.notice,
+      ].filter(Boolean).join(' '),
     });
   } catch (error) {
     dismiss();

@@ -362,6 +362,27 @@ export function liveModel(connection: Connection, today = new Date().toISOString
 }
 
 /**
+ * The model to send instead of one the provider refused, judged by that
+ * provider's own catalogue (`GET /models`), or null to leave the choice alone.
+ *
+ * The preset default replaces the stored model only when the catalogue no
+ * longer lists the stored model and does list the default. A refused model the
+ * catalogue still lists was refused for some other reason, and an empty
+ * catalogue proves nothing. Unlike `liveModel` this needs no dated list: on
+ * 2026-11-04 OpenRouter still served openai/gpt-4.1-nano eleven days after
+ * OpenAI shut it down, so only the provider answering can say what it serves.
+ */
+export function replacementModel(connection: Connection, available: readonly string[]): string | null {
+  const preset = getPreset(connection.presetId);
+  const fallback = preset.defaultModel;
+  const model = connection.model.trim();
+  if (!fallback || model === fallback || available.length === 0) return null;
+  const prefix = preset.stripIdPrefix;
+  const ids = new Set(available.map((id) => (prefix && id.startsWith(prefix) ? id.slice(prefix.length) : id)));
+  return !ids.has(model) && ids.has(fallback) ? fallback : null;
+}
+
+/**
  * Normalises whatever the user pasted into a base URL we can append paths to:
  * trims trailing slashes and strips a trailing endpoint path, so pasting a full
  * `https://host/v1/chat/completions` URL works.

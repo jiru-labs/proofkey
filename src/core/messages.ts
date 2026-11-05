@@ -56,6 +56,8 @@ export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 export interface CheckResult {
   /** One corrected sentence per input, in the same order. */
   corrections: string[];
+  /** Said once, when the provider no longer served the stored model and ProofKey moved the connection. */
+  notice?: string;
 }
 
 export interface RunResult {
@@ -64,6 +66,8 @@ export interface RunResult {
   servedBy: string;
   /** Failures from earlier connections in the chain. */
   fallbackErrors: { label: string; message: string }[];
+  /** Said once, when the provider no longer served the stored model and ProofKey moved the connection. */
+  notice?: string;
 }
 
 export interface AppliedResult {

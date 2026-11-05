@@ -162,6 +162,31 @@ if (liveModel) {
   );
 }
 
+// The dated list above only knows what someone copied in. When a provider
+// refuses the stored model, its own catalogue decides instead: the preset
+// default replaces a model the catalogue no longer lists, and only when the
+// catalogue lists the default.
+console.log('\na refused model against the provider\'s own catalogue');
+const replacementModel = (presets as Record<string, unknown>)['replacementModel'] as
+  | ((c: Connection, available: readonly string[]) => string | null)
+  | undefined;
+check('there is a way to pick a replacement from the catalogue', typeof replacementModel === 'function');
+if (replacementModel) {
+  const catalogue = ['gpt-4.1', 'gpt-6-luna', 'o4-mini'];
+  check('a model the catalogue dropped moves to the preset default', replacementModel(connection('openai', 'gpt-4.1-nano'), catalogue) === 'gpt-6-luna');
+  check('a model it still lists stays: the refusal was about something else', replacementModel(connection('openai', 'gpt-4.1'), catalogue) === null);
+  check('nothing to move to when the catalogue lacks the default too', replacementModel(connection('openai', 'gpt-4.1-nano'), ['gpt-4.1']) === null);
+  check('an empty catalogue proves nothing', replacementModel(connection('openai', 'gpt-4.1-nano'), []) === null);
+  check('the default itself refused has nothing to move to', replacementModel(connection('openai', 'gpt-6-luna'), ['gpt-4.1']) === null);
+  check('a preset with no default never moves', replacementModel(connection('custom', 'anything'), ['gpt-6-luna']) === null);
+  check(
+    'Gemini\'s models/ prefix is read off the catalogue',
+    replacementModel(connection('gemini', 'gemini-1.5-flash'), ['models/gemini-2.5-flash']) === 'gemini-2.5-flash' &&
+      replacementModel(connection('gemini', 'gemini-2.5-flash-lite'), ['models/gemini-2.5-flash', 'models/gemini-2.5-flash-lite']) === null,
+  );
+  check('a stored id with stray spaces is still found in the catalogue', replacementModel(connection('openai', ' gpt-4.1 '), catalogue) === null);
+}
+
 if (failures) {
   console.log(`\n${failures} check(s) FAILED`);
   process.exit(1);
