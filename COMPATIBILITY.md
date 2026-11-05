@@ -609,7 +609,7 @@ MiniMax (China) — and the rest use `chat_completions`.
   default; DeepSeek documents `{"thinking": {"type": "disabled"}}` to turn that
   off, which ProofKey does not send because nobody here has measured it.
 - **OpenAI**: OpenAI shuts `gpt-4.1-mini`, the old default, down on 2027-01-14
-  and names `gpt-6-luna` as its replacement; on `main` (not in 0.1.19) that is
+  and names `gpt-6-luna` as its replacement; since 0.1.20 that is
   the default. Measured 2026-11-04 on OpenCode Go's Responses API with the
   settings this preset sends (no reasoning field, 2048 output tokens,
   `npm run eval -- --api responses`), 10 runs: 14.0/14, no false alarms,
