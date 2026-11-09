@@ -369,7 +369,7 @@ visible", which is [weaker than it sounds](#caveats):
 |---|---|---|
 | **Live check** | `gemini-2.5-flash-lite` + `reasoning_effort: "none"` | 14/14 on every run, no false alarms, and the cheapest model on the page at $0.14 per 1,000 checks. Both the best and the cheapest, which is not how this usually goes. |
 | **If latency matters more** | `gemini-3.1-flash-lite` | 250ms faster (918ms vs 1173ms), 13/14 and equally stable, at 3× the price. For as-you-type underlines that trade is worth considering. |
-| **Quick actions** | `gemini-2.5-flash` + `reasoning_effort: "none"` | The preset's default model, and the preset now sends the `reasoning_effort` half too. Volume is low enough that price barely matters. Note this is **not** what the eval measures — see the caveat below. |
+| **Quick actions** | `gemini-3.5-flash-lite` | The preset's default on `main` (not in a release yet; 0.1.20 still defaults to `gemini-2.5-flash`, which Google routes to this model on 2026-12-01). Measured 2026-11-09, see the table below. The quick-action prompts were measured on `gemini-2.5-flash` and **not** re-run on this model. |
 | **Avoid for live check** | 3.5-flash, 3.6-flash, 2.5-pro | 4–20× the cost on a task a flash-lite model does perfectly. |
 
 **Caveat on the quick-actions row.** `npm run eval` exercises the live-check
@@ -708,6 +708,15 @@ Gemini, 14 fixtures × 3 runs, 2026-08-01, `npm run eval -- --runs 3`:
 | `gemini-2.5-flash-lite` | **14.0/14** | 14–14 | 0.0 | held 3/3 | 1173ms | maintainer |
 | `gemini-3.1-flash-lite` | 13.0/14 | 13–13 | 0.0 | held 3/3 | **918ms** | maintainer |
 | `gemini-2.5-flash` | 11.0/14 | 11–11 | 0.0 | held 3/3 | 1245ms | maintainer |
+
+Re-measured 2026-11-09 for the default change (`npm run eval -- --base https://openrouter.ai/api/v1 --runs 10`, 14 fixtures, through OpenRouter, both served by Google; total cost about $0.005):
+
+| Model | Correct | Spread | False alarms | Contract | Latency | Notes |
+|---|---|---|---|---|---|---|
+| `google/gemini-3.5-flash-lite` | **14.0/14** | 14–14 | 0.0 | held 10/10 | 1238ms | `--reasoning off --max-tokens 2048`: with `reasoning_effort: none` OpenRouter answers HTTP 400 "Reasoning is mandatory for this endpoint", 10 of 10 requests; no reasoning tokens reported |
+| `google/gemini-2.5-flash-lite` | 13.8/14 | 12–14 | 0.0 | held | 563ms | only 8 of 10 requests came back (2 × HTTP 429 upstream); unstable on a Spanish comma and a mixed ES/EN accent |
+
+This is the OpenRouter route. Whether `generativelanguage.googleapis.com` accepts the preset's `reasoning_effort: none` on 3.5-flash-lite is **untested** (3.1-flash-lite ignored it, measured 2026-08-01); no funded Google key was available.
 
 All three gave an identical score on every run, where the worst of them
 previously ranged 9–13 on identical input. A model that answers differently each

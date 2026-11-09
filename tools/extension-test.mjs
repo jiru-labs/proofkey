@@ -105,7 +105,7 @@ function startStubProvider() {
           JSON.stringify({
             object: 'list',
             data: [
-              { id: 'models/gemini-2.5-flash' },
+              { id: 'models/gemini-3.5-flash-lite' },
               { id: 'models/antigravity-preview-05-2026' },
               { id: 'models/embedding-001' },
               { id: 'models/gemini-2.5-flash-lite' },
@@ -1548,7 +1548,7 @@ async function run() {
   );
   check(
     "preset's own default is adopted instead",
-    picked === 'gemini-2.5-flash',
+    picked === 'gemini-3.5-flash-lite',
     picked || '(empty)',
   );
   check(

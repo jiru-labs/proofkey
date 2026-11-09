@@ -73,14 +73,7 @@ const SHUTDOWNS: Shutdown[] = [
  * A preset allowed to keep a retiring default for now, and until when. The
  * date is a tripwire: past it this check fails, a month before the shutdown.
  */
-const PENDING: Partial<Record<PresetId, { until: string; why: string }>> = {
-  gemini: {
-    until: '2026-11-24',
-    why:
-      'no replacement has been measured yet (the Gemini eval key is out of credit), and ' +
-      'changing the default ships only in a release — pick one and publish before 12-01',
-  },
-};
+const PENDING: Partial<Record<PresetId, { until: string; why: string }>> = {};
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -157,6 +150,7 @@ if (liveModel) {
     ['openai', 'o3', '2026-12-11'],
     ['openai', 'gpt-4.1-mini', '2027-01-14'],
     ['openai', 'gpt-4o', '2027-01-14'],
+    ['gemini', 'gemini-2.5-flash', '2026-12-01'],
   ];
   for (const [presetId, model, date] of moves) {
     const before = new Date(Date.parse(date) - 86_400_000).toISOString().slice(0, 10);
@@ -195,8 +189,8 @@ if (replacementModel) {
   check('a preset with no default never moves', replacementModel(connection('custom', 'anything'), ['gpt-6-luna']) === null);
   check(
     'Gemini\'s models/ prefix is read off the catalogue',
-    replacementModel(connection('gemini', 'gemini-1.5-flash'), ['models/gemini-2.5-flash']) === 'gemini-2.5-flash' &&
-      replacementModel(connection('gemini', 'gemini-2.5-flash-lite'), ['models/gemini-2.5-flash', 'models/gemini-2.5-flash-lite']) === null,
+    replacementModel(connection('gemini', 'gemini-1.5-flash'), ['models/gemini-3.5-flash-lite']) === 'gemini-3.5-flash-lite' &&
+      replacementModel(connection('gemini', 'gemini-2.5-flash-lite'), ['models/gemini-3.5-flash-lite', 'models/gemini-2.5-flash-lite']) === null,
   );
   check('a stored id with stray spaces is still found in the catalogue', replacementModel(connection('openai', ' gpt-4.1 '), catalogue) === null);
 }

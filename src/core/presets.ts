@@ -236,7 +236,13 @@ export const PRESETS: readonly Preset[] = [
     'Google Gemini',
     'https://generativelanguage.googleapis.com/v1beta/openai',
     {
-      defaultModel: 'gemini-2.5-flash',
+      // Google deprecated gemini-2.5-flash (announced 2026-11-02) and routes it to
+      // gemini-3.5-flash-lite on 2026-12-01. Measured 2026-11-09 through OpenRouter
+      // (served by Google), reasoning field omitted because OpenRouter refuses
+      // `none` here, 10 runs: 14.0/14, no false alarms, contract held, ~1.2 s.
+      // Not measured on generativelanguage.googleapis.com itself: no funded key.
+      defaultModel: 'gemini-3.5-flash-lite',
+      shutDown: { 'gemini-2.5-flash': { to: 'gemini-3.5-flash-lite', from: '2026-12-01' } },
       // Sent on every model: 2.5-flash and 2.5-flash-lite honour it, and
       // 3.x and 2.5-pro drop it silently rather than erroring, so there is no
       // model here it can hurt. It rides on `disableThinking` rather than
