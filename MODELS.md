@@ -369,7 +369,7 @@ visible", which is [weaker than it sounds](#caveats):
 |---|---|---|
 | **Live check** | `gemini-2.5-flash-lite` + `reasoning_effort: "none"` | 14/14 on every run, no false alarms, and the cheapest model on the page at $0.14 per 1,000 checks. Both the best and the cheapest, which is not how this usually goes. |
 | **If latency matters more** | `gemini-3.1-flash-lite` | 250ms faster (918ms vs 1173ms), 13/14 and equally stable, at 3× the price. For as-you-type underlines that trade is worth considering. |
-| **Quick actions** | `gemini-3.5-flash-lite` | The preset's default on `main` (not in a release yet; 0.1.20 still defaults to `gemini-2.5-flash`, which Google routes to this model on 2026-12-01). Measured 2026-11-09, see the table below. The quick-action prompts were measured on `gemini-2.5-flash` and **not** re-run on this model. |
+| **Quick actions** | `gemini-3.5-flash-lite` | The preset's default since 0.1.21 (0.1.20 and earlier default to `gemini-2.5-flash`, which Google routes to this model on 2026-12-01). Measured 2026-11-09, see the table below. The quick-action prompts were measured on `gemini-2.5-flash` and **not** re-run on this model. |
 | **Avoid for live check** | 3.5-flash, 3.6-flash, 2.5-pro | 4–20× the cost on a task a flash-lite model does perfectly. |
 
 **Caveat on the quick-actions row.** `npm run eval` exercises the live-check

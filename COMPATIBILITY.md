@@ -420,8 +420,8 @@ agrees with whatever you send it. That is the gap this table exists to close.
 
 | Provider | Model | Transport | Status | Evidence |
 |---|---|---|---|---|
-| Google Gemini | `gemini-2.5-flash` (preset default) | `chat_completions` | `Verified` | The maintainer's daily driver — real corrections through the extension against a real key, not a stub. **Deprecated by Google** (announced 2026-11-02, read 2026-11-09 on its deprecations page): from 2026-12-01 requests to this id are routed to `gemini-3.5-flash-lite` and billed at its rates. On `main`, not in a release yet: the preset default becomes `gemini-3.5-flash-lite` and a stored `gemini-2.5-flash` moves to it from 2026-12-01 |
-| Google Gemini | `gemini-3.5-flash-lite` (preset default on `main`, not in a release yet) | `chat_completions` | `Verified` through OpenRouter only | `npm run eval`, 2026-11-09, 10 runs through OpenRouter (served by Google): 14.0/14, no false alarms, contract held, 1238ms. OpenRouter refuses `reasoning_effort: none` on it, so the run omitted the field. Not measured on Google's own endpoint, where the preset still sends `none` (3.1-flash-lite ignored it, 2026-08-01): **untested** there |
+| Google Gemini | `gemini-2.5-flash` (preset default) | `chat_completions` | `Verified` | The maintainer's daily driver — real corrections through the extension against a real key, not a stub. **Deprecated by Google** (announced 2026-11-02, read 2026-11-09 on its deprecations page): from 2026-12-01 requests to this id are routed to `gemini-3.5-flash-lite` and billed at its rates. Since 0.1.21 the preset default is `gemini-3.5-flash-lite` and a stored `gemini-2.5-flash` moves to it from 2026-12-01 |
+| Google Gemini | `gemini-3.5-flash-lite` (preset default since 0.1.21) | `chat_completions` | `Verified` through OpenRouter only | `npm run eval`, 2026-11-09, 10 runs through OpenRouter (served by Google): 14.0/14, no false alarms, contract held, 1238ms. OpenRouter refuses `reasoning_effort: none` on it, so the run omitted the field. Not measured on Google's own endpoint, where the preset still sends `none` (3.1-flash-lite ignored it, 2026-08-01): **untested** there |
 | Google Gemini | `gemini-2.5-flash-lite`, `gemini-3.1-flash-lite` | `chat_completions` | `Verified` | `npm run eval`, 2026-08-01 — both reachable on the preset's base URL and both held the live-check contract over 3 runs. See [MODELS.md](MODELS.md) |
 | Google Gemini | **Fetch models** | — | `Partly verified` | Observed 2026-08-01: `GET /v1beta/openai/models` populates, but returns Google resource names (`models/gemini-2.5-flash`) rather than bare ids. Only the bare form has been exercised against `/chat/completions`, so the options page strips the `models/` prefix. Whether the prefixed form also works is **untested** |
 | Google Gemini | **Error bodies** | `chat_completions` | `Tested` | `tools/errors-check.ts` — "Gemini wraps the error object in an array". Observed against the live endpoint 2026-08-18: a failure comes back as `[{"error": {"code": 429, "message": "…"}}]`, an array, where every other provider here sends that object bare. ProofKey read straight past it until this row existed, so every Google failure — dead key, wrong model id, exhausted quota — surfaced as a bare `429 request failed` with the provider's own explanation thrown away |
@@ -628,8 +628,7 @@ MiniMax (China) — and the rest use `chat_completions`.
   later too since 0.1.19), and still `max_tokens` on `gpt-4.1-mini`. Taken
   from the docs, **not measured** — no key.
 
-**A model the provider stops serving, without a dated list** (on `main`, not
-in a release yet). The list above only knows the shutdowns someone copied in.
+**A model the provider stops serving, without a dated list** (since 0.1.21). The list above only knows the shutdowns someone copied in.
 When a request comes back 400 or 404, ProofKey asks that same provider for
 its model list (`GET /models`, same endpoint and key, nothing new contacted).
 If the stored model is not on the list and the preset's default is, it sends
