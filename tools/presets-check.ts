@@ -51,6 +51,13 @@ const SHUTDOWNS: Shutdown[] = [
     source: 'developers.openai.com/api/docs/deprecations, announced 2026-06-11, read 2026-11-02',
   },
   {
+    // Not an error on the day: Google routes the id to gemini-3.5-flash-lite,
+    // billed at its rates, and its migration guide lists breaking changes.
+    ids: { gemini: ['gemini-2.5-flash'] },
+    date: '2026-12-01',
+    source: 'ai.google.dev/gemini-api/docs/deprecations, announced 2026-11-02, read 2026-11-09',
+  },
+  {
     ids: { groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'] },
     date: '2026-08-16',
     source: 'console.groq.com/docs/deprecations (free and developer tiers), read 2026-10-20',
@@ -66,7 +73,14 @@ const SHUTDOWNS: Shutdown[] = [
  * A preset allowed to keep a retiring default for now, and until when. The
  * date is a tripwire: past it this check fails, a month before the shutdown.
  */
-const PENDING: Partial<Record<PresetId, { until: string; why: string }>> = {};
+const PENDING: Partial<Record<PresetId, { until: string; why: string }>> = {
+  gemini: {
+    until: '2026-11-24',
+    why:
+      'no replacement has been measured yet (the Gemini eval key is out of credit), and ' +
+      'changing the default ships only in a release — pick one and publish before 12-01',
+  },
+};
 
 const today = new Date().toISOString().slice(0, 10);
 
