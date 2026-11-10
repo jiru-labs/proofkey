@@ -39,6 +39,7 @@ import { baseLanguage, borrowedWords, foreignWordsInEnglish, isBorrowedBase, KEE
 import { emptyReviewState, recordApplied, reviewUrl, type ReviewState } from '../core/review';
 import type { Connection, WritingAction } from '../core/types';
 import { askOffscreen, warmLiveCheck } from '../core/providers/inBrowser';
+import { coalesced } from './coalesce';
 import { IN_BROWSER_MODEL } from '../core/providers/inBrowserModel';
 import {
   activeConnection,
@@ -196,7 +197,9 @@ async function invokeInTab(tab: chrome.tabs.Tab | undefined, actionId: string): 
  * toolbar lost it at the next page load: nothing loaded the script, and the
  * toolbar click that did then read the switch as on and turned it off.
  */
-async function syncRegistration(): Promise<void> {
+const syncRegistration = coalesced(syncRegistrationPass);
+
+async function syncRegistrationPass(): Promise<void> {
   if (!hasDynamicContentScripts()) return;
 
   try {
