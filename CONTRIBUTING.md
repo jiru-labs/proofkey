@@ -158,8 +158,8 @@ the hard way, that reasoning is the part worth keeping.
 
 ## Reporting compatibility
 
-- **[Site report](https://github.com/jiru-labs/proofkey/issues/new?template=site-report.yml)**
-- **[Provider report](https://github.com/jiru-labs/proofkey/issues/new?template=provider-report.yml)**
+- **[Site report](https://github.com/nyakojiru/proofkey/issues/new?template=site-report.yml)**
+- **[Provider report](https://github.com/nyakojiru/proofkey/issues/new?template=provider-report.yml)**
 
 Negative results are as useful as positive ones, and a report that ProofKey
 scrambled your text is the most useful of all. Include the before and after if

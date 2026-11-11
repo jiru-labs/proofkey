@@ -11,7 +11,7 @@ body:
         WhatsApp Web is currently the **only** site a human has run ProofKey on,
         so a report saying "it just works on X" is as valuable as a bug.
 
-        See [COMPATIBILITY.md](https://github.com/jiru-labs/proofkey/blob/main/COMPATIBILITY.md) for what is already known.
+        See [COMPATIBILITY.md](https://github.com/nyakojiru/proofkey/blob/main/COMPATIBILITY.md) for what is already known.
 
   - type: input
     id: site

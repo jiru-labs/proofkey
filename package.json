@@ -8,11 +8,11 @@
   "author": "Jiru Labs",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jiru-labs/proofkey.git"
+    "url": "git+https://github.com/nyakojiru/proofkey.git"
   },
-  "homepage": "https://github.com/jiru-labs/proofkey#readme",
+  "homepage": "https://github.com/nyakojiru/proofkey#readme",
   "bugs": {
-    "url": "https://github.com/jiru-labs/proofkey/issues"
+    "url": "https://github.com/nyakojiru/proofkey/issues"
   },
   "engines": {
     "node": ">=20.19"

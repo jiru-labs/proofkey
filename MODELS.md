@@ -386,7 +386,7 @@ Japanese fixture the scorer could not see fail before that day. The other five �
 `make-friendly`, `simplify`, `expand` — were measured on 2026-09-23 and **do
 not hold mixed-language text on this model**: 29–59 of 80 checks on
 2026-10-03, against 69–71 for the three above ("Rewrites and mixed-language text",
-below; [#1](https://github.com/jiru-labs/proofkey/issues/1)). None of these numbers has been checked on a provider besides
+below; [#1](https://github.com/nyakojiru/proofkey/issues/1)). None of these numbers has been checked on a provider besides
 Google Gemini. Do not read the measured actions as the others.
 
 ### If you are on xAI
@@ -1183,7 +1183,7 @@ Two limits on all of this. It is one machine and one model version; the
 component is Chrome's to update, and a new version may score differently. And
 the rewrites are not a Nano-only weakness: measured on `gemini-2.5-flash` on
 2026-09-23, the same five translated borrowed words too (32–59 of 80 checks;
-[#1](https://github.com/jiru-labs/proofkey/issues/1)). What the table shows is that Nano is also weak at Summarize and
+[#1](https://github.com/nyakojiru/proofkey/issues/1)). What the table shows is that Nano is also weak at Summarize and
 Convert to bullet points, which Gemini holds 80/80.
 
 ### Results — a model inside the browser (WebLLM)
@@ -1274,7 +1274,7 @@ Read, not just counted:
 - Its rewrites translate borrowed words in 3 or 4 of 8 mixed fixtures: `team` →
   `equipo`, the French clause absorbed, a quoted English sentence rendered in
   Spanish. The same failure `gemini-2.5-flash` has on the same prompts
-  ([#1](https://github.com/jiru-labs/proofkey/issues/1)), and the reason Nano is
+  ([#1](https://github.com/nyakojiru/proofkey/issues/1)), and the reason Nano is
   not offered them.
 - **`Qwen3.5-2B` scores near the 4B and reads worse**, which the token score
   cannot see: its Fix grammar left `Their is` and `no se` uncorrected; Make
@@ -1623,7 +1623,7 @@ one run) that candidate — rule moved last in the five rewrites, plus "changing
 tone, register or length is never a reason to translate" — scored 35/64 on the
 mixed set, exactly the shipped prompt's 35/64, so it does nothing for that
 model. Its measurement on `gemini-2.5-flash` was cut short when the eval key's
-prepaid credit ran out. Tracked in [#1](https://github.com/jiru-labs/proofkey/issues/1).
+prepaid credit ran out. Tracked in [#1](https://github.com/nyakojiru/proofkey/issues/1).
 
 **Measured on `gemini-2.5-flash` on 2026-10-03, and it is not the fix either**
 (see the next section for why every number there is lower than above). Through
@@ -2136,7 +2136,7 @@ Free tiers are **not tested**, on any provider, by rule rather than by
 result — [see above](#the-free-tier).
 
 Post yours as a
-[provider report](https://github.com/jiru-labs/proofkey/issues/new?template=provider-report.yml)
+[provider report](https://github.com/nyakojiru/proofkey/issues/new?template=provider-report.yml)
 and it lands in the table.
 
 ## Other providers

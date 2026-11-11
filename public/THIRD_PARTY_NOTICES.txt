@@ -2,7 +2,7 @@ ProofKey — third-party components shipped in this package
 ===========================================================
 
 ProofKey itself is under the licence in its repository
-(https://github.com/jiru-labs/proofkey/blob/main/LICENSE). This file covers what
+(https://github.com/nyakojiru/proofkey/blob/main/LICENSE). This file covers what
 it bundles from others: an English word list (lexicon/), and what the optional
 "Model in this browser" connection uses (the files under assets/ for the
 offscreen document, and webllm/).

@@ -14,7 +14,7 @@ body:
         If you have a key, confirming yours takes about a minute: settings page →
         paste key → **Fetch models** → one quick action on any page.
 
-        See [COMPATIBILITY.md](https://github.com/jiru-labs/proofkey/blob/main/COMPATIBILITY.md) for the current state.
+        See [COMPATIBILITY.md](https://github.com/nyakojiru/proofkey/blob/main/COMPATIBILITY.md) for the current state.
 
   - type: input
     id: provider
