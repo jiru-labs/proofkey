@@ -1,14 +1,14 @@
 # Privacy Policy
 
-**Last updated: 8 October 2026**
+**Last updated: 11 November 2026**
 
-ProofKey is a browser extension published by Jiru Labs. This policy describes
+ProofKey is a browser extension published by Patricio Llorens. This policy describes
 what it does with your data. It is short because the extension does very little.
 
 ## The short version
 
 ProofKey has no backend. There is no ProofKey server, no ProofKey account, and
-no analytics. Jiru Labs does not receive your text, your API keys, or any record
+no analytics. I do not receive your text, your API keys, or any record
 that you used the extension.
 
 ## What leaves your browser, and where it goes
@@ -17,7 +17,7 @@ When you run an action, ProofKey sends the text you selected — or the sentence
 you just finished typing — to **the LLM provider you configured, at the base URL
 you configured**, using **your own API key**. That request goes directly from
 your browser to that provider. It does not pass through any machine operated by
-Jiru Labs.
+me.
 
 Which provider that is, is entirely your choice. If you point ProofKey at a
 local model such as Ollama, nothing leaves your machine at all.
@@ -99,8 +99,8 @@ What ProofKey protects you from, and what it does not, in the terms
 
 **It protects against:**
 
-- **Surveillance as a business model**, on the part of the tool itself. Jiru Labs
-  runs no server for ProofKey: no text, key, setting or usage count reaches us,
+- **Surveillance as a business model**, on the part of the tool itself. I run
+  no server for ProofKey: no text, key, setting or usage count reaches me,
   because there is nowhere for it to go. The code is MIT licensed, so this can
   be checked rather than taken on trust.
 - **Privacy from service providers**, as far as you choose it. With Chrome's
@@ -137,7 +137,7 @@ What ProofKey protects you from, and what it does not, in the terms
 
 ## If this ever changes
 
-If Jiru Labs ever offers an optional paid or hosted feature, it would be exactly
+If I ever offer an optional paid or hosted feature, it would be exactly
 that — optional, off by default, and described here before it ships. The
 extension's default behaviour, as described above, is not going to start sending
 your writing somewhere else. If that ever changed, it would be a new major
