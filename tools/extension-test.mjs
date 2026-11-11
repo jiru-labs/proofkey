@@ -349,6 +349,9 @@ async function run() {
   });
 
   await page.goto(`chrome-extension://${extensionId}/options/index.html`);
+  // Wait for the page to draw rather than a fixed delay: under host I/O contention
+  // (11-11, iowait ~48 %) 500 ms was not enough and all three presence checks failed.
+  await page.locator('text=Providers').first().waitFor({ timeout: 10_000 }).catch(() => {});
   await page.waitForTimeout(500);
 
   check(
@@ -719,9 +722,9 @@ async function run() {
       };
     });
     await downloadPage.goto(`chrome-extension://${extensionId}/options/index.html`);
-    await downloadPage.waitForTimeout(600);
     const bar = downloadPage.locator('[data-builtin-progress]');
     const downloadButton = downloadPage.getByRole('button', { name: 'Download model' });
+    await downloadButton.waitFor({ timeout: 10_000 }).catch(() => {});
     check('a downloadable model offers the Download button', await downloadButton.isVisible());
     check('and draws no bar before anything downloads', !(await bar.isVisible()));
 
