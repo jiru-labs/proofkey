@@ -1,5 +1,6 @@
 // Read .env without a dependency. Values are literal to end of line; no quoting,
-// no interpolation — the file only ever holds Chrome Web Store credentials.
+// no interpolation — the file only ever holds store credentials (Chrome Web Store,
+// and Microsoft Edge Add-ons for tools/edge-release.ts).
 import { readFileSync, writeFileSync } from 'node:fs'
 
 const ENV_PATH = new URL('../.env', import.meta.url)

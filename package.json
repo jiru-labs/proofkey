@@ -35,6 +35,7 @@
     "release": "node --experimental-strip-types tools/release.ts",
     "status": "node --experimental-strip-types tools/cws-status.ts",
     "submit": "node --experimental-strip-types tools/cws-submit.ts",
+    "edge": "node --experimental-strip-types tools/edge-release.ts",
     "verify": "npm run typecheck && npm test && npm run build && npm run test:render && npm run test:ext"
   },
   "devDependencies": {
