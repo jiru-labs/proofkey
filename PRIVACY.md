@@ -148,7 +148,7 @@ on.
 
 Questions, or a privacy problem to report:
 [open an issue](https://github.com/nyakojiru/proofkey/issues), or email
-`help@jirulabs.com` if you would rather not do it in public.
+`info@patriciollorens.com` if you would rather not do it in public.
 
 The extension is open source and MIT licensed. If you would rather verify this
 policy than trust it, the code is at
