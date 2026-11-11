@@ -77,7 +77,7 @@ const SHOWCASE = {
       presetId: 'gemini',
       baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
       apiKey: 'AIzaSyExampleKeyNotARealOne0000000000',
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash-lite',
       transport: 'chat_completions',
       authStyle: 'bearer',
       extraHeaders: {},
