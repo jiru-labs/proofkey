@@ -2131,17 +2131,25 @@ setting as a nudge. The one miss for luna with nothing pinned was video →
 vídeo; that prompt is unchanged by this feature. The first wording also made
 Gemini turn "Vosotros tenéis" into "Ustedes tienen" under es-419. A sentence
 saying the rule is about words, not grammar, fixed it: 0 of 3 runs since.
-Through the extension itself, on 2026-11-13: build 6dc78db in a throwaway
-Brave 157 profile on Windows. The pickers were set on the real options page,
-and requests went through the background worker to `Qwen3.5-4B` Q4_K_M on
-llama.cpp b11700 Vulkan (RX 6600). The 7 sentences mixed example and
-held-out words. With a variety pinned, Fix grammar got 13 of 14 words and
-the live check 13 of 14. Translate from Spanish into English got 4 of 4
-British forms with en-GB pinned and 0 of 4 without, so the American default
-is real. vos and vosotros came back untouched in all 4 cases. With nothing
-pinned, the live check changed no variety word. Fix grammar changed two:
-neighbor → neighbour and travelled → traveled, the second in an otherwise
-British sentence. That is the drift a pinned variety is for. Gemini Nano and
+Through the extension itself, on 2026-11-13: build 6dc78db in throwaway
+Brave 157 and Edge 157 profiles on Windows. The pickers were set on the real
+options page, and requests went through the background worker to
+`Qwen3.5-4B` Q4_K_M on llama.cpp b11700 Vulkan (RX 6600). The 7 sentences mix
+example and held-out words.
+
+| With a variety pinned | Brave 157 | Edge 157 |
+|---|---|---|
+| Fix grammar, words right | 13/14 | 12/14 (es-419 left vídeo, chófer) |
+| Live check, words right | 13/14 | 14/14 |
+| Translate es→en with en-GB: British forms | 4/4 | 4/4 |
+| vos / vosotros left untouched | 4/4 | 4/4 |
+
+With nothing pinned, Translate gave 0 of 4 British forms in Brave and 3 of 4
+in Edge, on the same model and the same sentence. The unpinned variety is the
+model's coin toss, not a stable American default, and that is the case a
+pinned variety settles. Unpinned Fix grammar also drifted: neighbor →
+neighbour, and travelled → traveled inside an otherwise British sentence. The
+unpinned live check changed no variety word in either browser. Gemini Nano and
 the in-browser Qwen3.5 (WebLLM) are not measured.
 
 ### Caveats
