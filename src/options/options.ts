@@ -6,7 +6,7 @@ import {
   localServerOrigins,
   type LocalServerProbe,
 } from '../core/localServers';
-import { BUILT_IN_ACTIONS } from '../core/prompts';
+import { BUILT_IN_ACTIONS, VARIETIES } from '../core/prompts';
 import {
   describeInBrowserState,
   IN_BROWSER_DOWNLOAD_BYTES,
@@ -1149,6 +1149,31 @@ function renderProfile(): HTMLElement {
         on: { input: (e) => (profile.neverFlag = lines((e.target as HTMLTextAreaElement).value)) },
       }),
       'One per line. Multi-word phrases are fine — brand names, jargon, product names.',
+    ),
+
+    ...Object.entries(VARIETIES).map(([key, { language, options }]) =>
+      field(
+        `${language} variety`,
+        select(
+          [
+            { value: '', label: "Keep the writer's own (default)" },
+            ...options.map((option) => ({ value: option.code, label: `${option.label} — ${option.code}` })),
+          ],
+          profile.varieties?.[key] ?? '',
+          {
+            on: {
+              change: (e) => {
+                const value = (e.target as HTMLSelectElement).value;
+                const varieties = { ...profile.varieties };
+                if (value) varieties[key] = value;
+                else delete varieties[key];
+                profile.varieties = varieties;
+              },
+            },
+          },
+        ),
+        `Spelling and wording in ${language} follow this variety, and the other one is corrected to it. Left on the default, ProofKey keeps whichever variety you write in.`,
+      ),
     ),
 
     field(

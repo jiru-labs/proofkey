@@ -210,6 +210,13 @@ export interface WritingProfile {
    * want explanations in.
    */
   translateLanguage: string;
+  /**
+   * The regional variety to write each language in, keyed by language code,
+   * e.g. `{ en: 'en-GB', es: 'es-419' }`. A language with no entry keeps the
+   * default: the author's own variety is preserved, never converted. Only the
+   * codes in `VARIETIES` (prompts.ts) mean anything here.
+   */
+  varieties: Partial<Record<string, string>>;
 }
 
 export interface Settings {

@@ -279,7 +279,110 @@ export const BUILT_IN_ACTIONS: readonly WritingAction[] = [
 export const DEFAULT_ACTION_ID = 'fix-grammar';
 
 export function emptyProfile(): WritingProfile {
-  return { styleGuide: '', neverFlag: [], nativeLanguage: '', explainLanguage: '', translateLanguage: '' };
+  return {
+    styleGuide: '',
+    neverFlag: [],
+    nativeLanguage: '',
+    explainLanguage: '',
+    translateLanguage: '',
+    varieties: {},
+  };
+}
+
+export interface Variety {
+  code: string;
+  label: string;
+  /** What the model is told, after "Whenever the text you return is in <language>, ". */
+  rule: string;
+}
+
+/**
+ * The regional varieties a user can pin, per language. Without one, a short
+ * text gives the model nothing to go on and it falls back on whichever variety
+ * it saw most in training — American spelling for a British writer's three-word
+ * reply. Pinning one turns the other variety's spelling into an error to fix,
+ * which is what a spell checker set to en-GB or es-ES does.
+ *
+ * Spanish spelling is one standard on both sides of the Atlantic, so its rules
+ * are about the few words whose accepted form differs by region, and about
+ * vocabulary when an action rewords. Form of address is left alone in every
+ * variety: voseo, vosotros and ustedes are each correct somewhere, and which one
+ * a writer uses is theirs.
+ */
+export const VARIETIES: Record<string, { language: string; options: readonly Variety[] }> = {
+  en: {
+    language: 'English',
+    options: [
+      {
+        code: 'en-US',
+        label: 'American (US)',
+        rule:
+          'spell every word the American way, changing each British spelling, by ' +
+          'pattern and not only in these examples: -our → -or (colour → color), ' +
+          '-re → -er (centre → center), doubled l → single l (travelled → ' +
+          'traveled), -ce → -se (defence → defense), -ogue → -og (catalogue → ' +
+          'catalog), -yse → -yze (analyse → analyze), and any other word whose ' +
+          'British and American forms differ.',
+      },
+      {
+        code: 'en-GB',
+        label: 'British (UK)',
+        rule:
+          'spell every word the British way, changing each American spelling, by ' +
+          'pattern and not only in these examples: -or → -our (color → colour), ' +
+          '-er → -re (center → centre), single l → doubled l (traveled → ' +
+          'travelled), -se → -ce (defense → defence), -og → -ogue (catalog → ' +
+          'catalogue), -yze → -yse (analyze → analyse), and any other word whose ' +
+          'American and British forms differ. Words the author wrote with -ize ' +
+          'may keep it.',
+      },
+    ],
+  },
+  es: {
+    language: 'Spanish',
+    options: [
+      {
+        code: 'es-ES',
+        label: 'Spain',
+        rule:
+          'use the form of Spain wherever the accepted form differs by region, ' +
+          'changing the other: video → vídeo, chofer → chófer, coctel → cóctel. ' +
+          'When you reword, choose the vocabulary of Spain (ordenador, móvil, coche).',
+      },
+      {
+        code: 'es-419',
+        label: 'Latin America',
+        rule:
+          'use the Latin American form wherever the accepted form differs by region, ' +
+          'changing the other: vídeo → video, chófer → chofer, cóctel → coctel. ' +
+          'When you reword, choose vocabulary common across Latin America ' +
+          '(computadora, celular, carro or auto), not forms only used in Spain. ' +
+          'This is about words, not grammar: a text written with vosotros keeps ' +
+          'vosotros and its verb forms.',
+      },
+    ],
+  },
+};
+
+/**
+ * The prompt block for the varieties the user pinned, or '' when none is.
+ * Unknown codes are dropped rather than passed through, so a stored value from
+ * a newer or older version can never put text of its own into a prompt.
+ */
+export function varietyBlock(profile: WritingProfile): string {
+  const lines: string[] = [];
+  for (const [key, { language, options }] of Object.entries(VARIETIES)) {
+    const variety = options.find((option) => option.code === profile.varieties?.[key]);
+    if (variety) lines.push(`- Whenever the text you return is in ${language}, ${variety.rule}`);
+  }
+  if (lines.length === 0) return '';
+  return [
+    "The author has chosen a regional variety for these languages. For them, this",
+    "replaces keeping the author's regional variety. It changes nothing in any",
+    'other language, and never the form of address: tú, vos, usted, vosotros and',
+    'ustedes, with their verb forms (tenés, tenéis), stay exactly as written.',
+    ...lines,
+  ].join('\n');
 }
 
 /**
@@ -405,6 +508,13 @@ export function composeSystemPrompt(
       ].join('\n'),
     );
   }
+
+  // Applied to every action, Translate included: translating into English or
+  // Spanish is exactly where the model has to pick a variety on its own. Last,
+  // after the output contract, for the same reason as the kept passages above:
+  // a rule placed late is followed more often than the same words placed early.
+  const varieties = varietyBlock(profile);
+  if (varieties) blocks.push(varieties);
 
   return blocks.join('\n\n');
 }

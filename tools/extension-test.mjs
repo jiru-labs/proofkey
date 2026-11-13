@@ -480,6 +480,29 @@ async function run() {
       (await page.locator('text=no provider is usable yet').count()) > 0,
     );
 
+    // A pinned regional variety is stored in the profile and survives a reload;
+    // putting it back on the default removes it rather than storing ''.
+    {
+      const english = page.getByLabel('English variety');
+      check('the English variety picker is on the page', (await english.count()) === 1);
+      check("it starts on the writer's own variety", (await english.count()) === 1 && (await english.inputValue()) === '');
+      if ((await english.count()) === 1) {
+        await english.selectOption('en-GB');
+        await page.locator('button', { hasText: 'Save' }).last().click();
+        await page.waitForTimeout(400);
+        const pinned = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+        check('Save stores the pinned variety', pinned?.profile?.varieties?.en === 'en-GB', JSON.stringify(pinned?.profile?.varieties));
+        await page.reload();
+        await page.getByLabel('English variety').waitFor({ timeout: 10_000 });
+        check('the pinned variety is shown after a reload', (await page.getByLabel('English variety').inputValue()) === 'en-GB');
+        await page.getByLabel('English variety').selectOption('');
+        await page.locator('button', { hasText: 'Save' }).last().click();
+        await page.waitForTimeout(400);
+        const cleared = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+        check('back on the default, nothing is stored for English', cleared?.profile?.varieties?.en === undefined, JSON.stringify(cleared?.profile?.varieties));
+      }
+    }
+
     // A disabled action can still be the default one behind Ctrl+Shift+K. Being
     // disabled must not slip it past the built-in model's restriction.
     const saved = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
