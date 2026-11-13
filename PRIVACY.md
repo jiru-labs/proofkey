@@ -51,7 +51,8 @@ Stored using the browser's own extension storage, on your device:
 - your API keys and connection settings (base URL, model, headers);
 - your actions and their prompts, including any you wrote;
 - your keyboard shortcuts and the list of origins they run on;
-- your writing profile: style guide, terms never to flag, first language;
+- your writing profile: style guide, terms never to flag, first language,
+  and the regional variety you chose for English or Spanish, if any;
 - if you downloaded the in-browser model, its files, in the browser's storage
   for the extension. **Remove the downloaded model** in settings deletes them.
 

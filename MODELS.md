@@ -2098,6 +2098,41 @@ trailing spaces the author did not have (`dropAddedTrailingSpaces`, checked by
 pasted over (`test:render`, "a rewrite with trailing spaces on every line lands
 once").
 
+### Pinning a regional variety (on `main`, not in 0.1.21)
+
+By default every action keeps the variety the author writes in (`VOICE_RULES`
+in `src/core/prompts.ts`). On a short text that leaves the model nothing to go
+on. The profile can now pin a variety for English (en-US or en-GB) and for
+Spanish (es-ES or es-419, Latin America). A pinned variety goes last in every
+prompt, after the output contract, Translate included. It turns the other
+variety's spelling into something to correct. It never touches the form of
+address: tú, vos, usted, vosotros and ustedes stay as written. With nothing
+pinned, the prompts are byte-identical to before (`tools/prompts-check.ts`).
+
+Measured on 2026-11-13 with a scratch probe, Fix grammar and the live check,
+temperature 0. The 8 sentences use the very words the rules give as examples:
+American↔British, vídeo/video, chófer/chofer, plus a vosotros and a vos
+sentence that must come back untouched. The 8 held-out sentences use words the
+rules do not name (favourite, theatre, licence, cancelled, programme…). Two of
+those are traps: doctor and acre must not become doctour and acer.
+
+| Model (route) | Example words, pinned | Held-out, pinned | Nothing pinned: author's variety kept |
+|---|---|---|---|
+| `google/gemini-3.5-flash-lite` (OpenRouter) | 48/48 (3 runs) | 16/16 | 48/48 (3 runs) |
+| `openai/gpt-5.6-luna` (OpenRouter) | 30/32 (2 runs, the first before the vosotros sentence below) | 16/16 | 31/32 (2 runs) |
+| `Qwen3-4B-Instruct-2507` Q4_K_M (llama.cpp CPU) | 16/16 | 22/50 words; 4/4 traps clean | 16/16 |
+
+Counts are sentences, except where marked as words, and a sentence passes only
+when every listed word is right. Wording the rules as patterns took Qwen's
+held-out score up from a list of word pairs alone. With word pairs it converted
+the example words and few others, and it still mostly leaves British spelling
+alone when en-US is pinned. On a small local or in-browser model, read the
+setting as a nudge. The one miss for luna with nothing pinned was video →
+vídeo; that prompt is unchanged by this feature. The first wording also made
+Gemini turn "Vosotros tenéis" into "Ustedes tienen" under es-419. A sentence
+saying the rule is about words, not grammar, fixed it: 0 of 3 runs since.
+Gemini Nano and the in-browser Qwen3.5 are not measured.
+
 ### Caveats
 
 14 fixtures is a smoke test, not a benchmark: it will catch a model that is
