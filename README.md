@@ -127,7 +127,7 @@ Measured on one machine so far — Chrome 153, a Ryzen 7840U laptop — so read 
 3. Copy the key. It starts with `AIza`.
 4. In Chrome, click the **ProofKey** icon → **Settings**.
 5. Choose **Google Gemini** from the provider list — the base URL fills itself in.
-6. Paste your key into **API key**, click **Fetch models**, and pick `gemini-2.5-flash`.
+6. Paste your key into **API key**. The model is already set to `gemini-3.5-flash-lite`, the preset's default since 0.1.21; **Fetch models** lists the others your key can reach.
 7. Save, then reload any tab you already had open.
 
 Two things are worth understanding before you paste anything sensitive:
