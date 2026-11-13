@@ -2098,7 +2098,9 @@ trailing spaces the author did not have (`dropAddedTrailingSpaces`, checked by
 pasted over (`test:render`, "a rewrite with trailing spaces on every line lands
 once").
 
-### Pinning a regional variety (on `main`, not in 0.1.21)
+<a id="pinning-a-regional-variety-on-main-not-in-0121"></a>
+
+### Pinning a regional variety (since 0.1.22)
 
 By default every action keeps the variety the author writes in (`VOICE_RULES`
 in `src/core/prompts.ts`). On a short text that leaves the model nothing to go

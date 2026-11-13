@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated: 11 November 2026**
+**Last updated: 13 November 2026**
 
 ProofKey is a browser extension published by Patricio Llorens. This policy describes
 what it does with your data. It is short because the extension does very little.
