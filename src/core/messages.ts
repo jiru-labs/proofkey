@@ -127,6 +127,11 @@ export interface ContentState {
   dictionary: string[];
   /** Spelling-level fixes are written straight into the field. */
   autoCorrect: boolean;
+  /**
+   * Whether an English variety is pinned. Without one, a British/American
+   * spelling swap is the model's taste, not a typo, and is never written unasked.
+   */
+  englishVarietyPinned: boolean;
   /** True when at least one usable connection exists. */
   configured: boolean;
 }

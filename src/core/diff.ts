@@ -234,19 +234,47 @@ export function classifyChange(change: Change, before: string): {
  * which the content script does not carry; that case is the model's judgement,
  * written with an Undo beside it and never written twice.
  */
-export function autoFixable(original: string, replacement: string, category: string): boolean {
+export function autoFixable(
+  original: string,
+  replacement: string,
+  category: string,
+  englishVarietyPinned = false,
+): boolean {
   if (category === 'Accent' || category === 'Capitalisation') return true;
   if (category !== 'Spelling') return false;
 
   const a = coreWord(original);
   const b = coreWord(replacement);
   if (!a || !b || /\s/.test(a) || /\s/.test(b)) return false;
+  // Unpinned, the author's spelling system is kept, so a model converting it
+  // is not fixing a typo — and writing that unasked rewrites correct text.
+  if (!englishVarietyPinned && sameUnderSpellingSystem(a.toLowerCase(), b.toLowerCase())) return false;
   // Only the word may change; the punctuation around it is not part of a typo.
   if (original.trim().replace(a, '') !== replacement.trim().replace(b, '')) return false;
 
   const shorter = Math.min(a.length, b.length);
   if (shorter < 3) return false;
   return swapDistance(a.toLowerCase(), b.toLowerCase()) <= (shorter >= 7 ? 2 : 1);
+}
+
+/**
+ * Whether two words differ only the way British and American spelling do —
+ * colour/color, analyse/analyze, centre/center, travelled/traveled,
+ * defence/defense. Deliberately broad: a pair it catches by accident (four/for)
+ * only stays an underline, which is the safe side to err on.
+ */
+function sameUnderSpellingSystem(a: string, b: string): boolean {
+  if (a === b) return false;
+  const american = (word: string): string =>
+    word
+      .replace(/our/g, 'or')
+      .replace(/([iy])s(?=(e|ed|es|ing|ation|ations|er|ers)$)/, '$1z')
+      .replace(/tre(s|d)?$/, 'ter$1')
+      .replace(/ogue(s)?$/, 'og$1')
+      .replace(/ence(s)?$/, 'ense$1')
+      .replace(/ll(?=(ed|ing|er|ers)$)/, 'l')
+      .replace(/ae|oe/g, 'e');
+  return american(a) === american(b);
 }
 
 /** The word without the punctuation either side of it. */

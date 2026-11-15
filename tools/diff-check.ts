@@ -139,7 +139,7 @@ for (const [before, after, expected] of grouping) {
  * variety difference the model would offer) that swaps one real word for
  * another, so writing it unasked would change what the user said.
  */
-const autoCases: [string, string, boolean][] = [
+const autoCases: [string, string, boolean, boolean?][] = [
   ['corectly', 'correctly', true],
   ['meating', 'meeting', true],
   ['teh', 'the', true],
@@ -148,11 +148,22 @@ const autoCases: [string, string, boolean][] = [
   ['cancion,', 'canción,', true],
   ['recieved', 'received', true],
   ['accomodation', 'accommodation', true],
-  // A pinned variety's spelling.
-  ['color', 'colour', true],
-  ['center', 'centre', true],
-  ['organize', 'organise', true],
+  // A pinned variety's spelling (the fourth column: an English variety is pinned).
+  ['color', 'colour', true, true],
+  ['center', 'centre', true, true],
+  ['organize', 'organise', true, true],
+  ['analyze', 'analyse', true, true],
   ['video', 'vídeo', true],
+  // With no variety pinned, the author's spelling system is theirs: a model
+  // converting it is not fixing a typo. Qwen3.5-4B wrote analyze -> analyse
+  // into a correct American sentence in 2 of 5 runs of tools/auto-eval.ts.
+  ['analyze', 'analyse', false],
+  ['colour', 'color', false],
+  ['center', 'centre', false],
+  ['organise', 'organize', false],
+  ['traveled', 'travelled', false],
+  ['catalog', 'catalogue', false],
+  ['defense', 'defence', false],
   // Different words, however close.
   ['mi', 'my', false],
   ['in', 'on', false],
@@ -168,10 +179,10 @@ const autoCases: [string, string, boolean][] = [
 
 let autoFailures = 0;
 console.log('\nAutomatic correction:');
-for (const [before, after, expected] of autoCases) {
+for (const [before, after, expected, englishPinned = false] of autoCases) {
   const change = (diffWords(before, after) ?? [])[0];
   const category = change ? classifyChange(change, before).category : '';
-  const actual = !!change && autoFixable(before.slice(change.start, change.end), change.replacement, category);
+  const actual = !!change && autoFixable(before.slice(change.start, change.end), change.replacement, category, englishPinned);
   const ok = actual === expected;
   if (!ok) autoFailures++;
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${JSON.stringify(before)} -> ${JSON.stringify(after)} [${category}] ${actual ? 'fixed' : 'underlined'}`);

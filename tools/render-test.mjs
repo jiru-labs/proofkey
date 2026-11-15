@@ -1268,6 +1268,23 @@ async function run() {
     check('nor once the writer types on in the same sentence',
       (await chatState()).value === `${original}ok`, JSON.stringify((await chatState()).value));
 
+    // A model converting a correct spelling system is not fixing a typo.
+    console.log('\nautomatic correction — the spelling system is the writer\'s unless a variety is pinned:');
+    const varietyValue = () => page.evaluate(() => document.getElementById('variety').value);
+    await page.goto(`${BASE}?field=variety&auto`, { waitUntil: 'load' });
+    await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    check('unpinned, analyze is left as written', (await varietyValue()) === 'we analyze the logs every morning ',
+      JSON.stringify(await varietyValue()));
+    check('and offered as an underline',
+      (await page.evaluate(probe, ['variety', MIRRORED])).marks.map((mark) => mark.text).join('|') === 'analyze',
+      JSON.stringify((await page.evaluate(probe, ['variety', MIRRORED])).marks.map((mark) => mark.text)));
+    await page.goto(`${BASE}?field=variety&auto&pinned`, { waitUntil: 'load' });
+    await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    check('pinned, the variety\'s spelling is written', (await varietyValue()) === 'we analyse the logs every morning ',
+      JSON.stringify(await varietyValue()));
+
     // Ctrl+Z is the other way back, and it bypasses the notice entirely.
     console.log('\nautomatic correction — Ctrl+Z is not fought:');
     await page.goto(`${BASE}?field=chat&auto`, { waitUntil: 'load' });

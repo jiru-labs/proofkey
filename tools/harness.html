@@ -87,6 +87,14 @@ The plan for the next quarter is in the shared folder, with the budget and the p
     <textarea id="chat">this is a test, and ai want to see if mi extencion is working corectly </textarea>
 
     <!--
+      A correct American sentence a model converts to British spelling anyway
+      (Qwen3.5-4B did, measured by tools/auto-eval.ts). Written automatically
+      only with an English variety pinned.
+    -->
+    <h2>textarea — spelling system</h2>
+    <textarea id="variety">we analyze the logs every morning </textarea>
+
+    <!--
       Reproduces a WhatsApp/Lexical-style composer: the editor rebuilds its own
       text nodes on every input event. Any offset captured before an edit is
       stale immediately after it, which is what scrambled a real message.
@@ -153,6 +161,7 @@ The plan for the next quarter is in the shared folder, with the budget and the p
         [/\bai want\b/g, 'I want'],
         [/\bmi extencion\b/g, 'my extension'],
         [/\bcorectly\b/g, 'correctly'],
+        [/\banalyze\b/g, 'analyse'],
         // Spanish fixes for the re-render case, from the bug report.
         [/\bvendia\b/g, 'vendía'],
         [/\bhabia\b/g, 'había'],
@@ -205,6 +214,8 @@ The plan for the next quarter is in the shared folder, with the budget and the p
         dictionary: [],
         // `?auto` switches automatic correction on from the first state pull.
         autoCorrect: new URLSearchParams(location.search).has('auto'),
+        // `?pinned` stands for an English variety chosen in the options.
+        englishVarietyPinned: new URLSearchParams(location.search).has('pinned'),
         configured: true,
       };
 

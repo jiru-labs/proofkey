@@ -88,7 +88,7 @@ async function refreshState(): Promise<void> {
   shortcuts.setBindings(state.value.shortcuts);
   if (!live) live = createLive(ui(), state.value);
   live.setEnabled(state.value.liveEnabled);
-  live.setAutoCorrect(state.value.autoCorrect === true);
+  live.setAutoCorrect(state.value.autoCorrect === true, state.value.englishVarietyPinned === true);
 
   // Only on a page ProofKey was set up for. The script also arrives on demand,
   // from the menu or the toolbar button, and a page reached that way has

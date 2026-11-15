@@ -97,13 +97,14 @@ interface Session {
 export interface LiveController {
   isEnabled(): boolean;
   setEnabled(enabled: boolean): void;
-  setAutoCorrect(enabled: boolean): void;
+  setAutoCorrect(enabled: boolean, englishVarietyPinned: boolean): void;
   destroy(): void;
 }
 
 export function createLive(shadow: ShadowRoot, state: ContentState): LiveController {
   let enabled = state.liveEnabled;
   let autoCorrectOn = state.autoCorrect === true;
+  let englishPinned = state.englishVarietyPinned === true;
   let session: Session | null = null;
   const dictionary = new Set(state.dictionary.map((word) => word.toLowerCase()));
 
@@ -605,7 +606,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
   function nextAutoFix(active: Session): Suggestion | null {
     let best: Suggestion | null = null;
     for (const suggestion of active.suggestions) {
-      if (!autoFixable(suggestion.original, suggestion.replacement, suggestion.category)) continue;
+      if (!autoFixable(suggestion.original, suggestion.replacement, suggestion.category, englishPinned)) continue;
       if (active.rejected.has(fixPair(suggestion.original, suggestion.replacement))) continue;
       if (active.autoTouched.has(suggestion.id.slice(0, suggestion.id.lastIndexOf('#')))) continue;
       // Last first, so writing one never moves the offsets of the ones before it.
@@ -628,7 +629,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
       const source = sentence.text.trim();
       for (const change of active.cache.get(key) ?? []) {
         const original = source.slice(change.start, change.end);
-        if (autoFixable(original, change.replacement, classifyChange(change, source).category)) {
+        if (autoFixable(original, change.replacement, classifyChange(change, source).category, englishPinned)) {
           active.rejected.add(fixPair(original, change.replacement));
         }
       }
@@ -792,8 +793,9 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
 
   return {
     isEnabled: () => enabled,
-    setAutoCorrect(next) {
+    setAutoCorrect(next, pinned) {
       autoCorrectOn = next;
+      englishPinned = pinned;
     },
     setEnabled(next) {
       enabled = next;
