@@ -199,6 +199,8 @@ The plan for the next quarter is in the shared folder, with the budget and the p
         minChars: 8,
         maxSentencesPerRequest: 8,
         dictionary: [],
+        // `?auto` switches automatic correction on from the first state pull.
+        autoCorrect: new URLSearchParams(location.search).has('auto'),
         configured: true,
       };
 
@@ -235,6 +237,8 @@ The plan for the next quarter is in the shared folder, with the budget and the p
               case 'proofkey:get-state':
                 return { ok: true, value: window.__pkState };
               case 'proofkey:check':
+                // A slow provider, for cases about what happens while a check is out.
+                if (window.__pkCheckDelayMs) await new Promise((resolve) => setTimeout(resolve, window.__pkCheckDelayMs));
                 return { ok: true, value: { corrections: message.sentences.map(correct) } };
               case 'proofkey:explain':
                 return { ok: true, value: { text: 'Subject and verb must agree.', servedBy: 'harness', fallbackErrors: [] } };

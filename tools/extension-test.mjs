@@ -503,6 +503,30 @@ async function run() {
       }
     }
 
+    // Automatic correction writes into the user's text, so it has to start off
+    // for everyone — new installs and settings stored before it existed — and
+    // reach the page through the state the content script pulls.
+    {
+      const box = page.getByLabel('Correct spelling automatically');
+      check('the automatic-correction switch is on the page', (await box.count()) === 1);
+      check('and it starts off', (await box.count()) === 1 && !(await box.isChecked()));
+      const off = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:get-state' }));
+      check('the page is told it is off', off?.value?.autoCorrect === false, JSON.stringify(off?.value?.autoCorrect));
+      if ((await box.count()) === 1) {
+        await box.check();
+        await page.locator('button', { hasText: 'Save' }).last().click();
+        await page.waitForTimeout(400);
+        const on = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:get-state' }));
+        check('once saved on, the page is told so', on?.value?.autoCorrect === true, JSON.stringify(on?.value?.autoCorrect));
+        await page.reload();
+        await page.getByLabel('Correct spelling automatically').waitFor({ timeout: 10_000 });
+        check('and the switch shows it after a reload', await page.getByLabel('Correct spelling automatically').isChecked());
+        await page.getByLabel('Correct spelling automatically').uncheck();
+        await page.locator('button', { hasText: 'Save' }).last().click();
+        await page.waitForTimeout(400);
+      }
+    }
+
     // A disabled action can still be the default one behind Ctrl+Shift+K. Being
     // disabled must not slip it past the built-in model's restriction.
     const saved = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);

@@ -1817,6 +1817,18 @@ function renderLiveCheck(): HTMLElement {
 
     el(
       'div',
+      { class: 'field' },
+      checkbox('Correct spelling automatically', liveCheck.autoCorrect === true, (value) => {
+        liveCheck.autoCorrect = value;
+      }),
+      el('p', {
+        class: 'field__hint',
+        text: 'When you pause, typos, missing accents and capitals are fixed in place, with Undo on the notice. With an English or Spanish variety chosen under Your writing rules, its spelling is applied too. Grammar and wording stay underlined for you to decide, and a fix you undo is not made again.',
+      }),
+    ),
+
+    el(
+      'div',
       { class: 'row' },
       field(
         'Idle delay (ms)',

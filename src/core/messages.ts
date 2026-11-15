@@ -118,6 +118,8 @@ export interface ContentState {
   maxSentencesPerRequest: number;
   /** Terms the user marked correct; suggestions touching them are dropped. */
   dictionary: string[];
+  /** Spelling-level fixes are written straight into the field. */
+  autoCorrect: boolean;
   /** True when at least one usable connection exists. */
   configured: boolean;
 }

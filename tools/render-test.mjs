@@ -1206,6 +1206,138 @@ async function run() {
     check('and the question goes away', (await toasts()).length === 0, JSON.stringify(await toasts()));
   }
 
+  // Automatic correction. Off by default, so every case above already proves
+  // the off state leaves the text alone; these switch it on with `?auto`.
+  {
+    const toastTexts = () => page.evaluate(() =>
+      [...(document.getElementById('proofkey-root')?.shadowRoot?.querySelectorAll('.pk-toast') ?? [])].map((t) => t.textContent));
+    const chatState = () => page.evaluate(() => {
+      const field = document.getElementById('chat');
+      return { value: field.value, caret: field.selectionStart, end: field.selectionEnd };
+    });
+
+    console.log('\nautomatic correction — off unless switched on:');
+    await page.goto(`${BASE}?field=chat`, { waitUntil: 'load' });
+    await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const untouched = await chatState();
+    check('without the setting nothing is written', untouched.value.includes('corectly'), JSON.stringify(untouched.value));
+
+    console.log('\nautomatic correction — spelling written on the pause, the rest underlined:');
+    await page.goto(`${BASE}?field=chat&auto`, { waitUntil: 'load' });
+    await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const original = 'this is a test, and ai want to see if mi extencion is working corectly ';
+    const notice = await toastTexts();
+    const fixed = await chatState();
+    check('typos are fixed in place',
+      fixed.value === 'this is a test, and ai want to see if mi extension is working correctly ',
+      JSON.stringify(fixed.value));
+    const fixedProbe = await page.evaluate(probe, ['chat', MIRRORED]);
+    check('the different-word changes stay underlined',
+      fixedProbe.marks.map((mark) => mark.text).join('|') === 'ai|mi',
+      JSON.stringify(fixedProbe.marks.map((mark) => mark.text)));
+    check('the caret is back where the writer left it',
+      fixed.caret === fixed.value.length && fixed.end === fixed.value.length,
+      `caret ${fixed.caret}-${fixed.end} of ${fixed.value.length}`);
+    check('a notice says what changed and offers Undo',
+      notice.length === 1 && notice[0].startsWith('Corrected 2 words') && notice[0].includes('Undo'),
+      JSON.stringify(notice));
+    check('a fix nobody clicked is not counted for the rating question',
+      !(await page.evaluate(() => window.__pkSent.includes('proofkey:applied'))));
+
+    await page.evaluate(() => {
+      [...document.getElementById('proofkey-root').shadowRoot.querySelectorAll('.pk-toast__action')]
+        .find((button) => button.textContent === 'Undo')?.click();
+    });
+    await page.waitForTimeout(300);
+    const undone = await chatState();
+    check('Undo puts the original text back', undone.value === original, JSON.stringify(undone.value));
+    await page.waitForTimeout(1500);
+    const later = await chatState();
+    const laterProbe = await page.evaluate(probe, ['chat', MIRRORED]);
+    check('and a later pause does not write it again', later.value === original, JSON.stringify(later.value));
+    check('the undone fixes are offered as underlines instead', laterProbe.marks.length === 4,
+      `${laterProbe.marks.length} underline(s)`);
+    // Typing on gives the sentence a new hash, so remembering the sentence is
+    // not enough: the next check would offer the same fixes and write them.
+    await page.focus('#chat');
+    await page.keyboard.press('End');
+    await page.keyboard.type('ok');
+    await page.waitForTimeout(1500);
+    check('nor once the writer types on in the same sentence',
+      (await chatState()).value === `${original}ok`, JSON.stringify((await chatState()).value));
+
+    // Ctrl+Z is the other way back, and it bypasses the notice entirely.
+    console.log('\nautomatic correction — Ctrl+Z is not fought:');
+    await page.goto(`${BASE}?field=chat&auto`, { waitUntil: 'load' });
+    await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await page.focus('#chat');
+    for (let i = 0; i < 4 && (await chatState()).value !== original; i++) {
+      await page.keyboard.press('Control+Z');
+      await page.waitForTimeout(100);
+    }
+    const reverted = await chatState();
+    check('the undo landed', reverted.value === original, JSON.stringify(reverted.value));
+    await page.keyboard.press('End');
+    await page.keyboard.type('ok');
+    await page.waitForTimeout(1500);
+    check('and the fixes are not written back once typing goes on', (await chatState()).value === `${original}ok`,
+      JSON.stringify((await chatState()).value));
+
+    // A check that comes back while the user is typing must not write. The edit
+    // would select a word somewhere else, and the next keystroke would replace it.
+    console.log('\nautomatic correction — never while typing:');
+    await page.goto(`${BASE}?field=chat&auto`, { waitUntil: 'load' });
+    await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await page.evaluate(() => { window.__pkCheckDelayMs = 900; });
+    await page.evaluate(paste, ['chat', 'The meating is at noon. Then']);
+    await page.waitForTimeout(250); // the debounce has fired and the check is out
+    const typed = ' we eat lunch together';
+    const typing = (async () => {
+      for (const key of typed) {
+        await page.keyboard.type(key);
+        await page.waitForTimeout(80);
+      }
+    })();
+    await typing;
+    const midway = await chatState();
+    check('the check came back during typing and wrote nothing',
+      midway.value === `The meating is at noon. Then${typed}`, JSON.stringify(midway.value));
+    await page.waitForTimeout(1200);
+    const settled = await chatState();
+    check('once typing stops the fix is written',
+      settled.value.startsWith('The meeting is at noon.'), JSON.stringify(settled.value));
+    check('and every typed character is where it was typed',
+      settled.value === `The meeting is at noon. Then${typed}`, JSON.stringify(settled.value));
+    await page.keyboard.type('!');
+    await page.waitForTimeout(50);
+    check('the next keystroke lands at the end, not in the corrected word',
+      (await chatState()).value.endsWith('together!'), JSON.stringify((await chatState()).value));
+    await page.evaluate(() => { window.__pkCheckDelayMs = 0; });
+
+    // The real Lexical editor: no click to place the selection, and a caret the
+    // editor keeps in its own model.
+    console.log('\nautomatic correction — real Lexical:');
+    await page.goto(`${BASE}?field=lexical&auto`, { waitUntil: 'load' });
+    await page.waitForTimeout(500);
+    const seed = await page.evaluate(() => window.__pkLexicalText());
+    await page.click('#lexical');
+    await page.keyboard.press('Control+End');
+    await page.waitForTimeout(2500);
+    const lexicalFixed = await page.evaluate(() => window.__pkLexicalText());
+    const lexicalExpected = await page.evaluate((text) => window.__pkCorrect(text), seed);
+    check('every accent and typo is fixed in the editor\'s own model',
+      lexicalFixed === lexicalExpected, JSON.stringify(lexicalFixed.slice(0, 80)));
+    await page.keyboard.type(' fin');
+    await page.waitForTimeout(200);
+    const lexicalTyped = await page.evaluate(() => window.__pkLexicalText());
+    check('typing afterwards continues at the end',
+      lexicalTyped === `${lexicalExpected} fin`, JSON.stringify(lexicalTyped.slice(-40)));
+  }
+
   await browser.close();
   console.log(failures === 0 ? '\nAll render checks passed.' : `\n${failures} check(s) FAILED`);
   process.exit(failures === 0 ? 0 : 1);

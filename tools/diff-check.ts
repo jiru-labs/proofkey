@@ -8,7 +8,7 @@
  * produces the right text too.
  */
 
-import { classifyChange, diffWords, type Change } from '../src/core/diff.ts';
+import { autoFixable, classifyChange, diffWords, type Change } from '../src/core/diff.ts';
 
 function apply(before: string, changes: Change[]): string {
   let out = before;
@@ -133,6 +133,50 @@ for (const [before, after, expected] of grouping) {
   }
 }
 
-const total = failures + groupFailures;
+/**
+ * Which findings automatic correction may write without a click. The `false`
+ * rows are the point: each is a change `classifyChange` labels Spelling (or a
+ * variety difference the model would offer) that swaps one real word for
+ * another, so writing it unasked would change what the user said.
+ */
+const autoCases: [string, string, boolean][] = [
+  ['corectly', 'correctly', true],
+  ['meating', 'meeting', true],
+  ['teh', 'the', true],
+  ['thursday', 'Thursday', true],
+  ['vendia', 'vendía', true],
+  ['cancion,', 'canción,', true],
+  ['recieved', 'received', true],
+  ['accomodation', 'accommodation', true],
+  // A pinned variety's spelling.
+  ['color', 'colour', true],
+  ['center', 'centre', true],
+  ['organize', 'organise', true],
+  ['video', 'vídeo', true],
+  // Different words, however close.
+  ['mi', 'my', false],
+  ['in', 'on', false],
+  ['ai', 'I', false],
+  ['program', 'programme', false],
+  ['ordenador', 'computadora', false],
+  ['alot', 'a lot', false],
+  ['their is', 'there is', false],
+  ['show', 'shows', false],
+  // The word is the same but the punctuation moved: not a typo.
+  ['done.', 'done,', false],
+];
+
+let autoFailures = 0;
+console.log('\nAutomatic correction:');
+for (const [before, after, expected] of autoCases) {
+  const change = (diffWords(before, after) ?? [])[0];
+  const category = change ? classifyChange(change, before).category : '';
+  const actual = !!change && autoFixable(before.slice(change.start, change.end), change.replacement, category);
+  const ok = actual === expected;
+  if (!ok) autoFailures++;
+  console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${JSON.stringify(before)} -> ${JSON.stringify(after)} [${category}] ${actual ? 'fixed' : 'underlined'}`);
+}
+
+const total = failures + groupFailures + autoFailures;
 console.log(total === 0 ? '\nDiff checks passed.' : `\n${total} FAILED`);
 process.exit(total === 0 ? 0 : 1);

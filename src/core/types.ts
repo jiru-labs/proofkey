@@ -175,6 +175,14 @@ export interface LiveCheckSettings {
   maxSentencesPerRequest: number;
   /** Words the user marked as correct; matching suggestions are suppressed. */
   dictionary: string[];
+  /**
+   * Writes spelling-level fixes into the field without waiting for a click:
+   * typos, missing accents, capitalisation — and, with a regional variety
+   * pinned, the other variety's spelling. Grammar and wording stay underlined
+   * for the user to decide. Off unless switched on: an installed user's text
+   * is never changed behind their back by an update.
+   */
+  autoCorrect: boolean;
 }
 
 /**

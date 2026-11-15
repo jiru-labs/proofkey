@@ -1,4 +1,4 @@
-import { classifyChange, diffWords, type Change } from '../core/diff';
+import { autoFixable, classifyChange, diffWords, type Change } from '../core/diff';
 import { askWorker, type CheckResult, type ContentState } from '../core/messages';
 import { segment, sentenceAt, sentenceKey } from '../core/sentences';
 import type { Suggestion } from '../core/types';
@@ -6,7 +6,7 @@ import { createCard, type SuggestionCard } from './card';
 import { createHighlighter, type FieldRef, type Highlighter } from './highlight';
 import { noteApplied } from './review';
 import { toast } from './toast';
-import { applyToTarget, flatten, offsetOfPoint } from './target';
+import { applyToTarget, flatten, offsetOfPoint, rangeFor } from './target';
 
 /**
  * The as-you-type layer.
@@ -31,6 +31,15 @@ import { applyToTarget, flatten, offsetOfPoint } from './target';
 
 const TEXTUAL_INPUT_TYPES = new Set(['text', 'search', 'url', 'tel', 'email', '']);
 const MIN_SENTENCE_LENGTH = 4;
+
+/** Events that mean a person is editing the field, as opposed to ProofKey writing to it. */
+const USER_EDIT_EVENTS = ['keydown', 'paste', 'compositionstart', 'drop'] as const;
+
+/** Upper bound on fixes written in one pause. */
+const MAX_AUTO_FIXES = 24;
+
+/** How long the notice carrying Undo stays up, at least. */
+const UNDO_NOTICE_MS = 8000;
 
 /**
  * How much longer than the ordinary debounce the caret's own sentence waits
@@ -65,16 +74,35 @@ interface Session {
   observer: MutationObserver | null;
   /** Last text seen, so a re-render that changes nothing cannot re-arm the debounce. */
   lastText: string;
+  /** When the user last typed, pasted or composed in the field. Our own writes do not count. */
+  lastUserAt: number;
+  /** True while automatic correction is writing, so its own `input` events are not read as typing. */
+  autoRunning: boolean;
+  /**
+   * Sentence texts automatic correction has already written into, by content
+   * hash. A sentence that comes back to one of these — Undo, Ctrl+Z, a paste —
+   * is the user saying they meant it, so its findings stay underlines.
+   */
+  autoTouched: Set<string>;
+  /**
+   * Fixes the user took back, as `original\u0000replacement`. Seen in a
+   * sentence restored to one of `autoTouched`, and kept by the pair rather than
+   * the sentence: the next keystroke in that sentence gives it a new hash, and
+   * without this the fix it just undid would be written straight back.
+   */
+  rejected: Set<string>;
 }
 
 export interface LiveController {
   isEnabled(): boolean;
   setEnabled(enabled: boolean): void;
+  setAutoCorrect(enabled: boolean): void;
   destroy(): void;
 }
 
 export function createLive(shadow: ShadowRoot, state: ContentState): LiveController {
   let enabled = state.liveEnabled;
+  let autoCorrectOn = state.autoCorrect === true;
   let session: Session | null = null;
   const dictionary = new Set(state.dictionary.map((word) => word.toLowerCase()));
 
@@ -134,9 +162,14 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
       warmedAt: performance.now(),
       observer: null,
       lastText: fieldText(field),
+      lastUserAt: 0,
+      autoRunning: false,
+      autoTouched: new Set(),
+      rejected: new Set(),
     };
     session = active;
     field.node.addEventListener('input', onInput);
+    for (const type of USER_EDIT_EVENTS) field.node.addEventListener(type, onUserEdit, true);
     void askWorker({ type: 'proofkey:warm' }).catch(() => undefined);
 
     // `input` is not enough on its own. A framework editor that handles a
@@ -159,6 +192,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
         const text = fieldText(active.field);
         if (text === active.lastText) return;
         active.lastText = text;
+        noteTakenBack(active, text);
         schedule();
       });
       observer.observe(field.node, { childList: true, characterData: true, subtree: true });
@@ -174,6 +208,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     clearTimeout(session.settleTimer);
     session.observer?.disconnect();
     session.field.node.removeEventListener('input', onInput);
+    for (const type of USER_EDIT_EVENTS) session.field.node.removeEventListener(type, onUserEdit, true);
     session.highlighter.destroy();
     session = null;
     card.hide();
@@ -189,11 +224,17 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     attach(field);
   };
 
+  const onUserEdit = () => {
+    if (session) session.lastUserAt = performance.now();
+  };
+
   const onInput = () => {
     if (!session) return;
+    if (!session.autoRunning) session.lastUserAt = performance.now();
     // Keeps the observer's baseline current, so an edit that fires `input` is
     // not then re-reported as a mutation the observer has never seen.
     session.lastText = fieldText(session.field);
+    noteTakenBack(session, session.lastText);
     if (session.inFlight) session.dirtyWhileChecking = true;
     // Typing keeps the in-browser model loaded: it is unloaded after a quiet
     // spell, and loading it again stalls the page while it happens.
@@ -272,6 +313,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
   async function check(includeCaret: boolean): Promise<void> {
     if (!session || session.inFlight) return;
     const active = session;
+    const startedAt = performance.now();
 
     const text = fieldText(active.field);
     if (text.trim().length < state.minChars) {
@@ -296,6 +338,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
 
     if (pending.length === 0) {
       rebuild();
+      void autoCorrect(active, startedAt);
       if (!includeCaret) maybeScheduleSettle();
       return;
     }
@@ -330,6 +373,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
       });
 
       rebuild();
+      await autoCorrect(active, startedAt);
     } finally {
       if (session === active) {
         active.inFlight = false;
@@ -413,8 +457,8 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
 
   // ---------------------------------------------------------------- applying
 
-  async function applySuggestion(suggestion: Suggestion): Promise<void> {
-    if (!session) return;
+  async function applySuggestion(suggestion: Suggestion, automatic = false): Promise<boolean> {
+    if (!session) return false;
     const active = session;
 
     const applied = await applyToTarget(
@@ -440,9 +484,11 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
       // refused for us. Either way what is on screen no longer matches what was
       // offered, so re-derive from the field and let that close the card.
       rebuild();
-      return;
+      return false;
     }
-    void noteApplied(shadow);
+    // A fix nobody clicked is not something the user did, so it does not count
+    // towards the rating question.
+    if (!automatic) void noteApplied(shadow);
 
     // Applying is deliberately not recorded as a dismissal. `dismissed` is keyed
     // by sentence content and the cache never forgets, so marking the applied
@@ -499,6 +545,172 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     }
 
     rebuild();
+    return true;
+  }
+
+  // ------------------------------------------------------ automatic correction
+
+  /**
+   * Writes the spelling-level findings into the field, on the same pause that
+   * found them.
+   *
+   * On a pause rather than per word, for the reasons the whole layer already
+   * runs on one: a word-by-word check is a request per word on the user's key,
+   * a half-typed sentence draws confident nonsense, and an edit landing while
+   * someone types puts their next keystroke inside the correction. The pause
+   * also gives the timing that reads as "while I write": a finished sentence is
+   * sent on the first short pause, while the caret moves on into the next one;
+   * only the sentence still under the caret waits for the longer settle.
+   *
+   * Only what `autoFixable` passes: accents, capitals, and typos small enough
+   * that the word stays the same word — a pinned variety's spelling included
+   * ("color" → "colour"). Grammar and wording change meaning often enough that
+   * they stay the user's call.
+   *
+   * It stands down the moment anything says the user is busy: a keystroke since
+   * the pause began, focus somewhere else, or a selection held open.
+   */
+  async function autoCorrect(active: Session, since: number): Promise<void> {
+    if (!autoCorrectOn || active.autoRunning) return;
+
+    const done: Suggestion[] = [];
+    active.autoRunning = true;
+    try {
+      // Bounded: every pass writes one fix and re-keys its sentence, so a model
+      // whose correction is itself "wrong" can never ping-pong forever.
+      for (let step = 0; step < MAX_AUTO_FIXES; step++) {
+        if (session !== active || !autoCorrectOn || active.lastUserAt > since) break;
+        if (!userIsIdleIn(active.field)) break;
+
+        const next = nextAutoFix(active);
+        if (!next) break;
+        active.autoTouched.add(next.id.slice(0, next.id.lastIndexOf('#')));
+
+        const caret = caretOffset(active.field);
+        if (!(await applySuggestion(next, true))) break;
+        if (session !== active) break;
+        placeCaret(active.field, shiftedCaret(caret, next));
+        done.push(next);
+      }
+    } finally {
+      active.autoRunning = false;
+    }
+
+    if (done.length > 0 && session === active) announceFixes(active, done);
+  }
+
+  /** The last spelling fix in the field, outside any sentence already written into. */
+  function nextAutoFix(active: Session): Suggestion | null {
+    let best: Suggestion | null = null;
+    for (const suggestion of active.suggestions) {
+      if (!autoFixable(suggestion.original, suggestion.replacement, suggestion.category)) continue;
+      if (active.rejected.has(fixPair(suggestion.original, suggestion.replacement))) continue;
+      if (active.autoTouched.has(suggestion.id.slice(0, suggestion.id.lastIndexOf('#')))) continue;
+      // Last first, so writing one never moves the offsets of the ones before it.
+      if (!best || suggestion.start > best.start) best = suggestion;
+    }
+    return best;
+  }
+
+  /**
+   * Records as rejected every fix in a sentence that is back to text automatic
+   * correction once wrote into. Run on each edit rather than on the next
+   * check, because Ctrl+Z and a keystroke can both land inside one debounce,
+   * and by the time a check looks the restored sentence is already gone.
+   */
+  function noteTakenBack(active: Session, text: string): void {
+    if (active.autoTouched.size === 0 || active.autoRunning) return;
+    for (const sentence of segment(text)) {
+      const key = sentenceKey(sentence.text);
+      if (!active.autoTouched.has(key)) continue;
+      const source = sentence.text.trim();
+      for (const change of active.cache.get(key) ?? []) {
+        const original = source.slice(change.start, change.end);
+        if (autoFixable(original, change.replacement, classifyChange(change, source).category)) {
+          active.rejected.add(fixPair(original, change.replacement));
+        }
+      }
+    }
+  }
+
+  function fixPair(original: string, replacement: string): string {
+    return `${original.trim()}\u0000${replacement.trim()}`;
+  }
+
+  function userIsIdleIn(field: FieldRef): boolean {
+    const focused = document.activeElement;
+    if (!focused || !(focused === field.node || field.node.contains(focused))) return false;
+    if (field.kind === 'input') return field.node.selectionStart === field.node.selectionEnd;
+    const selection = window.getSelection();
+    return !!selection && selection.isCollapsed;
+  }
+
+  /** Where the caret belongs once `fix` has been written, measured before it was. */
+  function shiftedCaret(caret: number, fix: Suggestion): number {
+    if (caret < 0) return caret;
+    if (caret >= fix.end) return caret + fix.replacement.length - (fix.end - fix.start);
+    if (caret > fix.start) return fix.start + fix.replacement.length;
+    return caret;
+  }
+
+  /**
+   * Puts the caret back where the user left it. The write path has to select
+   * the misspelt word to replace it, and leaving the caret there would send the
+   * next keystroke into the middle of an earlier sentence.
+   */
+  function placeCaret(field: FieldRef, offset: number): void {
+    if (offset < 0) return;
+    if (field.kind === 'input') {
+      try {
+        field.node.setSelectionRange(offset, offset);
+      } catch {
+        // Some input types refuse selection; their caret stays where the write left it.
+      }
+      return;
+    }
+    const range = rangeFor(flatten(field.node), offset, offset);
+    const selection = window.getSelection();
+    if (!range || !selection) return;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  function announceFixes(active: Session, fixes: Suggestion[]): void {
+    const first = fixes[0]!;
+    toast(shadow, {
+      kind: 'ok',
+      text:
+        fixes.length === 1
+          ? `Corrected “${first.original.trim()}” → “${first.replacement.trim()}”`
+          : `Corrected ${fixes.length} words`,
+      action: { label: 'Undo', run: () => void undoFixes(active, fixes) },
+      // The words take a second to read; noticing that something you did not
+      // type has changed, and reaching Undo, takes longer.
+      minMs: UNDO_NOTICE_MS,
+    });
+  }
+
+  /**
+   * Takes the fixes back, last written first, which is what returns each one to
+   * the offsets it was written at. The restored sentences are already in
+   * `autoTouched`, so the next pass underlines them instead of fixing them again.
+   */
+  async function undoFixes(active: Session, fixes: Suggestion[]): Promise<void> {
+    if (session !== active) return;
+    for (const fix of [...fixes].reverse()) {
+      const end = fix.start + fix.replacement.length;
+      const undone = await applyToTarget(
+        active.field.kind === 'input'
+          ? { kind: 'input', node: active.field.node, start: fix.start, end, text: fix.replacement }
+          : { kind: 'contenteditable', node: active.field.node, start: fix.start, end, text: fix.replacement },
+        fix.original,
+      );
+      if (!undone) {
+        toast(shadow, { kind: 'info', text: 'The text has changed since — use Ctrl+Z to undo.' });
+        break;
+      }
+    }
+    if (session === active) rebuild();
   }
 
   // ----------------------------------------------------------------- badge
@@ -578,6 +790,9 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
 
   return {
     isEnabled: () => enabled,
+    setAutoCorrect(next) {
+      autoCorrectOn = next;
+    },
     setEnabled(next) {
       enabled = next;
       if (!next) {

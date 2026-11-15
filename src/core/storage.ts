@@ -57,6 +57,7 @@ export function defaultSettings(): Settings {
       minChars: 12,
       maxSentencesPerRequest: 8,
       dictionary: [],
+      autoCorrect: false,
     },
     shortcutOrigins: [],
     frameOrigins: {},

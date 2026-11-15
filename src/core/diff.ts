@@ -213,6 +213,65 @@ export function classifyChange(change: Change, before: string): {
   return { category: 'Grammar', severity: 'grammar' };
 }
 
+/**
+ * Whether a finding is safe to write without asking: the narrow band of
+ * corrections where the word stays the same word.
+ *
+ * Narrower than severity `spelling` on purpose. `classifyChange` calls any
+ * one-word change within two edits a typo, which is right for a label and
+ * wrong for an edit nobody clicked: every two-letter word is within two of
+ * every other, so "mi" → "my" and "in" → "on" are "spelling" too — and each is
+ * the model choosing a different word, which is the user's call. So: accents
+ * and capitals always; otherwise words of three letters or more, one edit
+ * apart (two from seven letters up), with a swapped pair counted as one edit
+ * so "teh" → "the" qualifies. A pinned variety's spelling lands here too —
+ * "color" → "colour", "center" → "centre", "video" → "vídeo" — while
+ * "program" → "programme" reads as a word form and its vocabulary
+ * ("ordenador" / "computadora") as word choice, and both stay underlined.
+ *
+ * What it cannot see is two real words one letter apart — "house" → "horse".
+ * Telling those apart needs a dictionary of every language the user writes,
+ * which the content script does not carry; that case is the model's judgement,
+ * written with an Undo beside it and never written twice.
+ */
+export function autoFixable(original: string, replacement: string, category: string): boolean {
+  if (category === 'Accent' || category === 'Capitalisation') return true;
+  if (category !== 'Spelling') return false;
+
+  const a = coreWord(original);
+  const b = coreWord(replacement);
+  if (!a || !b || /\s/.test(a) || /\s/.test(b)) return false;
+  // Only the word may change; the punctuation around it is not part of a typo.
+  if (original.trim().replace(a, '') !== replacement.trim().replace(b, '')) return false;
+
+  const shorter = Math.min(a.length, b.length);
+  if (shorter < 3) return false;
+  return swapDistance(a.toLowerCase(), b.toLowerCase()) <= (shorter >= 7 ? 2 : 1);
+}
+
+/** The word without the punctuation either side of it. */
+function coreWord(text: string): string {
+  return text.trim().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+}
+
+/** Edit distance with an adjacent swap counted as one edit (optimal string alignment). */
+function swapDistance(a: string, b: string): number {
+  const rows = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
+  );
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let value = Math.min(rows[i - 1]![j]! + 1, rows[i]![j - 1]! + 1, rows[i - 1]![j - 1]! + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        value = Math.min(value, rows[i - 2]![j - 2]! + 1);
+      }
+      rows[i]![j] = value;
+    }
+  }
+  return rows[a.length]![b.length]!;
+}
+
 function stripDiacritics(text: string): string {
   return text.normalize('NFD').replace(/\p{Diacritic}/gu, '');
 }

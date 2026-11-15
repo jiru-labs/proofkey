@@ -4,6 +4,8 @@ export interface ToastOptions {
   /** Stays until dismissed by the returned function. */
   sticky?: boolean;
   action?: { label: string; run: () => void };
+  /** Shortest time on screen, for a message whose button matters more than its words. */
+  minMs?: number;
 }
 
 /** How long a short message stays; nothing goes sooner. */
@@ -103,7 +105,7 @@ export function toast(root: ShadowRoot, options: ToastOptions): () => void {
       focused = false;
       release();
     });
-    schedule(readingTime(options.text));
+    schedule(Math.max(readingTime(options.text), options.minMs ?? 0));
   }
 
   return dismissCurrent;

@@ -860,6 +860,7 @@ async function buildContentState(sender: chrome.runtime.MessageSender): Promise<
     minChars: settings.liveCheck.minChars,
     maxSentencesPerRequest: settings.liveCheck.maxSentencesPerRequest,
     dictionary: settings.liveCheck.dictionary,
+    autoCorrect: settings.liveCheck.autoCorrect === true,
     configured: connectionChain(settings).some((c) => validateConnection(c) === null),
   };
 }
