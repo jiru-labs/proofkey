@@ -8,6 +8,7 @@ import {
 import type {
   AppliedResult,
   CheckResult,
+  NewsResult,
   ContentRequest,
   ContentState,
   FrameGrant,
@@ -37,6 +38,7 @@ import {
 import { runCompletion, validateConnection, type ChainResult } from '../core/providers';
 import { baseLanguage, borrowedWords, foreignWordsInEnglish, isBorrowedBase, KEEPS_BORROWED_WORDS, loadLexicon, lostMixture, mixedClauses, type Lexicon } from '../core/borrowed';
 import { emptyReviewState, recordApplied, reviewUrl, type ReviewState } from '../core/review';
+import { applyNewsAction, emptyNewsState, installedNewsState, NEWS, takeNews, type NewsState } from '../core/news';
 import type { Connection, WritingAction } from '../core/types';
 import { askOffscreen, warmLiveCheck } from '../core/providers/inBrowser';
 import { coalesced } from './coalesce';
@@ -69,6 +71,8 @@ chrome.runtime.onInstalled.addListener((details) => {
   void mirrorApiKeys();
   // Nothing works until a provider exists, so send first-time users straight there.
   if (details.reason === 'install') void chrome.runtime.openOptionsPage();
+  // Nothing that ships today is news to someone who has only just installed it.
+  if (details.reason === 'install') void chrome.storage.local.set({ [KEY_NEWS]: installedNewsState() });
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -353,6 +357,12 @@ async function handle(
       return { ok: true, value: url !== null };
     }
 
+    case 'proofkey:news':
+      return { ok: true, value: await takeNewsNote() };
+
+    case 'proofkey:news-act':
+      return newsAct(message.id);
+
     case 'proofkey:set-live':
       return setLive(sender, message.enabled);
 
@@ -411,6 +421,35 @@ function countApplied(): Promise<AppliedResult> {
   });
   reviewQueue = next.catch(() => undefined);
   return next;
+}
+
+// -------------------------------------------------------------- what's new
+
+/** Local only, like the rating state: which notes this computer has shown, and when. */
+const KEY_NEWS = 'proofkey:news';
+
+/** Serialised for the same reason as the rating count: two tabs must not both be handed the note. */
+let newsQueue: Promise<unknown> = Promise.resolve();
+
+function takeNewsNote(): Promise<NewsResult> {
+  const next = newsQueue.then(async (): Promise<NewsResult> => {
+    const stored = (await chrome.storage.local.get(KEY_NEWS))[KEY_NEWS] as NewsState | undefined;
+    const { item, state } = takeNews({ ...emptyNewsState(), ...stored }, await loadSettings(), Date.now());
+    if (!item) return null;
+    await chrome.storage.local.set({ [KEY_NEWS]: state });
+    return { id: item.id, text: item.text, ...(item.action ? { actionLabel: item.action.label } : {}) };
+  });
+  newsQueue = next.catch(() => undefined);
+  return next;
+}
+
+async function newsAct(id: string): Promise<Result<string>> {
+  const action = NEWS.find((item) => item.id === id)?.action;
+  if (!action) return { ok: false, error: 'Nothing to do for that note.' };
+  const settings = await loadSettings();
+  if (!applyNewsAction(settings, action.does)) return { ok: false, error: 'Nothing to do for that note.' };
+  await saveSettings(settings);
+  return { ok: true, value: action.done };
 }
 
 // ------------------------------------------------------------ site origins

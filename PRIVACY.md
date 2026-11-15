@@ -83,6 +83,12 @@ whether you would leave a rating in the Chrome Web Store — and it is never sen
 anywhere. Clicking **Rate ProofKey** opens the store's reviews page in a new
 tab; nothing else happens, and ignoring it means it is not asked again.
 
+Also in `chrome.storage.local`: which "New in ProofKey" notes this computer has
+shown, and when the last one was (`src/core/news.ts`). The notes are part of the
+extension itself — nothing is fetched to show one — and this list exists only so
+each is shown once, at most one a day, and never to a fresh install. It is never
+sent anywhere.
+
 Nothing is stored anywhere else. Uninstalling the extension removes it.
 
 ## What ProofKey does not do

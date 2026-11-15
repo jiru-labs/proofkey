@@ -187,6 +187,10 @@ The plan for the next quarter is in the shared folder, with the budget and the p
       };
       // Every message the stub worker was sent, for tests that assert one went out.
       window.__pkSent = [];
+      // `?news` gives the stub worker one note to hand out, once, as the real one does.
+      window.__pkNews = new URLSearchParams(location.search).has('news')
+        ? { id: 'auto-correct', text: 'New in ProofKey: it can fix typos and accents for you when you pause, with Undo one click away.', actionLabel: 'Turn on' }
+        : null;
 
       // What `proofkey:get-state` answers. Mutable so a test can rebind a key
       // and then fire a storage change, the way the options page does.
@@ -251,6 +255,13 @@ The plan for the next quarter is in the shared folder, with the budget and the p
                 return { ok: true, value: { needed: !!window.__pkSiteNeeded } };
               case 'proofkey:site-grant':
                 return { ok: true, value: { granted: true } };
+              case 'proofkey:news': {
+                const note = window.__pkNews;
+                window.__pkNews = null;
+                return { ok: true, value: note };
+              }
+              case 'proofkey:news-act':
+                return { ok: true, value: 'Automatic correction is on. Switch it off any time under Settings → Live checking.' };
               case 'proofkey:applied':
                 // The worker's answer on the one apply that should ask for a rating.
                 return { ok: true, value: { askReview: !!window.__pkAskReview } };

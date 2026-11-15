@@ -1338,6 +1338,43 @@ async function run() {
       lexicalTyped === `${lexicalExpected} fin`, JSON.stringify(lexicalTyped.slice(-40)));
   }
 
+  // What's new: one note, in a page where ProofKey is already at work, that
+  // waits its turn behind anything already on screen.
+  {
+    const toastTexts = () => page.evaluate(() =>
+      [...(document.getElementById('proofkey-root')?.shadowRoot?.querySelectorAll('.pk-toast') ?? [])].map((t) => t.textContent));
+    const sent = (type) => page.evaluate((t) => window.__pkSent.filter((x) => x === t).length, type);
+
+    console.log('\nwhat\'s new — a note once live checking takes a field:');
+    await page.goto(`${BASE}?field=plain&news`, { waitUntil: 'load' });
+    await page.waitForTimeout(400);
+    check('nothing is asked the moment the field is taken', (await sent('proofkey:news')) === 0);
+    await page.waitForTimeout(1600);
+    const shown = await toastTexts();
+    check('then the note shows, with its button',
+      shown.length === 1 && shown[0].startsWith('New in ProofKey') && shown[0].includes('Turn on'), JSON.stringify(shown));
+    await page.focus('#single');
+    await page.waitForTimeout(1800);
+    check('it is asked for once per page, not per field', (await sent('proofkey:news')) === 1, `${await sent('proofkey:news')} asks`);
+    await page.evaluate(() => {
+      [...document.getElementById('proofkey-root').shadowRoot.querySelectorAll('.pk-toast__action')]
+        .find((button) => button.textContent === 'Turn on')?.click();
+    });
+    await page.waitForTimeout(200);
+    const after = await toastTexts();
+    check('the button asks the worker to carry it out', (await sent('proofkey:news-act')) === 1);
+    check('and says it is done, and where to undo it',
+      after.length === 1 && after[0].startsWith('Automatic correction is on'), JSON.stringify(after));
+
+    console.log('\nwhat\'s new — waits behind a notice already up:');
+    await page.goto(`${BASE}?field=chat&auto&news`, { waitUntil: 'load' });
+    await page.waitForTimeout(2200);
+    const busy = await toastTexts();
+    check('the Undo notice keeps the screen', busy.length === 1 && busy[0].startsWith('Corrected'), JSON.stringify(busy));
+    check('and the note is not asked for, so it is not used up', (await sent('proofkey:news')) === 0,
+      `${await sent('proofkey:news')} asks`);
+  }
+
   await browser.close();
   console.log(failures === 0 ? '\nAll render checks passed.' : `\n${failures} check(s) FAILED`);
   process.exit(failures === 0 ? 0 : 1);

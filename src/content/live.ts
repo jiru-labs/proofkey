@@ -4,6 +4,7 @@ import { segment, sentenceAt, sentenceKey } from '../core/sentences';
 import type { Suggestion } from '../core/types';
 import { createCard, type SuggestionCard } from './card';
 import { createHighlighter, type FieldRef, type Highlighter } from './highlight';
+import { offerNews } from './news';
 import { noteApplied } from './review';
 import { toast } from './toast';
 import { applyToTarget, flatten, offsetOfPoint, rangeFor } from './target';
@@ -171,6 +172,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     field.node.addEventListener('input', onInput);
     for (const type of USER_EDIT_EVENTS) field.node.addEventListener(type, onUserEdit, true);
     void askWorker({ type: 'proofkey:warm' }).catch(() => undefined);
+    offerNews(shadow);
 
     // `input` is not enough on its own. A framework editor that handles a
     // command itself calls preventDefault and reconciles the DOM in its own

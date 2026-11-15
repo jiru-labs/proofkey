@@ -527,6 +527,36 @@ async function run() {
       }
     }
 
+    // What's new, through the real worker and storage: a fresh install has
+    // already "seen" everything, an existing user is handed a note once, and
+    // the button can only do what the worker's own list says.
+    {
+      const ask = () => page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:news' }));
+      const seeded = await page.evaluate(async () => (await chrome.storage.local.get('proofkey:news'))['proofkey:news']);
+      check('a fresh install starts with every note seen', seeded?.seen?.includes('auto-correct') === true, JSON.stringify(seeded));
+      const fresh = await ask();
+      check('so it is handed none', fresh?.ok === true && fresh.value === null, JSON.stringify(fresh));
+
+      // An existing user: no news state yet, live checking on somewhere.
+      const before = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+      await page.evaluate(async (settings) => {
+        await chrome.storage.local.remove('proofkey:news');
+        await chrome.storage.sync.set({
+          'proofkey:settings': { ...settings, liveCheck: { ...settings.liveCheck, enabledOrigins: ['https://news-user.example'], autoCorrect: false } },
+        });
+      }, before);
+      const note = await ask();
+      check('an existing user is handed the note', note?.value?.id === 'auto-correct' && note.value.actionLabel === 'Turn on', JSON.stringify(note));
+      const again = await ask();
+      check('once', again?.ok === true && again.value === null, JSON.stringify(again));
+      const unknown = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:news-act', id: 'not-a-note' }));
+      check('a button for a note the worker does not have does nothing', unknown?.ok === false, JSON.stringify(unknown));
+      const acted = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:news-act', id: 'auto-correct' }));
+      const now = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+      check('Turn on switches automatic correction on', acted?.ok === true && now?.liveCheck?.autoCorrect === true, JSON.stringify(acted));
+      await page.evaluate((settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }), before);
+    }
+
     // A disabled action can still be the default one behind Ctrl+Shift+K. Being
     // disabled must not slip it past the built-in model's restriction.
     const saved = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);

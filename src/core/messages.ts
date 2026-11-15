@@ -36,6 +36,10 @@ export type ContentRequest =
   | { type: 'proofkey:applied' }
   /** The user clicked the rating link. The worker picks the URL; the page does not get a say. */
   | { type: 'proofkey:open-review' }
+  /** The page has a field with live checking on: is there a note about something new to show there? */
+  | { type: 'proofkey:news' }
+  /** The note's button was pressed. The worker looks the action up by id; the page does not name it. */
+  | { type: 'proofkey:news-act'; id: string }
   /** Options page: the in-browser model's state, its one download, or removing it. */
   | { type: 'proofkey:in-browser'; op: 'status' | 'download' | 'delete' | 'test' };
 
@@ -69,6 +73,9 @@ export interface RunResult {
   /** Said once, when the provider no longer served the stored model and ProofKey moved the connection. */
   notice?: string;
 }
+
+/** A note about something new, or null when there is nothing to say. */
+export type NewsResult = { id: string; text: string; actionLabel?: string } | null;
 
 export interface AppliedResult {
   /** True the one time the "Applied" message should ask for a rating. */

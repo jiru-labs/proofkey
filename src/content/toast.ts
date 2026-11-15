@@ -27,6 +27,11 @@ function readingTime(text: string): number {
 
 let current: { node: HTMLElement; timer: number | undefined } | null = null;
 
+/** Whether a message is on screen now, so something less urgent can wait its turn. */
+export function toastShowing(): boolean {
+  return current !== null;
+}
+
 /** Shows a single transient message; returns a function that removes it. */
 export function toast(root: ShadowRoot, options: ToastOptions): () => void {
   dismissCurrent();
