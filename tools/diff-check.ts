@@ -175,6 +175,13 @@ const autoCases: [string, string, boolean, boolean?][] = [
   ['show', 'shows', false],
   // The word is the same but the punctuation moved: not a typo.
   ['done.', 'done,', false],
+  // Scripts written without spaces: the "word" is the whole run of text, so
+  // the edit-distance bound would let a clause be rewritten. Underlined only.
+  ['日本語を勉強します', '日本誤を勉強します', false],
+  ['我今天很高心', '我今天很高兴', false],
+  ['ฉันชอบกินข้าวผด', 'ฉันชอบกินข้าวผัด', false],
+  // Korean is written with spaces, so its words are words.
+  ['학교에 감니다', '학교에 갑니다', true],
 ];
 
 let autoFailures = 0;

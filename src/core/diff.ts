@@ -246,6 +246,9 @@ export function autoFixable(
   const a = coreWord(original);
   const b = coreWord(replacement);
   if (!a || !b || /\s/.test(a) || /\s/.test(b)) return false;
+  // In a script written without spaces the "word" is the whole run of text,
+  // so the distance bound below would let a clause be rewritten.
+  if (UNSPACED_SCRIPT.test(a) || UNSPACED_SCRIPT.test(b)) return false;
   // Unpinned, the author's spelling system is kept, so a model converting it
   // is not fixing a typo — and writing that unasked rewrites correct text.
   if (!englishVarietyPinned && sameUnderSpellingSystem(a.toLowerCase(), b.toLowerCase())) return false;
@@ -276,6 +279,8 @@ function sameUnderSpellingSystem(a: string, b: string): boolean {
       .replace(/ae|oe/g, 'e');
   return american(a) === american(b);
 }
+
+const UNSPACED_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
 
 /** The word without the punctuation either side of it. */
 function coreWord(text: string): string {
