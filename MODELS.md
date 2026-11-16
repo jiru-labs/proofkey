@@ -418,7 +418,7 @@ both.
 One key, seven model vendors reached through it. The preset default was
 `openai/gpt-4.1-mini` until 0.1.17 — a defensible but expensive choice, 28× the
 cheapest model measured for one fixture better — and OpenAI shuts it down on
-2027-01-14. Since 0.1.18 it is `openai/gpt-5.6-luna`. Measured
+2027-01-20. Since 0.1.18 it is `openai/gpt-5.6-luna`. Measured
 2026-10-20 in one session, served by OpenAI both times: the live-check
 fixtures, 10 runs, 14.0/14 at 620ms against 12.8/14 at 849ms, $0.55 against
 $0.52 per 1,000 of those requests (146 reasoning tokens a request, included);

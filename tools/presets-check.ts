@@ -32,11 +32,16 @@ interface Shutdown {
 const SHUTDOWNS: Shutdown[] = [
   {
     ids: {
-      openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini'],
-      openrouter: ['openai/gpt-4o', 'openai/gpt-4o-mini', 'openai/gpt-4.1', 'openai/gpt-4.1-mini'],
+      openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1'],
+      openrouter: ['openai/gpt-4o', 'openai/gpt-4o-mini', 'openai/gpt-4.1'],
     },
     date: '2027-01-14',
     source: 'developers.openai.com/api/docs/deprecations, announced 2026-10-14, read 2026-10-20',
+  },
+  {
+    ids: { openai: ['gpt-4.1-mini'], openrouter: ['openai/gpt-4.1-mini'] },
+    date: '2027-01-20',
+    source: 'developers.openai.com/api/docs/deprecations, announced 2026-10-14, moved from 2027-01-14, read 2026-11-16',
   },
   {
     ids: { openai: ['gpt-4.1-nano'], openrouter: ['openai/gpt-4.1-nano'] },
@@ -148,7 +153,7 @@ if (liveModel) {
     ['openai', 'gpt-5-mini', '2026-12-11'],
     ['openai', 'gpt-5', '2026-12-11'],
     ['openai', 'o3', '2026-12-11'],
-    ['openai', 'gpt-4.1-mini', '2027-01-14'],
+    ['openai', 'gpt-4.1-mini', '2027-01-20'],
     ['openai', 'gpt-4o', '2027-01-14'],
     ['gemini', 'gemini-2.5-flash', '2026-12-01'],
   ];

@@ -130,7 +130,7 @@ export const PRESETS: readonly Preset[] = [
     hint: 'Paste the base URL up to and including /v1. ProofKey appends /chat/completions.',
   }),
   openaiCompatible('openai', 'OpenAI', 'https://api.openai.com/v1', {
-    // OpenAI shuts gpt-4.1-mini down on 2027-01-14 and names gpt-6-luna as its
+    // OpenAI shuts gpt-4.1-mini down on 2027-01-20 and names gpt-6-luna as its
     // replacement. Measured 2026-11-04 on OpenCode Go's Responses API with this
     // preset's settings (no reasoning field, 2048 output tokens), 10 runs:
     // 14.0/14, no false alarms, ~3.3 s, 334 output tokens of which 156
@@ -147,7 +147,7 @@ export const PRESETS: readonly Preset[] = [
       'gpt-4o': { to: 'gpt-6-luna', from: '2027-01-14' },
       'gpt-4o-mini': { to: 'gpt-6-luna', from: '2027-01-14' },
       'gpt-4.1': { to: 'gpt-6-luna', from: '2027-01-14' },
-      'gpt-4.1-mini': { to: 'gpt-6-luna', from: '2027-01-14' },
+      'gpt-4.1-mini': { to: 'gpt-6-luna', from: '2027-01-20' },
     },
     // Only on the reasoning families, so a request to gpt-4.1-mini, measured
     // here before, stays byte for byte what it was.
@@ -157,7 +157,7 @@ export const PRESETS: readonly Preset[] = [
     docsUrl: 'https://platform.openai.com/api-keys',
   }),
   openaiCompatible('openrouter', 'OpenRouter', 'https://openrouter.ai/api/v1', {
-    // OpenAI shuts gpt-4.1-mini down on 2027-01-14. Measured 2026-10-20 through
+    // OpenAI shuts gpt-4.1-mini down on 2027-01-20. Measured 2026-10-20 through
     // OpenRouter (served by OpenAI), 10 runs: gpt-5.6-luna 14.0/14 at 620ms
     // against gpt-4.1-mini's 12.8/14, and far fewer borrowed words translated.
     defaultModel: 'openai/gpt-5.6-luna',
