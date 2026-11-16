@@ -2154,6 +2154,24 @@ neighbour, and travelled → traveled inside an otherwise British sentence. The
 unpinned live check changed no variety word in either browser. Gemini Nano and
 the in-browser Qwen3.5 (WebLLM) are not measured.
 
+Does a pinned variety cost the rest of the correction? Measured 2026-11-16 on
+`Qwen3.5-4B` Q4_K_M, llama.cpp b11700 Vulkan (RX 6600), first language
+"Spanish, English", with `tools/chat-eval.ts`: 36 chat sentences, 6 runs each,
+8 per request. Regional items are left out of both columns.
+
+| Live check | Errors fixed | Clean text changed |
+|---|---|---|
+| Nothing pinned, server's default temperature | 83/102 | 4/78 |
+| en-US + es-419 pinned, server's default temperature | 88/102 | 3/78 |
+| Nothing pinned, temperature 0 | 85/102 | 5/78 |
+| en-US + es-419 pinned, temperature 0 | 86/102 | 4/78 |
+
+No cost on this model. Pinned, it changed colour → color and travelled →
+traveled 6 of 6 and vídeo → video 4 of 6, which is the setting doing its job,
+and left ordenador, móvil and vosotros alone. The misses are the same in every
+column: *Haber si* (for *A ver si*) and *Hechale* → *Echale* without the
+accent. `tools/eval.ts` agrees: 13.0/14 over 10 runs, pinned or not.
+
 ### Caveats
 
 14 fixtures is a smoke test, not a benchmark: it will catch a model that is
