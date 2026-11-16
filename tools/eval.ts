@@ -54,13 +54,24 @@ import {
 import type { WritingProfile } from '../src/core/types.ts';
 import { FIXTURES, type Fixture } from './eval-fixtures.ts';
 
+/**
+ * Empty unless `--varieties en=en-GB,es=es-ES` pins a regional variety, which
+ * puts the same block a user's pick puts into every prompt: the way to compare
+ * one model with and without it.
+ */
 const EMPTY_PROFILE: WritingProfile = {
   styleGuide: '',
   neverFlag: [],
-  nativeLanguage: '',
+  nativeLanguage: arg('native') ?? '',
   explainLanguage: '',
   translateLanguage: '',
+  varieties: parseVarieties(arg('varieties')),
 };
+
+function parseVarieties(raw: string | undefined): Record<string, string> {
+  if (!raw) return {};
+  return Object.fromEntries(raw.split(',').map((pair) => pair.split('=').map((part) => part.trim())));
+}
 
 const DEFAULT_BASE = 'https://generativelanguage.googleapis.com/v1beta/openai';
 const DEFAULT_MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash'];

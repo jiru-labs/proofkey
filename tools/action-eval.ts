@@ -89,7 +89,17 @@ import {
  * harness can answer later by setting it. Measuring the default first means
  * there is a control to compare against.
  */
-const BASE_PROFILE: WritingProfile = emptyProfile();
+const BASE_PROFILE: WritingProfile = {
+  ...emptyProfile(),
+  nativeLanguage: arg('native') ?? '',
+  varieties: parseVarieties(arg('varieties')),
+};
+
+/** `--varieties en=en-GB,es=es-ES`: the block a user's pick adds, to compare with and without. */
+function parseVarieties(raw: string | undefined): Record<string, string> {
+  if (!raw) return {};
+  return Object.fromEntries(raw.split(',').map((pair) => pair.split('=').map((part) => part.trim())));
+}
 
 const DEFAULT_BASE = 'https://generativelanguage.googleapis.com/v1beta/openai';
 
