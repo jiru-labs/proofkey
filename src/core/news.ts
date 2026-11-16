@@ -21,7 +21,8 @@ import type { Settings } from './types';
  * never syncs, and nothing about it leaves the computer.
  */
 
-export type NewsAction = 'auto-correct';
+/** What a note's button does: change a setting, or open a page in a new tab. */
+export type NewsAction = 'auto-correct' | 'open-report';
 
 export interface NewsItem {
   /** Stable forever: it is what `seen` records. */
@@ -44,6 +45,16 @@ export const NEWS: readonly NewsItem[] = [
       done: 'Automatic correction is on. Switch it off any time under Settings → Live checking.',
     },
     relevant: (settings) => settings.liveCheck.enabledOrigins.length > 0 && settings.liveCheck.autoCorrect !== true,
+  },
+  {
+    id: 'report-forms',
+    text: 'New in ProofKey: tell us how it works here. Working or broken, a short report helps. Also under Settings → Tell us how it went.',
+    action: {
+      label: 'Report',
+      does: 'open-report',
+      done: 'The report form is open in a new tab. Nothing is sent unless you submit it there. Thank you!',
+    },
+    relevant: (settings) => settings.liveCheck.enabledOrigins.length > 0,
   },
 ];
 
@@ -81,11 +92,32 @@ export function takeNews(
   return { item, state: { seen: [...state.seen, item.id], lastShownAt: now } };
 }
 
-/** Carries out a note's button. Returns false for an action this build does not know. */
+/** The page a note's button opens in a new tab, or null when the button changes a setting instead. */
+export function newsLink(does: string, version: string): string | null {
+  return does === 'open-report' ? reportFormUrl('site', version) : null;
+}
+
+/** Carries out a note's button. Returns false for an action this build does not know, or one that only opens a page. */
 export function applyNewsAction(settings: Settings, does: string): boolean {
   if (does === 'auto-correct') {
     settings.liveCheck.autoCorrect = true;
     return true;
   }
   return false;
+}
+
+/**
+ * The GitHub issue forms people report on, the only way a store user can tell
+ * us how ProofKey works for them. Opening one sends nothing; submitting the
+ * form is the user's own act, on GitHub. The installed version is the only
+ * thing filled in: the page they were on is deliberately left out, because
+ * merely opening the link would hand it to GitHub.
+ */
+const REPORT_FORM = 'https://github.com/nyakojiru/proofkey/issues/new';
+
+export function reportFormUrl(kind: 'site' | 'provider', version: string): string {
+  const url = new URL(REPORT_FORM);
+  url.searchParams.set('template', `${kind}-report.yml`);
+  url.searchParams.set('version', version);
+  return url.href;
 }

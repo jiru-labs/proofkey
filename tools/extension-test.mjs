@@ -576,6 +576,38 @@ async function run() {
       const acted = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:news-act', id: 'auto-correct' }));
       const now = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
       check('Turn on switches automatic correction on', acted?.ok === true && now?.liveCheck?.autoCorrect === true, JSON.stringify(acted));
+
+      // A day later, the report forms. Its button opens the form in a tab, the
+      // version the only thing filled in; GitHub is stubbed so nothing leaves.
+      await page.evaluate(async () => {
+        const state = (await chrome.storage.local.get('proofkey:news'))['proofkey:news'];
+        await chrome.storage.local.set({ 'proofkey:news': { ...state, lastShownAt: Date.now() - 25 * 60 * 60 * 1000 } });
+      });
+      const reportNote = await ask();
+      check('a day later the report-forms note, with a Report button', reportNote?.value?.id === 'report-forms' && reportNote.value.actionLabel === 'Report', JSON.stringify(reportNote));
+      // As for Rate ProofKey below: the browser will not let Playwright stub
+      // GitHub for a tab the extension opens (seen: it reached GitHub's login
+      // redirect), so the worker's tabs.create is replaced and nothing opens.
+      await worker.evaluate(() => {
+        globalThis.__pkCreate = chrome.tabs.create;
+        globalThis.__pkOpened = [];
+        chrome.tabs.create = async (options) => { globalThis.__pkOpened.push(options.url); return {}; };
+      });
+      const reported = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:news-act', id: 'report-forms' }));
+      const openedUrls = await worker.evaluate(() => {
+        chrome.tabs.create = globalThis.__pkCreate;
+        return globalThis.__pkOpened;
+      });
+      const createdUrl = openedUrls.length === 1 ? openedUrls[0] : null;
+      const formUrl = createdUrl ? new URL(createdUrl) : null;
+      const version = await page.evaluate(() => chrome.runtime.getManifest().version);
+      check(
+        'Report opens the site form with the version filled in',
+        reported?.ok === true && formUrl?.origin + formUrl?.pathname === 'https://github.com/nyakojiru/proofkey/issues/new' &&
+          [...formUrl.searchParams.keys()].join() === 'template,version' &&
+          formUrl.searchParams.get('template') === 'site-report.yml' && formUrl.searchParams.get('version') === version,
+        `${JSON.stringify(reported)} ${createdUrl}`,
+      );
       await page.evaluate((settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }), before);
     }
 

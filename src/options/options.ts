@@ -7,6 +7,7 @@ import {
   type LocalServerProbe,
 } from '../core/localServers';
 import { BUILT_IN_ACTIONS, VARIETIES } from '../core/prompts';
+import { reportFormUrl } from '../core/news';
 import {
   describeInBrowserState,
   IN_BROWSER_DOWNLOAD_BYTES,
@@ -1861,8 +1862,6 @@ function renderLiveCheck(): HTMLElement {
 
 // ----------------------------------------------------------------- reports
 
-const REPORT_FORM = 'https://github.com/nyakojiru/proofkey/issues/new';
-
 /**
  * Links to the GitHub issue forms, the only way a store user can tell us how it
  * went. A plain link: nothing is sent unless the user submits the form there,
@@ -1870,17 +1869,13 @@ const REPORT_FORM = 'https://github.com/nyakojiru/proofkey/issues/new';
  */
 function renderReports(): HTMLElement {
   const version = chrome.runtime.getManifest().version;
-  const link = (kind: 'site' | 'provider', label: string, hint: string) => {
-    const url = new URL(REPORT_FORM);
-    url.searchParams.set('template', `${kind}-report.yml`);
-    url.searchParams.set('version', version);
-    return el(
+  const link = (kind: 'site' | 'provider', label: string, hint: string) =>
+    el(
       'li',
       {},
-      el('a', { text: label, dataset: { report: kind }, attrs: { href: url.href, target: '_blank', rel: 'noopener noreferrer' } }),
+      el('a', { text: label, dataset: { report: kind }, attrs: { href: reportFormUrl(kind, version), target: '_blank', rel: 'noopener noreferrer' } }),
       ` — ${hint}`,
     );
-  };
   return section(
     'Tell us how it went',
     'Working or broken, both help: a report is the only thing that moves a site or provider out of "untested". ' +

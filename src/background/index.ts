@@ -38,7 +38,7 @@ import {
 import { runCompletion, validateConnection, type ChainResult } from '../core/providers';
 import { baseLanguage, borrowedWords, foreignWordsInEnglish, isBorrowedBase, KEEPS_BORROWED_WORDS, loadLexicon, lostMixture, mixedClauses, type Lexicon } from '../core/borrowed';
 import { emptyReviewState, recordApplied, reviewUrl, type ReviewState } from '../core/review';
-import { applyNewsAction, emptyNewsState, installedNewsState, NEWS, takeNews, type NewsState } from '../core/news';
+import { applyNewsAction, emptyNewsState, installedNewsState, NEWS, newsLink, takeNews, type NewsState } from '../core/news';
 import type { Connection, WritingAction } from '../core/types';
 import { askOffscreen, warmLiveCheck } from '../core/providers/inBrowser';
 import { coalesced } from './coalesce';
@@ -446,6 +446,11 @@ function takeNewsNote(): Promise<NewsResult> {
 async function newsAct(id: string): Promise<Result<string>> {
   const action = NEWS.find((item) => item.id === id)?.action;
   if (!action) return { ok: false, error: 'Nothing to do for that note.' };
+  const link = newsLink(action.does, chrome.runtime.getManifest().version);
+  if (link) {
+    await chrome.tabs.create({ url: link });
+    return { ok: true, value: action.done };
+  }
   const settings = await loadSettings();
   if (!applyNewsAction(settings, action.does)) return { ok: false, error: 'Nothing to do for that note.' };
   await saveSettings(settings);

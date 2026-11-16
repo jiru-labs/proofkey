@@ -10,6 +10,7 @@
 import type { Settings } from '../src/core/types.ts';
 import {
   applyNewsAction,
+  newsLink,
   emptyNewsState,
   installedNewsState,
   NEWS,
@@ -49,14 +50,18 @@ console.log('\nWho gets a note:');
 const first = takeNews(emptyNewsState(), user, NOW);
 check('an existing user with live checking on gets the automatic-correction note', first.item?.id === 'auto-correct', String(first.item?.id));
 check('and it is marked seen as it is handed out', first.state.seen.includes('auto-correct') && first.state.lastShownAt === NOW);
-check('so it is never handed out again', takeNews(first.state, user, NOW + 10 * NEWS_GAP_MS).item === null);
+check('so it is never handed out again', takeNews(first.state, user, NOW + 10 * NEWS_GAP_MS).item?.id !== 'auto-correct');
+const second = takeNews(first.state, user, NOW + NEWS_GAP_MS);
+check('a day later, the note about the report forms', second.item?.id === 'report-forms', String(second.item?.id));
+check('and after both, nothing', takeNews(second.state, user, NOW + 10 * NEWS_GAP_MS).item === null);
 
 check('a fresh install gets none of what ships today', takeNews(installedNewsState(), user, NOW).item === null);
 
 const on = defaultSettings();
 on.liveCheck.enabledOrigins = ['https://mail.example'];
 on.liveCheck.autoCorrect = true;
-check('someone who already has it on is not told about it', takeNews(emptyNewsState(), on, NOW).item === null);
+check('someone who already has it on is not told about it', takeNews(emptyNewsState(), on, NOW).item?.id !== 'auto-correct');
+check('but does hear about the report forms', takeNews(emptyNewsState(), on, NOW).item?.id === 'report-forms');
 check('nor someone who never switched live checking on', takeNews(emptyNewsState(), defaultSettings(), NOW).item === null);
 
 console.log('\nHow often:');
@@ -72,6 +77,18 @@ console.log('\nThe button:');
 const settings = defaultSettings();
 check('Turn on switches automatic correction on', applyNewsAction(settings, 'auto-correct') && settings.liveCheck.autoCorrect === true);
 check('an unknown action does nothing', !applyNewsAction(defaultSettings(), 'something-else'));
+const untouched = defaultSettings();
+check('Report changes no setting', !applyNewsAction(untouched, 'open-report') && untouched.liveCheck.autoCorrect === false);
+const link = new URL(newsLink('open-report', '9.8.7') ?? 'about:blank');
+check(
+  'Report opens the site form with only the version filled in',
+  link.origin + link.pathname === 'https://github.com/nyakojiru/proofkey/issues/new' &&
+    [...link.searchParams.keys()].join() === 'template,version' &&
+    link.searchParams.get('template') === 'site-report.yml' &&
+    link.searchParams.get('version') === '9.8.7',
+  link.href,
+);
+check('Turn on opens nothing', newsLink('auto-correct', '9.8.7') === null);
 
 console.log(failures === 0 ? '\nNews checks passed.' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

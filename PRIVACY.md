@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated: 15 November 2026**
+**Last updated: 17 November 2026**
 
 ProofKey is a browser extension published by Patricio Llorens. This policy describes
 what it does with your data. It is short because the extension does very little.
@@ -88,6 +88,9 @@ shown, and when the last one was (`src/core/news.ts`). The notes are part of the
 extension itself — nothing is fetched to show one — and this list exists only so
 each is shown once, at most one a day, and never to a fresh install. It is never
 sent anywhere.
+One note points to the report forms: its **Report** button opens GitHub's site
+report form in a new tab, with only the ProofKey version filled in — not the
+page you were on. Nothing is sent unless you submit that form yourself.
 
 Nothing is stored anywhere else. Uninstalling the extension removes it.
 
