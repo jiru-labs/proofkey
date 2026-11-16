@@ -6,10 +6,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        ProofKey ships 34 presets. The wire format of both transports is covered
-        by automated tests — but against a **stub**, and a stub agrees with
-        whatever you send it. Only one preset (Google Gemini) has been confirmed
-        against the real thing with a real key.
+        The wire format of both transports is covered by automated tests — but
+        against a **stub**, and a stub agrees with whatever you send it. Only a
+        few presets have been confirmed against the real thing with a real key.
 
         If you have a key, confirming yours takes about a minute: settings page →
         paste key → **Fetch models** → one quick action on any page.
@@ -82,7 +81,10 @@ body:
     id: version
     attributes:
       label: ProofKey version
-      description: The commit you built from — `git rev-parse --short HEAD`.
-      placeholder: 863d241
+      description: >
+        Filled in for you when you came from ProofKey's settings. Otherwise it
+        is on chrome://extensions; if you built it yourself, the commit
+        (`git rev-parse --short HEAD`).
+      placeholder: 0.1.23
     validations:
       required: true

@@ -8,8 +8,8 @@ body:
       value: |
         Thank you — this is the most useful thing anyone can send.
 
-        WhatsApp Web is currently the **only** site a human has run ProofKey on,
-        so a report saying "it just works on X" is as valuable as a bug.
+        Only a handful of sites have been checked by a person, so a report
+        saying "it just works on X" is as valuable as a bug.
 
         See [COMPATIBILITY.md](https://github.com/nyakojiru/proofkey/blob/main/COMPATIBILITY.md) for what is already known.
 
@@ -93,9 +93,10 @@ body:
     attributes:
       label: ProofKey version
       description: >
-        The commit you built from — `git rev-parse --short HEAD`. Not on the Web
-        Store yet, so the version number alone does not pin it down.
-      placeholder: 863d241
+        Filled in for you when you came from ProofKey's settings. Otherwise it
+        is on chrome://extensions; if you built it yourself, the commit
+        (`git rev-parse --short HEAD`).
+      placeholder: 0.1.23
     validations:
       required: true
 

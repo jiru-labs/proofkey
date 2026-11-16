@@ -228,6 +228,7 @@ function render(): void {
     renderProfile(),
     renderActions(),
     renderLiveCheck(),
+    renderReports(),
     renderFooter(),
   );
 
@@ -1854,6 +1855,41 @@ function renderLiveCheck(): HTMLElement {
           },
         }),
       ),
+    ),
+  );
+}
+
+// ----------------------------------------------------------------- reports
+
+const REPORT_FORM = 'https://github.com/nyakojiru/proofkey/issues/new';
+
+/**
+ * Links to the GitHub issue forms, the only way a store user can tell us how it
+ * went. A plain link: nothing is sent unless the user submits the form there,
+ * and the only thing filled in for them is the installed version.
+ */
+function renderReports(): HTMLElement {
+  const version = chrome.runtime.getManifest().version;
+  const link = (kind: 'site' | 'provider', label: string, hint: string) => {
+    const url = new URL(REPORT_FORM);
+    url.searchParams.set('template', `${kind}-report.yml`);
+    url.searchParams.set('version', version);
+    return el(
+      'li',
+      {},
+      el('a', { text: label, dataset: { report: kind }, attrs: { href: url.href, target: '_blank', rel: 'noopener noreferrer' } }),
+      ` — ${hint}`,
+    );
+  };
+  return section(
+    'Tell us how it went',
+    'Working or broken, both help: a report is the only thing that moves a site or provider out of "untested". ' +
+      'Each link opens a form on GitHub (a free account is needed to submit); nothing is sent unless you submit it there.',
+    el(
+      'ul',
+      { class: 'reports' },
+      link('site', 'Report a site', 'it works on Slack, or it scrambled your text'),
+      link('provider', 'Report a provider', 'your provider and model worked with your key, or did not'),
     ),
   );
 }

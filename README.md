@@ -194,6 +194,8 @@ Which makes the most useful contribution right now a one-minute report:
 - **[Site report](https://github.com/nyakojiru/proofkey/issues/new?template=site-report.yml)** — it works on Slack, or it scrambled your text
 - **[Provider report](https://github.com/nyakojiru/proofkey/issues/new?template=provider-report.yml)** — you have a key for one of the other 31 presets
 
+From the next release both are also linked at the bottom of ProofKey's settings, with your version filled in.
+
 Reports that it *worked* matter as much as bug reports. Nothing else moves a row out of `Untested`.
 
 ## Privacy

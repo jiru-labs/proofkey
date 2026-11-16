@@ -389,6 +389,24 @@ body {
   border-top: 1px solid var(--border);
 }
 
+/* --------------------------------------------------------------- reports */
+
+.reports {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.reports li + li {
+  margin-top: 6px;
+}
+
+.reports a {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* ---------------------------------------------------------------- footer */
 
 .footer {

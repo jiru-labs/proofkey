@@ -367,6 +367,28 @@ async function run() {
     'writing-rules section is present',
     (await page.locator('text=Your writing rules').count()) > 0,
   );
+  {
+    // The report forms were only linked from the README, which store users never
+    // see. From Settings they open on GitHub with the installed version filled in.
+    const version = await page.evaluate(() => chrome.runtime.getManifest().version);
+    const reports = await page.locator('a[data-report]').evaluateAll((links) =>
+      links.map((a) => ({ kind: a.dataset.report, href: a.href, target: a.target, rel: a.rel })),
+    );
+    const expect = (kind) => {
+      const link = reports.find((r) => r.kind === kind);
+      if (!link) return false;
+      const url = new URL(link.href);
+      return (
+        url.origin + url.pathname === 'https://github.com/nyakojiru/proofkey/issues/new' &&
+        url.searchParams.get('template') === `${kind}-report.yml` &&
+        url.searchParams.get('version') === version &&
+        link.target === '_blank' &&
+        /noopener/.test(link.rel)
+      );
+    };
+    check('settings link the site report form, version prefilled', expect('site'), JSON.stringify(reports));
+    check('settings link the provider report form, version prefilled', expect('provider'), JSON.stringify(reports));
+  }
   check(
     'live checking can be pinned to its own connection',
     (await page.locator('option', { hasText: 'Same as the active connection' }).count()) > 0,
