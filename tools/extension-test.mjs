@@ -391,7 +391,7 @@ async function run() {
   }
   check(
     'live checking can be pinned to its own connection',
-    (await page.locator('option', { hasText: 'Same as the active connection' }).count()) > 0,
+    (await page.locator('option', { hasText: 'Same as the active provider' }).count()) > 0,
     'liveCheck.connectionId is the biggest lever on cost; it has to be reachable from the UI',
   );
 

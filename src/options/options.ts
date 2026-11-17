@@ -262,7 +262,7 @@ function renderConnections(): HTMLElement {
 
   return section(
     'Providers',
-    'Your key goes straight from this browser to the endpoint you choose. Add more than one and ProofKey falls back down the list when a request fails.',
+    'The AI that reads your text. Your text and key go from this browser straight to the one you pick, and nowhere else. Add a second one as a backup: ProofKey tries the next one down when one fails.',
     list,
     el(
       'div',
@@ -1140,7 +1140,7 @@ function renderProfile(): HTMLElement {
           'We write "e-mail", not "email".\nNever say "utilise" — use "use".\nAvoid superlatives and empty phrases in product copy.\nKeep sentences under 25 words where possible.',
         on: { input: (e) => (profile.styleGuide = (e.target as HTMLTextAreaElement).value) },
       }),
-      'Plain language, one rule per line. This is the same thing that costs a rule-based checker an XML file and a self-hosted server.',
+      'Plain language, one rule per line.',
     ),
 
     field(
@@ -1731,7 +1731,7 @@ function renderShortcutOrigins(): HTMLElement {
     field(
       'Shortcuts run on',
       box,
-      'One site per line. Saving asks for access to each of them — ProofKey has to be loaded in a page before it can see a keypress there. Changing this list takes effect on the next page load, so reload any tab you already have open. The right-click menu and the browser shortcut keep working everywhere, with no permission. A frame address you allow from inside a page — the offer ProofKey makes when your cursor lands in an editor it cannot reach — is added here too.',
+      'One site per line. Your browser asks you to allow each one when you save; reload any tab that was already open. The right-click menu works on every site without this. When ProofKey offers to reach an editor inside a page and you accept, that address is added here too.',
     ),
     problems,
   );
@@ -1778,7 +1778,7 @@ function renderLiveCheck(): HTMLElement {
           input: (e) => (liveCheck.enabledOrigins = lines((e.target as HTMLTextAreaElement).value)),
         },
       }),
-      'One origin per line. The toolbar button toggles the current site without coming here.',
+      'One site address per line. Or click the ProofKey button in the toolbar on any site to switch it on or off there.',
     ),
 
     field(
@@ -1790,14 +1790,14 @@ function renderLiveCheck(): HTMLElement {
           input: (e) => (liveCheck.blockedOrigins = lines((e.target as HTMLTextAreaElement).value)),
         },
       }),
-      'Takes priority over the list above.',
+      'ProofKey stays off on these sites, even if they are in the list above.',
     ),
 
     field(
-      'Connection',
+      'Model for live checking',
       select(
         [
-          { value: '', label: 'Same as the active connection' },
+          { value: '', label: 'Same as the active provider' },
           ...settings.connections.map((connection) => ({
             value: connection.id,
             label: connection.model ? `${connection.label} — ${connection.model}` : connection.label,
@@ -1814,7 +1814,7 @@ function renderLiveCheck(): HTMLElement {
           },
         },
       ),
-      'Live checking runs far more often than the quick actions do, so it is worth pointing at a cheaper and faster model. Unlike the actions, this one does not fall through a chain — if it fails, the check is skipped.',
+      'Live checking asks far more often than the right-click actions, so a cheaper, faster model is a good choice here. It does not try the backup providers: if this one fails, that check is just skipped.',
     ),
 
     el(
@@ -1833,7 +1833,7 @@ function renderLiveCheck(): HTMLElement {
       'div',
       { class: 'row' },
       field(
-        'Idle delay (ms)',
+        'Wait after typing (milliseconds)',
         input(String(liveCheck.debounceMs), {
           type: 'number',
           on: {
@@ -1845,7 +1845,7 @@ function renderLiveCheck(): HTMLElement {
         }),
       ),
       field(
-        'Minimum characters',
+        'Skip text shorter than (characters)',
         input(String(liveCheck.minChars), {
           type: 'number',
           on: {
