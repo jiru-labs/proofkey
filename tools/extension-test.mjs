@@ -463,6 +463,9 @@ async function run() {
         page.off('dialog', onDialog);
         check('leaving with nothing unsaved asks nothing', kind === null, String(kind));
       }
+      // The timing numbers sit in a folded panel, out of a first-time user's way.
+      check('the live-check timing panel starts folded', !(await box.isVisible()));
+      await page.locator('summary', { hasText: 'Timing' }).click();
       await box.fill(String(Number(original) + 1));
       await page.waitForTimeout(150);
       check('changing a field says the change is not saved', (await notice.count()) === 1 && (await page.title()).startsWith('●'), await page.title());

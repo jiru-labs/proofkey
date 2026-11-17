@@ -107,6 +107,8 @@ let localFinder: { searching: boolean; lines: string[]; kind: 'ok' | 'error' | '
  * here rebuilds the DOM.
  */
 const openActionIds = new Set<string>();
+/** Same for the live-check timing panel. */
+let liveTimingOpen = false;
 
 /** Survives the re-render that follows binding a key, so the result is readable. */
 let shortcutNotice: { actionId: string; text: string; kind: 'ok' | 'error' } | null = null;
@@ -1830,31 +1832,40 @@ function renderLiveCheck(): HTMLElement {
     ),
 
     el(
-      'div',
-      { class: 'row' },
-      field(
-        'Wait after typing (milliseconds)',
-        input(String(liveCheck.debounceMs), {
-          type: 'number',
-          on: {
-            input: (e) => {
-              const value = Number((e.target as HTMLInputElement).value);
-              if (Number.isFinite(value) && value >= 200) liveCheck.debounceMs = value;
+      'details',
+      {
+        class: 'advanced',
+        ...(liveTimingOpen ? { attrs: { open: '' } } : {}),
+        on: { toggle: (e: Event) => (liveTimingOpen = (e.target as HTMLDetailsElement).open) },
+      },
+      el('summary', { text: 'Timing — when a check starts' }),
+      el(
+        'div',
+        { class: 'row' },
+        field(
+          'Wait after typing (milliseconds)',
+          input(String(liveCheck.debounceMs), {
+            type: 'number',
+            on: {
+              input: (e) => {
+                const value = Number((e.target as HTMLInputElement).value);
+                if (Number.isFinite(value) && value >= 200) liveCheck.debounceMs = value;
+              },
             },
-          },
-        }),
-      ),
-      field(
-        'Skip text shorter than (characters)',
-        input(String(liveCheck.minChars), {
-          type: 'number',
-          on: {
-            input: (e) => {
-              const value = Number((e.target as HTMLInputElement).value);
-              if (Number.isFinite(value) && value >= 0) liveCheck.minChars = value;
+          }),
+        ),
+        field(
+          'Skip text shorter than (characters)',
+          input(String(liveCheck.minChars), {
+            type: 'number',
+            on: {
+              input: (e) => {
+                const value = Number((e.target as HTMLInputElement).value);
+                if (Number.isFinite(value) && value >= 0) liveCheck.minChars = value;
+              },
             },
-          },
-        }),
+          }),
+        ),
       ),
     ),
   );
