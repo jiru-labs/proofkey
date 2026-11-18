@@ -432,6 +432,59 @@ async function run() {
     );
     check('nothing reached any network endpoint', seen.length === before, `${seen.length - before} request(s)`);
 
+    // A first-time user meets two plain choices instead of a 38-entry dropdown.
+    // Run on its own page and never saved, so the checks below see the defaults.
+    {
+      const choicePage = await context.newPage();
+      await choicePage.goto(`chrome-extension://${extensionId}/options/index.html`);
+      await choicePage.locator('text=Providers').first().waitFor({ timeout: 10_000 }).catch(() => {});
+      const choice = choicePage.locator('[data-first-choice]');
+      check(
+        'a fresh install offers «Free, on this computer» and «Use your AI account»',
+        (await choice.locator('button', { hasText: 'Free, on this computer' }).count()) === 1 &&
+          (await choice.locator('button', { hasText: 'Use your AI account' }).count()) === 1,
+      );
+      // Free means Chrome's own model where the browser has one, and the model
+      // ProofKey runs in the browser where it does not (this Chromium has none).
+      const builtinReady = await choicePage.evaluate(async () => {
+        const api = globalThis.LanguageModel;
+        if (!api) return false;
+        const state = await api.availability().catch(() => 'unavailable');
+        return state !== 'unavailable';
+      });
+      await choice.locator('button', { hasText: 'Free, on this computer' }).click();
+      const openName = await choicePage.locator('.conn--open .conn__name').allTextContents();
+      check(
+        'choosing free opens a no-key model this browser can run',
+        openName.length === 1 &&
+          openName[0].includes(builtinReady ? 'Chrome built-in AI' : 'Model in this browser') &&
+          (await choicePage.locator('.conn--open .badge--active').count()) === 1,
+        `${JSON.stringify(openName)}, built-in usable: ${builtinReady}`,
+      );
+      // Nothing was saved, so a reload is a fresh install again.
+      choicePage.on('dialog', (dialog) => dialog.accept().catch(() => {}));
+      await choicePage.reload();
+      await choicePage.locator('text=Providers').first().waitFor({ timeout: 10_000 }).catch(() => {});
+      await choice.locator('button', { hasText: 'Use your AI account' }).click();
+      const presets = await choice.locator('[data-account-preset]').evaluateAll((b) => b.map((x) => x.dataset.accountPreset));
+      check(
+        'the account choice lists the common providers by name',
+        ['openai', 'anthropic', 'gemini', 'openrouter'].every((id) => presets.includes(id)),
+        JSON.stringify(presets),
+      );
+      await choice.locator('[data-account-preset="anthropic"]').click();
+      const open = choicePage.locator('.conn--open');
+      check(
+        'picking a provider makes it active and opens its key field',
+        (await open.locator('.conn__name', { hasText: 'Anthropic' }).count()) === 1 &&
+          (await open.locator('.badge--active').count()) === 1 &&
+          (await open.locator('input[type=password]').count()) === 1,
+      );
+      check('the first-run choice steps aside once a provider is added', (await choice.count()) === 0);
+      check('nothing reached any network endpoint while choosing', seen.length === before, `${seen.length - before} request(s)`);
+      await choicePage.close({ runBeforeUnload: false });
+    }
+
     // The card and Save cannot lean on validateConnection here: it has no way to
     // know the model's state, which is only readable asynchronously.
     check(

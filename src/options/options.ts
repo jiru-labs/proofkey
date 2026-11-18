@@ -87,6 +87,8 @@ let expandedConnectionId: string | null = null;
  * user touched anything else while 4 GB came down.
  */
 let builtinState: BuiltinAvailability | null = null;
+/** Whether «Use your AI account» has been clicked, so its provider list shows. */
+let firstChoiceAccountOpen = false;
 let builtinDownload: { fraction: number; movedAt: number } | null = null;
 let builtinDownloadPoll: ReturnType<typeof setInterval> | undefined;
 
@@ -265,6 +267,7 @@ function renderConnections(): HTMLElement {
   return section(
     'Providers',
     'The AI that reads your text. Your text and key go from this browser straight to the one you pick, and nowhere else. Add a second one as a backup: ProofKey tries the next one down when one fails.',
+    isFreshDefault() ? renderFirstChoice() : null,
     list,
     el(
       'div',
@@ -281,6 +284,84 @@ function renderConnections(): HTMLElement {
       ),
     ),
   );
+}
+
+/** Providers offered by name under «Use your AI account»; the rest stay in the card's dropdown. */
+const ACCOUNT_PRESETS: readonly PresetId[] = ['openai', 'anthropic', 'gemini', 'openrouter', 'groq'];
+
+/** Whether the list still holds only the no-key connection a fresh install starts with. */
+function isFreshDefault(): boolean {
+  const [only] = settings.connections;
+  return settings.connections.length === 1 && only?.transport === 'chrome_builtin' && !only.apiKey;
+}
+
+/**
+ * Two plain choices for someone who has never heard of a base URL. Only shown
+ * while the setup is the untouched default, so nobody with a provider set sees it.
+ * Each choice only edits the page; nothing is stored until Save.
+ */
+function renderFirstChoice(): HTMLElement {
+  const accounts = el(
+    'div',
+    { class: 'row row--wrap' },
+    ...ACCOUNT_PRESETS.map((id) => {
+      const choose = button(getPreset(id).label, () => useAccountProvider(id));
+      choose.dataset.accountPreset = id;
+      return choose;
+    }),
+    button('Another one…', () => useAccountProvider('custom'), 'ghost'),
+  );
+  accounts.hidden = !firstChoiceAccountOpen;
+
+  return el(
+    'div',
+    { class: 'first-choice', dataset: { firstChoice: '' } },
+    el('p', { class: 'first-choice__lead', text: 'How do you want ProofKey to check your writing?' }),
+    el(
+      'div',
+      { class: 'row row--wrap' },
+      button('Free, on this computer', useFreeModel, firstChoiceAccountOpen ? 'secondary' : 'primary'),
+      button(
+        'Use your AI account',
+        () => {
+          firstChoiceAccountOpen = true;
+          render();
+        },
+        firstChoiceAccountOpen ? 'primary' : 'secondary',
+      ),
+    ),
+    el('p', {
+      class: 'field__hint',
+      text: firstChoiceAccountOpen
+        ? 'Pick the company you have an account with. You paste its API key below; it stays in this browser.'
+        : 'Free needs no account: the model runs on this computer, so your text stays here. An AI account (OpenAI, Anthropic, Google…) checks better and needs an API key from that company.',
+    }),
+    accounts,
+  );
+}
+
+/** Chrome's own model where the browser has one; otherwise the model ProofKey runs in the browser. */
+function useFreeModel(): void {
+  firstChoiceAccountOpen = false;
+  if (builtinState === 'no-api' || builtinState === 'unavailable') {
+    useInBrowserModel();
+    return;
+  }
+  const builtin = settings.connections.find((c) => c.transport === 'chrome_builtin');
+  if (!builtin) return;
+  settings.activeConnectionId = builtin.id;
+  expandedConnectionId = builtin.id;
+  render();
+}
+
+/** Adds a connection for the chosen company, makes it the one in use and opens it at the key field. */
+function useAccountProvider(id: PresetId): void {
+  const connection = connectionFromPreset(id);
+  settings.connections.push(connection);
+  settings.activeConnectionId = connection.id;
+  expandedConnectionId = connection.id;
+  firstChoiceAccountOpen = false;
+  render();
 }
 
 function renderConnectionCard(connection: Connection): HTMLElement {

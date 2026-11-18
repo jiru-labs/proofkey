@@ -214,6 +214,27 @@ body {
   justify-content: flex-end;
 }
 
+.row--wrap {
+  flex-wrap: wrap;
+}
+
+.first-choice {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  background: var(--bg);
+}
+
+.first-choice > * + * {
+  margin-top: 10px;
+}
+
+.first-choice__lead {
+  margin: 0;
+  font-weight: 600;
+}
+
 .row--between {
   justify-content: space-between;
   align-items: center;
