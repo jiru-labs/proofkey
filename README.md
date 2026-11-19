@@ -68,7 +68,7 @@ Grammarly and LanguageTool are excellent, and both route your writing through th
 
 ## Install
 
-**[Get it from the Chrome Web Store](https://chromewebstore.google.com/detail/loibjoemoahkajjnfioajcibcamhdafc)**. Settings opens by itself. In Google Chrome it already has [Chrome's built-in model](#no-api-key-at-all-chromes-built-in-model) selected — click **Download model** once and you are done. In any other browser, set up a provider; if you have never used an LLM API before, [start here](#no-api-key-yet-start-with-gemini).
+**[Get it from the Chrome Web Store](https://chromewebstore.google.com/detail/loibjoemoahkajjnfioajcibcamhdafc)**. Settings opens by itself and asks one question: how ProofKey should check your writing (since 0.1.25). **Free, on this computer** picks [Chrome's built-in model](#no-api-key-at-all-chromes-built-in-model) in Google Chrome — click **Download model** once and you are done — and, in a browser without it, the model ProofKey runs inside the browser. **Use your AI account** lists OpenAI, Anthropic, Google Gemini, OpenRouter and Groq, plus «Another one…» for the rest; if you have never used an LLM API before, [start here](#no-api-key-yet-start-with-gemini).
 
 ### Install from source
 
@@ -194,7 +194,7 @@ Which makes the most useful contribution right now a one-minute report:
 - **[Site report](https://github.com/nyakojiru/proofkey/issues/new?template=site-report.yml)** — it works on Slack, or it scrambled your text
 - **[Provider report](https://github.com/nyakojiru/proofkey/issues/new?template=provider-report.yml)** — you have a key for one of the other 31 presets
 
-Since 0.1.24 both are also linked at the bottom of ProofKey's settings, with your version filled in; from the next release, a one-time note in pages where live checking runs points to them too.
+Since 0.1.24 both are also linked at the bottom of ProofKey's settings, with your version filled in; since 0.1.25, a one-time note in pages where live checking runs points to them too.
 
 Reports that it *worked* matter as much as bug reports. Nothing else moves a row out of `Untested`.
 
