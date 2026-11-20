@@ -307,6 +307,10 @@ body {
   color: var(--accent);
 }
 
+.conn__backup {
+  margin-bottom: 12px;
+}
+
 .badge--warn {
   background: color-mix(in srgb, var(--warn) 20%, transparent);
   color: var(--warn);

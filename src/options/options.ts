@@ -378,6 +378,9 @@ function renderConnectionCard(connection: Connection): HTMLElement {
       { class: 'conn__identity' },
       el('span', { class: 'conn__name', text: connection.label || preset.label }),
       isActive ? el('span', { class: 'badge badge--active', text: 'Active' }) : null,
+      !isActive && settings.fallbackConnectionIds.includes(connection.id)
+        ? el('span', { class: 'badge', text: 'Backup' })
+        : null,
       problem ? el('span', { class: 'badge badge--warn', text: 'Needs setup' }) : null,
     ),
     // Chrome's built-in model ignores the stored model and URL, and they are left
@@ -606,21 +609,52 @@ function renderConnectionBody(connection: Connection, problem: string | null): H
   );
 }
 
-/** Test, Make active and Remove — the same for every kind of connection. */
-function connectionActions(connection: Connection, testStatus: HTMLElement): HTMLElement {
+/**
+ * Settings sync, the connection in use with them, so a server on one computer
+ * is tried on every computer that receives it. A backup is tried, in the order
+ * the connections are listed, when the one in use fails.
+ */
+function backupBox(connection: Connection): HTMLElement {
+  const box = checkbox(
+    'Backup: try this one when the active one fails',
+    settings.fallbackConnectionIds.includes(connection.id),
+    (on) => {
+      const backups = new Set(settings.fallbackConnectionIds);
+      if (on) backups.add(connection.id);
+      else backups.delete(connection.id);
+      settings.fallbackConnectionIds = settings.connections.map((c) => c.id).filter((id) => backups.has(id));
+      render();
+    },
+  );
+  box.querySelector('input')?.setAttribute('data-backup', '');
   return el(
+    'div',
+    { class: 'conn__backup' },
+    box,
+    el('p', {
+      class: 'field__hint',
+      text: 'Settings sync to your other copies of this browser, the active connection too. A backup covers a computer where the active one cannot run, such as a local server that is only on another computer.',
+    }),
+  );
+}
+
+/** Test, Make active, Backup and Remove — the same for every kind of connection. */
+function connectionActions(connection: Connection, testStatus: HTMLElement): HTMLElement {
+  const isActive = connection.id === settings.activeConnectionId;
+  const row = el(
     'div',
     { class: 'row row--between' },
     el(
       'div',
       { class: 'row' },
       button('Test', () => void testConnection(connection, testStatus), 'secondary'),
-      connection.id === settings.activeConnectionId
+      isActive
         ? null
         : button(
             'Make active',
             () => {
               settings.activeConnectionId = connection.id;
+              settings.fallbackConnectionIds = settings.fallbackConnectionIds.filter((id) => id !== connection.id);
               render();
             },
             'primary',
@@ -643,6 +677,7 @@ function connectionActions(connection: Connection, testStatus: HTMLElement): HTM
         )
       : null,
   );
+  return el('div', {}, isActive ? null : backupBox(connection), row);
 }
 
 /**

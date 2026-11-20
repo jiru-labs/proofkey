@@ -1442,6 +1442,49 @@ async function run() {
     await stale.close();
   }
 
+  // A backup connection: settings sync, so the connection in use is the same on
+  // every computer, and a server on this one (llama.cpp here, Ollama there) is
+  // not running on the next. A backup is tried when the one in use fails.
+  {
+    console.log('\nbackup connection:');
+    const base = settingsFor('chat_completions');
+    // Port 9 is closed: the connection in use fails at once, as a local server
+    // that is not running on this computer does.
+    const absent = { ...base.connections[0], id: 'absent-connection', label: 'Not on this computer', baseUrl: 'http://127.0.0.1:9/v1' };
+    await page.evaluate(
+      (value) => chrome.storage.sync.set({ 'proofkey:settings': value }),
+      { ...base, connections: [absent, base.connections[0]], activeConnectionId: absent.id, fallbackConnectionIds: [] },
+    );
+    const header = (name) => page.locator('.conn__header').filter({ has: page.locator('.conn__name', { hasText: new RegExp(`^${name}$`) }) });
+    await page.reload();
+    await header('Stub').waitFor({ timeout: 10_000 }).catch(() => {});
+    await page.evaluate(() => { chrome.permissions.request = async () => true; });
+    await header('Stub').click();
+    const backup = page.locator('[data-backup]');
+    const offered = await backup.isVisible().catch(() => false);
+    check('a connection not in use can be made a backup', offered);
+    if (offered) {
+      await backup.check();
+      await header('Not on this computer').click();
+      check('the one in use offers no backup box of its own', !(await page.locator('[data-backup]').isVisible().catch(() => false)));
+      await page.locator('button', { hasText: 'Save' }).last().click();
+      await page.waitForTimeout(500);
+      const stored = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+      check('saved as the backup, the one in use unchanged',
+        JSON.stringify(stored?.fallbackConnectionIds) === JSON.stringify(['test-connection']) && stored?.activeConnectionId === 'absent-connection',
+        JSON.stringify({ active: stored?.activeConnectionId, backups: stored?.fallbackConnectionIds }));
+      const badge = (await header('Stub').textContent()) ?? '';
+      check('its card says it is the backup', /Backup/.test(badge), badge);
+      seen.length = 0;
+      const reply = await page.evaluate(() =>
+        chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: 'Their is alot of things to do.' }),
+      );
+      check('a request the one in use cannot serve is served by the backup',
+        reply?.ok === true && reply.value.servedBy === 'Stub' && reply.value.fallbackErrors?.[0]?.label === 'Not on this computer',
+        JSON.stringify(reply));
+    }
+  }
+
   for (const transport of ['chat_completions', 'anthropic_messages', 'openai_responses']) {
     console.log(`\n${transport}:`);
     seen.length = 0;
