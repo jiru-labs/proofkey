@@ -266,7 +266,7 @@ function renderConnections(): HTMLElement {
 
   return section(
     'Providers',
-    'The AI that reads your text. Your text and key go from this browser straight to the one you pick, and nowhere else. Add a second one as a backup: ProofKey tries the next one down when one fails.',
+    'The AI that reads your text. Your text and key go from this browser straight to the one you pick, and nowhere else. Add a second one and tick Backup on it: ProofKey tries it when the active one fails. If this browser syncs, these settings go to your other copies of it; keys stay on this computer.',
     isFreshDefault() ? renderFirstChoice() : null,
     list,
     el(
