@@ -353,6 +353,46 @@ export function getPreset(id: PresetId): Preset {
 }
 
 /**
+ * Points a connection at another preset, as the provider dropdown does. Only
+ * fields the user has not personalised away from the old preset are replaced.
+ *
+ * `found` are the addresses ProofKey itself adds a local server with (see
+ * `LOCAL_SERVERS`): llama.cpp is saved on the self-hosted preset with
+ * llama-server's port, so its URL and name are defaults too, and its model
+ * came off that server's list and means nothing to the next one.
+ */
+export function switchPreset(
+  connection: Connection,
+  presetId: PresetId,
+  found: readonly { presetId: PresetId; label: string; baseUrl: string }[] = [],
+): void {
+  const preset = getPreset(presetId);
+  const previous = getPreset(connection.presetId);
+  const server = found.find(
+    (s) => s.presetId === connection.presetId && normalizeBaseUrl(s.baseUrl) === normalizeBaseUrl(connection.baseUrl),
+  );
+
+  const urlIsDefault =
+    !connection.baseUrl || normalizeBaseUrl(connection.baseUrl) === normalizeBaseUrl(previous.baseUrl) || !!server;
+  if (urlIsDefault) connection.baseUrl = preset.baseUrl;
+  if (!connection.model || connection.model === previous.defaultModel || server) {
+    connection.model = preset.defaultModel;
+  }
+  if (!connection.label || connection.label === previous.label || connection.label === server?.label) {
+    connection.label = preset.label;
+  }
+
+  connection.presetId = presetId;
+  connection.transport = preset.transport;
+  connection.authStyle = preset.authStyle;
+  connection.authHeaderName = preset.authHeaderName;
+  connection.authQueryParam = preset.authQueryParam;
+  connection.extraHeaders = { ...(preset.extraHeaders ?? {}) };
+  connection.extraBody = { ...(preset.extraBody ?? {}) };
+  connection.extraQuery = { ...(preset.extraQuery ?? {}) };
+}
+
+/**
  * The model a stored connection should send: its own, unless the provider has
  * shut that one down (by `today`, YYYY-MM-DD, in UTC). Guarded on the base URL
  * like `disableThinkingBody`, so a connection repointed at a server of its own

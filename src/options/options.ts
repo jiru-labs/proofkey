@@ -1,9 +1,10 @@
 import { normalizeOrigin, originMatchPattern } from '../core/browser';
-import { getPreset, normalizeBaseUrl, PRESETS, thinkingNote } from '../core/presets';
+import { getPreset, normalizeBaseUrl, PRESETS, switchPreset, thinkingNote } from '../core/presets';
 import {
   describeProbe,
   findLocalServers,
   localServerOrigins,
+  LOCAL_SERVERS,
   type LocalServerProbe,
 } from '../core/localServers';
 import { BUILT_IN_ACTIONS, VARIETIES } from '../core/prompts';
@@ -1073,28 +1074,7 @@ function jsonEditor(
 }
 
 function applyPreset(connection: Connection, presetId: PresetId): void {
-  const preset = getPreset(presetId);
-  const previous = getPreset(connection.presetId);
-
-  // Only overwrite fields the user has not personalised away from the old preset.
-  if (!connection.baseUrl || connection.baseUrl === previous.baseUrl) {
-    connection.baseUrl = preset.baseUrl;
-  }
-  if (!connection.model || connection.model === previous.defaultModel) {
-    connection.model = preset.defaultModel;
-  }
-  if (!connection.label || connection.label === previous.label) {
-    connection.label = preset.label;
-  }
-
-  connection.presetId = presetId;
-  connection.transport = preset.transport;
-  connection.authStyle = preset.authStyle;
-  connection.authHeaderName = preset.authHeaderName;
-  connection.authQueryParam = preset.authQueryParam;
-  connection.extraHeaders = { ...(preset.extraHeaders ?? {}) };
-  connection.extraBody = { ...(preset.extraBody ?? {}) };
-  connection.extraQuery = { ...(preset.extraQuery ?? {}) };
+  switchPreset(connection, presetId, LOCAL_SERVERS);
   render();
 }
 

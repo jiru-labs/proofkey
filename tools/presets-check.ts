@@ -12,6 +12,7 @@
  */
 
 import * as presets from '../src/core/presets.ts';
+import { LOCAL_SERVERS } from '../src/core/localServers.ts';
 import type { Connection, PresetId } from '../src/core/types.ts';
 
 const { PRESETS, getPreset } = presets;
@@ -198,6 +199,59 @@ if (replacementModel) {
       replacementModel(connection('gemini', 'gemini-2.5-flash-lite'), ['models/gemini-3.5-flash-lite', 'models/gemini-2.5-flash-lite']) === null,
   );
   check('a stored id with stray spaces is still found in the catalogue', replacementModel(connection('openai', ' gpt-4.1 '), catalogue) === null);
+}
+
+// A llama.cpp found on this computer is saved on the self-hosted preset with
+// llama-server's port, not the preset's own address. Picking Ollama for it
+// must move the base URL, name and model too, or the card says Ollama and
+// keeps sending to llama.cpp (reported 2026-11-20).
+console.log('\nswitching the provider of a connection');
+const switchPreset = (presets as Record<string, unknown>)['switchPreset'] as
+  | ((c: Connection, id: PresetId, found?: readonly { presetId: PresetId; label: string; baseUrl: string }[]) => void)
+  | undefined;
+check('there is a pure preset switch', typeof switchPreset === 'function');
+if (switchPreset) {
+  const found = [{ presetId: 'vllm' as PresetId, label: 'llama.cpp (local)', baseUrl: 'http://127.0.0.1:8080/v1' }];
+  const llama = connection('vllm', 'Qwen3-4B-Instruct-2507-Q4_K_M.gguf', {
+    label: 'llama.cpp (local)', baseUrl: 'http://127.0.0.1:8080/v1',
+  });
+  switchPreset(llama, 'ollama', found);
+  check('a found llama.cpp switched to Ollama gets Ollama\'s base URL', llama.baseUrl === getPreset('ollama').baseUrl, llama.baseUrl);
+  check('…and Ollama\'s name', llama.label === getPreset('ollama').label, llama.label);
+  check('…and Ollama\'s default model, not the llama.cpp file', llama.model === getPreset('ollama').defaultModel, llama.model);
+
+  const plain = connection('openai', 'gpt-4.1-mini');
+  switchPreset(plain, 'groq', found);
+  check('a preset left at its defaults takes the new preset\'s URL', plain.baseUrl === getPreset('groq').baseUrl, plain.baseUrl);
+
+  const own = connection('vllm', 'my-model', { baseUrl: 'http://10.0.0.5:9000/v1', label: 'Work box' });
+  switchPreset(own, 'ollama', found);
+  check('a base URL the user typed is kept', own.baseUrl === 'http://10.0.0.5:9000/v1', own.baseUrl);
+  check('…and so are their name and model', own.label === 'Work box' && own.model === 'my-model', `${own.label} / ${own.model}`);
+  check('the switch sets the new preset id and transport', own.presetId === 'ollama' && own.transport === getPreset('ollama').transport);
+
+  // Every pair, both from a fresh card and from each server ProofKey finds:
+  // all three fields follow the dropdown, and nothing from the old preset leaks.
+  const bad: string[] = [];
+  const starts = [
+    ...PRESETS.map((p) => ({ name: p.id, make: () => connection(p.id, p.defaultModel ?? '') })),
+    ...LOCAL_SERVERS.map((f) => ({
+      name: f.label,
+      make: () => connection(f.presetId, 'some-file.gguf', { label: f.label, baseUrl: f.baseUrl }),
+    })),
+  ];
+  for (const start of starts) {
+    for (const to of PRESETS) {
+      const c = start.make();
+      switchPreset(c, to.id, LOCAL_SERVERS);
+      const want = { baseUrl: to.baseUrl, model: to.defaultModel ?? '', label: to.label, transport: to.transport };
+      const got = { baseUrl: c.baseUrl, model: c.model ?? '', label: c.label, transport: c.transport };
+      if (JSON.stringify(want) !== JSON.stringify(got) || JSON.stringify(c.extraBody) !== JSON.stringify(to.extraBody ?? {})) {
+        bad.push(`${start.name}→${to.id}: ${JSON.stringify(got)}`);
+      }
+    }
+  }
+  check(`every switch from defaults fills the new preset's fields (${starts.length}×${PRESETS.length})`, bad.length === 0, bad.slice(0, 5).join(' | '));
 }
 
 if (failures) {

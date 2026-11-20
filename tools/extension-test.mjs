@@ -746,6 +746,36 @@ async function run() {
       await new Promise((resolve) => local.close(resolve));
     }
 
+    // A llama.cpp the finder added sits on the self-hosted preset with
+    // llama-server's port. Picking another provider for that card has to
+    // refill its base URL, name and model, not keep llama.cpp's (2026-11-20).
+    {
+      console.log('\nswitching the provider of a found server:');
+      const saved = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+      const llama = {
+        ...saved.connections.find((c) => c.transport !== 'chrome_builtin'),
+        id: 'found-llama', presetId: 'vllm', label: 'llama.cpp (local)',
+        baseUrl: 'http://127.0.0.1:8080/v1', model: 'Qwen3-4B-Instruct-2507-Q4_K_M.gguf',
+      };
+      await page.evaluate(
+        (settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }),
+        { ...saved, connections: [...saved.connections, llama], activeConnectionId: llama.id },
+      );
+      await page.reload();
+      await page.locator('text=Providers').first().waitFor({ timeout: 10_000 }).catch(() => {});
+      await page.getByLabel('Provider', { exact: true }).selectOption('ollama');
+      const filled = {
+        name: await page.getByLabel('Name', { exact: true }).inputValue(),
+        baseUrl: await page.getByLabel('Base URL', { exact: true }).inputValue(),
+        model: await page.locator('.field', { has: page.locator('label', { hasText: /^Model$/ }) }).locator('input').first().inputValue(),
+      };
+      check(
+        'llama.cpp switched to Ollama shows Ollama\'s base URL, name and model',
+        filled.baseUrl === 'http://localhost:11434/v1' && filled.name === 'Ollama (local)' && filled.model === 'llama3.2',
+        JSON.stringify(filled),
+      );
+    }
+
     // The other no-key route: a model inside the browser. Chosen from the same
     // card, downloaded only from its own button, with its size and host said
     // first; a request before that says so instead of starting 2.4 GB.
