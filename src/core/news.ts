@@ -56,6 +56,13 @@ export const NEWS: readonly NewsItem[] = [
     },
     relevant: (settings) => settings.liveCheck.enabledOrigins.length > 0,
   },
+  {
+    // Up to 0.1.25 settings said a second provider was tried when one failed,
+    // and nothing could make it so; whoever added one for that is told how now.
+    id: 'backup',
+    text: 'New in ProofKey: tick Backup on a second provider in Settings, and it is tried when the active one fails.',
+    relevant: (settings) => (settings.connections?.length ?? 0) > 1 && (settings.fallbackConnectionIds ?? []).length === 0,
+  },
 ];
 
 export interface NewsState {

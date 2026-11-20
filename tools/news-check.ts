@@ -55,6 +55,17 @@ const second = takeNews(first.state, user, NOW + NEWS_GAP_MS);
 check('a day later, the note about the report forms', second.item?.id === 'report-forms', String(second.item?.id));
 check('and after both, nothing', takeNews(second.state, user, NOW + 10 * NEWS_GAP_MS).item === null);
 
+const twoProviders = defaultSettings();
+twoProviders.liveCheck.enabledOrigins = ['https://mail.example'];
+twoProviders.connections = [{ id: 'one' }, { id: 'two' }] as unknown as Settings['connections'];
+twoProviders.fallbackConnectionIds = [];
+const third = takeNews(takeNews(second.state, twoProviders, NOW + 2 * NEWS_GAP_MS).state, twoProviders, NOW + 3 * NEWS_GAP_MS);
+check('someone with two providers and no backup hears about Backup',
+  takeNews(second.state, twoProviders, NOW + 2 * NEWS_GAP_MS).item?.id === 'backup', String(takeNews(second.state, twoProviders, NOW + 2 * NEWS_GAP_MS).item?.id));
+check('and only once', third.item === null, String(third.item?.id));
+const hasBackup = { ...twoProviders, fallbackConnectionIds: ['two'] } as Settings;
+check('not someone who already has a backup', takeNews(second.state, hasBackup, NOW + 2 * NEWS_GAP_MS).item === null);
+
 check('a fresh install gets none of what ships today', takeNews(installedNewsState(), user, NOW).item === null);
 
 const on = defaultSettings();
