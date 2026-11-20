@@ -115,7 +115,7 @@ What you get, and what you do not:
   | Microsoft Edge Canary/Dev (Windows, macOS; behind a flag) | Untested — a different model (Phi-4-mini, or the prerelease Aion-1.0-Instruct from Edge 150) | Microsoft's Prompt API page, updated 2026-09-02, still calls it an experimental developer preview in those two channels only; ProofKey has not been measured on it |
   | Vivaldi, Opera, others | Untested | Nobody has loaded it there |
 
-  In every browser without it there are two no-key routes, both in the store release since 0.1.11. **A model inside the browser:** ProofKey runs Qwen3.5 4B itself, on your GPU through WebGPU — measured in Brave on an 8 GB GPU at 13.0/14 on the live check and Fix grammar level with Chrome's model ([MODELS.md](MODELS.md#results--a-model-inside-the-browser-webllm)); one 2.4 GB download from huggingface.co, started only by its own button, then nothing leaves. It is offered live checking, Fix grammar, bullet points and Translate. Or use a provider with a key, or a model on your own computer. For the second, start LM Studio, Ollama or llama.cpp with a model loaded, then click **Find a model on this computer** on the built-in model's card: ProofKey checks their usual ports (1234, 11434, 8080) — only when you click, and only on this computer — and adds the one it finds as your first provider. Of the three, llama.cpp is the one measured with ProofKey (Qwen3-4B-Instruct-2507, 11.0/14 on the live check against 13.0 for Chrome's model, see [MODELS.md](MODELS.md)); Ollama needs `OLLAMA_ORIGINS="chrome-extension://*"`, and ProofKey says so when it finds an Ollama refusing it. Details and the full record are in [COMPATIBILITY.md](COMPATIBILITY.md). Chrome itself wants 22 GB of free disk and either a GPU with more than 4 GB of memory or 16 GB of RAM with 4 cores — its [own requirements](https://developer.chrome.com/docs/ai/prompt-api), not a ProofKey measurement. Where it cannot run, the card says so and the first request tells you to add a provider.
+  In every browser without it there are two no-key routes, both in the store release since 0.1.11. **A model inside the browser:** ProofKey runs Qwen3.5 4B itself, on your GPU through WebGPU — measured in Brave on an 8 GB GPU at 13.0/14 on the live check and Fix grammar level with Chrome's model ([MODELS.md](MODELS.md#results--a-model-inside-the-browser-webllm)); one 2.4 GB download from huggingface.co, started only by its own button, then nothing leaves. It is offered live checking, Fix grammar, bullet points and Translate. Or use a provider with a key, or a model on your own computer. For the second, start LM Studio, Ollama or llama.cpp with a model loaded, then click **Find a model on this computer** on the built-in model's card: ProofKey checks their usual ports (1234, 11434, 8080) — only when you click, and only on this computer — and adds the one it finds as your first provider. Two of the three are measured with ProofKey: llama.cpp (Qwen3-4B-Instruct-2507, 11.0/14 on the live check against 13.0 for Chrome's model, see [MODELS.md](MODELS.md)) and Ollama (`gemma4:e4b`, 12.7/14 on CPU, see [COMPATIBILITY.md](COMPATIBILITY.md)); Ollama needs `OLLAMA_ORIGINS="chrome-extension://*"`, and ProofKey says so when it finds an Ollama refusing it. Details and the full record are in [COMPATIBILITY.md](COMPATIBILITY.md). Chrome itself wants 22 GB of free disk and either a GPU with more than 4 GB of memory or 16 GB of RAM with 4 cores — its [own requirements](https://developer.chrome.com/docs/ai/prompt-api), not a ProofKey measurement. Where it cannot run, the card says so and the first request tells you to add a provider.
 - **Five languages, officially.** Chrome documents English, Spanish, German, French and Japanese for this model. Others are untested.
 
 Measured on one machine so far — Chrome 153, a Ryzen 7840U laptop — so read the latency figures as that machine's.
@@ -166,6 +166,17 @@ OpenAI · Anthropic · OpenRouter · Groq · Ollama · LM Studio · OpenCode Go 
 ```bash
 OLLAMA_ORIGINS="chrome-extension://*" ollama serve
 ```
+
+On Linux the installer usually runs Ollama as a systemd service, which already holds port 11434, so set the variable on the service instead:
+
+```bash
+sudo systemctl edit ollama        # add the two lines below
+# [Service]
+# Environment="OLLAMA_ORIGINS=chrome-extension://*"
+sudo systemctl daemon-reload && sudo systemctl enable --now ollama
+```
+
+The model to pull is `gemma4:e4b` (`ollama pull gemma4:e4b`, 6.3 GB): 12.7/14 on ProofKey's live check with no false alarms, measured on CPU, where `llama3.2`, the preset's default up to 0.1.26, scored 6.7/14. Turn its thinking off, which makes a check about six times faster for under 1.5 points: from the next release ProofKey does that itself on Ollama and offers `gemma4:e4b` as the default; until then, put `{"reasoning_effort": "none"}` in the connection's Extra body fields. On Arch, the `ollama` package runs on the CPU only; `ollama-vulkan` (or `ollama-rocm`) is the one that uses an AMD graphics card. The numbers are in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 **LM Studio**: start the local server from the Developer tab, then hit **Fetch models**.
 

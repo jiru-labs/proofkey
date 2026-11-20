@@ -187,7 +187,18 @@ export const PRESETS: readonly Preset[] = [
     docsUrl: 'https://console.groq.com/keys',
   }),
   openaiCompatible('ollama', 'Ollama (local)', 'http://localhost:11434/v1', {
-    defaultModel: 'llama3.2',
+    // Measured 2026-11-20 on Ollama 0.40.7, CPU only (Ryzen 7 5800X3D), the
+    // endpoint's default sampling, 3 runs each: gemma4:e4b 12.7/14 at 9.9s with
+    // thinking off and 14.0/14 at 64.7s with it on; qwen3.5:4b 12.3/14 off and
+    // a broken contract on (it thinks past Ollama's 4,096-token context);
+    // gemma3:4b 11.3/14; qwen3:4b-instruct broke the contract 3/3. No false
+    // alarms on any of them. llama3.2, the old default, scored 6.7/14 with 1.7
+    // false alarms the same day.
+    defaultModel: 'gemma4:e4b',
+    // Ollama's /v1 honours this on gemma4 and qwen3.5 (190 output tokens
+    // instead of ~1,400) and answers 200 to it on gemma3, qwen3-instruct and
+    // llama3.2, which never think. `think: false` is ignored on /v1.
+    disableThinking: () => ({ reasoning_effort: 'none' }),
     authStyle: 'none',
     requiresApiKey: false,
     group: 'primary',

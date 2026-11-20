@@ -862,7 +862,7 @@ function adoptLocalServer(probes: LocalServerProbe[]): { lines: string[]; kind: 
       kind: seen.length > 0 ? 'error' : 'info',
       lines: [
         ...(seen.length > 0 ? seen : ['Nothing is running on the usual ports (LM Studio 1234, Ollama 11434, llama.cpp 8080).']),
-        'Start a model server here, load a model, then click again. llama.cpp is the one measured with ProofKey: Qwen3-4B-Instruct-2507 scored 11.0 of 14 on its live check, against 13.0 for Chrome\'s built-in model. LM Studio and Ollama speak the same protocol but have not been measured here.',
+        'Start a model server here, load a model, then click again. On Ollama, gemma4:e4b scored 12.7 of 14 on ProofKey\'s live check with no false alarms, against 13.0 for Chrome\'s built-in model; on llama.cpp, Qwen3-4B-Instruct-2507 scored 11.0. LM Studio speaks the same protocol but has not been measured here.',
       ],
     };
   }

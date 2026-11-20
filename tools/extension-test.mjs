@@ -771,7 +771,7 @@ async function run() {
       };
       check(
         'llama.cpp switched to Ollama shows Ollama\'s base URL, name and model',
-        filled.baseUrl === 'http://localhost:11434/v1' && filled.name === 'Ollama (local)' && filled.model === 'llama3.2',
+        filled.baseUrl === 'http://localhost:11434/v1' && filled.name === 'Ollama (local)' && filled.model === 'gemma4:e4b',
         JSON.stringify(filled),
       );
     }

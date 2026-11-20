@@ -93,6 +93,21 @@ check(
   effort(connectionFor('openrouter', 'openai/gpt-4.1-mini')) === undefined,
 );
 
+console.log('\nOllama — honoured by the models that think, accepted by the ones that do not:');
+
+check(
+  "the preset's default, gemma4:e4b, is told not to think",
+  effort(connectionFor('ollama', getPreset('ollama').defaultModel)) === 'none',
+);
+check(
+  'qwen3.5:4b likewise',
+  effort(connectionFor('ollama', 'qwen3.5:4b')) === 'none',
+);
+check(
+  'a model that never thinks is sent it too, because Ollama accepts it there',
+  effort(connectionFor('ollama', 'gemma3:4b')) === 'none',
+);
+
 console.log('\nThe guard — a switch measured on one endpoint is not sent to another:');
 
 check(
