@@ -176,7 +176,7 @@ sudo systemctl edit ollama        # add the two lines below
 sudo systemctl daemon-reload && sudo systemctl enable --now ollama
 ```
 
-The model to pull is `gemma4:e4b` (`ollama pull gemma4:e4b`, 6.3 GB): 12.7/14 on ProofKey's live check with no false alarms, measured on CPU, where `llama3.2`, the preset's default up to 0.1.26, scored 6.7/14. Turn its thinking off, which makes a check about six times faster for under 1.5 points: from the next release ProofKey does that itself on Ollama and offers `gemma4:e4b` as the default; until then, put `{"reasoning_effort": "none"}` in the connection's Extra body fields. On Arch, the `ollama` package runs on the CPU only; `ollama-vulkan` (or `ollama-rocm`) is the one that uses an AMD graphics card. The numbers are in [COMPATIBILITY.md](COMPATIBILITY.md).
+The model to pull is `gemma4:e4b` (`ollama pull gemma4:e4b`, 6.3 GB): 12.7/14 on ProofKey's live check with no false alarms, in about 10 s on a CPU and 13.0/14 in about 5 s on an 8 GB graphics card (RX 6600), where `llama3.2`, the preset's default up to 0.1.26, scored 6.7/14. Turn its thinking off, which makes a check about six times faster for under 1.5 points: from the next release ProofKey does that itself on Ollama and offers `gemma4:e4b` as the default; until then, put `{"reasoning_effort": "none"}` in the connection's Extra body fields. On Arch, the `ollama` package runs on the CPU only; `ollama-vulkan` (or `ollama-rocm`) is the one that uses an AMD graphics card. With 8 GB of video memory, keep one model loaded at a time: a second one pushes part of the first back onto the CPU. The numbers are in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 **LM Studio**: start the local server from the Developer tab, then hit **Fetch models**.
 

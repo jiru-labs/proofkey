@@ -193,7 +193,8 @@ export const PRESETS: readonly Preset[] = [
     // a broken contract on (it thinks past Ollama's 4,096-token context);
     // gemma3:4b 11.3/14; qwen3:4b-instruct broke the contract 3/3. No false
     // alarms on any of them. llama3.2, the old default, scored 6.7/14 with 1.7
-    // false alarms the same day.
+    // false alarms the same day. On an RX 6600 (ollama-vulkan) gemma4:e4b
+    // stayed first, 13.0/14 at 4.9s; qwen3.5:9b scored 12.7/14 and was slower.
     defaultModel: 'gemma4:e4b',
     // Ollama's /v1 honours this on gemma4 and qwen3.5 (190 output tokens
     // instead of ~1,400) and answers 200 to it on gemma3, qwen3-instruct and
