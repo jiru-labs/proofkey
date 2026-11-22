@@ -120,7 +120,7 @@ export function applyNewsAction(settings: Settings, does: string): boolean {
  * thing filled in: the page they were on is deliberately left out, because
  * merely opening the link would hand it to GitHub.
  */
-const REPORT_FORM = 'https://github.com/nyakojiru/proofkey/issues/new';
+const REPORT_FORM = 'https://github.com/jiru-labs/proofkey/issues/new';
 
 export function reportFormUrl(kind: 'site' | 'provider', version: string): string {
   const url = new URL(REPORT_FORM);

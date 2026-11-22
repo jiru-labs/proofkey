@@ -93,7 +93,7 @@ check('Report changes no setting', !applyNewsAction(untouched, 'open-report') &&
 const link = new URL(newsLink('open-report', '9.8.7') ?? 'about:blank');
 check(
   'Report opens the site form with only the version filled in',
-  link.origin + link.pathname === 'https://github.com/nyakojiru/proofkey/issues/new' &&
+  link.origin + link.pathname === 'https://github.com/jiru-labs/proofkey/issues/new' &&
     [...link.searchParams.keys()].join() === 'template,version' &&
     link.searchParams.get('template') === 'site-report.yml' &&
     link.searchParams.get('version') === '9.8.7',

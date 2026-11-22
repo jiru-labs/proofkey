@@ -379,7 +379,7 @@ async function run() {
       if (!link) return false;
       const url = new URL(link.href);
       return (
-        url.origin + url.pathname === 'https://github.com/nyakojiru/proofkey/issues/new' &&
+        url.origin + url.pathname === 'https://github.com/jiru-labs/proofkey/issues/new' &&
         url.searchParams.get('template') === `${kind}-report.yml` &&
         url.searchParams.get('version') === version &&
         link.target === '_blank' &&
@@ -659,7 +659,7 @@ async function run() {
       const version = await page.evaluate(() => chrome.runtime.getManifest().version);
       check(
         'Report opens the site form with the version filled in',
-        reported?.ok === true && formUrl?.origin + formUrl?.pathname === 'https://github.com/nyakojiru/proofkey/issues/new' &&
+        reported?.ok === true && formUrl?.origin + formUrl?.pathname === 'https://github.com/jiru-labs/proofkey/issues/new' &&
           [...formUrl.searchParams.keys()].join() === 'template,version' &&
           formUrl.searchParams.get('template') === 'site-report.yml' && formUrl.searchParams.get('version') === version,
         `${JSON.stringify(reported)} ${createdUrl}`,
