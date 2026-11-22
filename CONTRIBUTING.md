@@ -56,16 +56,18 @@ not the one being measured. `npm run verify` orders it that way.
 `test:render` takes `--headed` if you want to watch it. Screenshots land in
 `.test-shots/`.
 
-Three more tools sit outside `verify`, because one is arithmetic and the others
-need a real model:
+Four more tools sit outside `verify`, because one is arithmetic, two need a real
+model and one needs the published release:
 
 | Command | What it does |
 |---|---|
 | `npm run cost` | Estimates cost per 1,000 operations per model, from prompt sizes measured out of `src/core/prompts.ts`. `-- --markdown` regenerates the tables in [MODELS.md](MODELS.md) |
 | `npm run eval` | Scores a real model on ProofKey's real prompts — contract failures, false alarms, corrections. Needs `PROOFKEY_EVAL_KEY` and costs cents |
 | `npm run test:provider` | The built extension against a real OpenAI-compatible provider, end to end: every action and a custom one, a live check, explain, the dictionary, a rejected key and the fallback chain, then underline, Apply and a per-action shortcut on a real page. Prints what the model wrote rather than scoring it. `-- --base <url>/v1 --model <id> [--temperature 0]` with `PROOFKEY_EVAL_KEY`; a local llama.cpp server costs nothing |
+| `npm run test:upgrade` | Updates the latest GitHub release (or `-- v0.1.26`) to the build in `dist`, in one profile, as the store does: sets the old version up through its own settings page — a provider with a key and an extra header, a Backup, a writing rule — then checks every piece is still there and still where it belongs. Needs `gh` and the network |
 
-Before a release, `verify` plus `test:provider` is the floor.
+Before a release, `verify` plus `test:provider` is the floor, and `test:upgrade`
+too when the release touches what is stored.
 
 `test:ext`, `test:render` and `test:provider` also run in another Chromium build:
 set `PROOFKEY_BROWSER` to its binary. Brave Origin cannot run headless at all, so
