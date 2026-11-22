@@ -1981,6 +1981,82 @@ async function run() {
       cleared !== undefined && none === undefined, `${JSON.stringify(cleared)} -> ${JSON.stringify(none)}`);
   }
 
+  // ------------------------------------------------------- export and import
+  // Through the page's own buttons: a real download and a real file picker.
+  // The file must hold no key and no field the user added unless the box is
+  // ticked, and importing it into a fresh profile must give the same settings.
+  console.log('\nexport and import:');
+  {
+    const syncSettings = () => page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+    const localKeys = () => page.evaluate(async () => (await chrome.storage.local.get('proofkey:apiKeys'))['proofkey:apiKeys']);
+    const base = settingsFor('anthropic_messages');
+    const connection = { ...base.connections[0], extraHeaders: { 'x-gateway-token': 'gateway-secret-42' } };
+    await page.evaluate(
+      ({ value, key }) => Promise.all([
+        chrome.storage.sync.set({ 'proofkey:settings': value }),
+        chrome.storage.local.set({ 'proofkey:apiKeys': key }),
+      ]),
+      { value: { ...base, apiKeysLocal: true, connections: [{ ...connection, apiKey: '' }] }, key: { [connection.id]: 'backup-key-77' } },
+    );
+    await page.reload();
+    await page.waitForTimeout(500);
+
+    const exportFile = async () => {
+      const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.locator('button', { hasText: 'Export to a file' }).click(),
+      ]);
+      const path = await download.path();
+      return { name: download.suggestedFilename(), text: await readFile(path, 'utf8'), path };
+    };
+    const plain = await exportFile();
+    const notice = () => page.locator('[data-settings-file="notice"]').innerText().catch(() => '');
+    check('Export downloads a dated settings file', /^proofkey-settings-\d{4}-\d{2}-\d{2}\.json$/.test(plain.name), plain.name);
+    check('without the box, the file holds no key and no added header',
+      !plain.text.includes('backup-key-77') && !plain.text.includes('gateway-secret-42') && plain.text.includes(connection.baseUrl),
+      plain.text.slice(0, 200));
+    check('and the page says what it left out', /Left out: 1 API key and 1 extra field/.test(await notice()), await notice());
+
+    await page.locator('[data-settings-file="secrets"] input').check();
+    const full = await exportFile();
+    check('with the box ticked, the file holds both',
+      full.text.includes('backup-key-77') && full.text.includes('gateway-secret-42'));
+
+    // A fresh profile: nothing in storage, the page on its defaults.
+    await page.evaluate(() => Promise.all([chrome.storage.sync.clear(), chrome.storage.local.remove('proofkey:apiKeys')]));
+    await page.reload();
+    await page.waitForTimeout(500);
+    await page.locator('[data-settings-file="input"]').setInputFiles({ name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{"connections":[]}') });
+    await page.waitForTimeout(300);
+    check('a file that is not ours is refused', /Nothing was imported/.test(await notice()), await notice());
+
+    await page.locator('[data-settings-file="input"]').setInputFiles(plain.path);
+    await page.waitForTimeout(300);
+    check('a plain file loads and asks for its key again', /Loaded .*Save.*1 provider needs its API key/.test(await notice()), await notice());
+    check('nothing is stored before Save', (await syncSettings()) === undefined);
+    await page.locator('button', { hasText: 'Save' }).last().click();
+    await page.waitForTimeout(600);
+    const restored = await syncSettings();
+    check('Save stores the imported provider',
+      restored?.connections?.[0]?.id === connection.id && restored.connections[0].baseUrl === connection.baseUrl
+        && JSON.stringify(restored.connections[0].extraHeaders) === '{}',
+      JSON.stringify(restored?.connections?.[0]).slice(0, 200));
+
+    await page.reload();
+    await page.waitForTimeout(500);
+    await page.locator('[data-settings-file="input"]').setInputFiles(full.path);
+    await page.waitForTimeout(300);
+    await page.locator('button', { hasText: 'Save' }).last().click();
+    await page.waitForTimeout(600);
+    const keys = await localKeys();
+    const withSecrets = JSON.stringify(await syncSettings());
+    check('a file with secrets restores the key to this computer only',
+      keys?.[connection.id] === 'backup-key-77' && !withSecrets.includes('backup-key-77'), JSON.stringify(keys));
+    check('and the added header comes back', withSecrets.includes('gateway-secret-42'));
+
+    await page.evaluate(() => Promise.all([chrome.storage.sync.clear(), chrome.storage.local.remove('proofkey:apiKeys')]));
+  }
+
   // --------------------------------------------------------- unbound command
   // In this fresh profile Chrome does assign Ctrl+Shift+K, so the lost-shortcut
   // state has to be simulated: getAll is wrapped to report the real commands

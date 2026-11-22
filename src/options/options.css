@@ -240,6 +240,16 @@ body {
   align-items: center;
 }
 
+/* Export and Import: buttons clear of the hint above, status clear of them. */
+.settings-file {
+  margin-top: 12px;
+}
+
+.settings-file + .status {
+  display: block;
+  margin-top: 10px;
+}
+
 /* ----------------------------------------------------------- connections */
 
 .conn {

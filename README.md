@@ -212,6 +212,7 @@ Reports that it *worked* matter as much as bug reports. Nothing else moves a row
 ## Privacy
 
 - Your settings live in `chrome.storage.sync`; since 0.1.19 your API key stays in `chrome.storage.local`, on this computer only. There is no ProofKey server to send either to.
+- **Back up your settings** (on `main`, not released yet): Export writes everything on the settings page to a JSON file on your own disk, and Import reads it back; nothing goes over the network. The file holds no API key and none of the header, query or body fields you added (gateways take tokens there) unless you tick the box that includes them. Import refuses a file that is not ProofKey's, is damaged, or comes from a newer version, and stores nothing until you click Save. `tools/backup-check.ts` and `test:ext` check this, the latter through the real download and file picker.
 - Requests go directly from your browser to the provider's endpoint. With Chrome's built-in model there is no request at all: the check runs on your computer.
 - No analytics, no error reporting, no remote logging.
 - **The extension declares no host permissions up front.** It asks for access to a specific API origin when you save a connection, and for access to a site only when you switch on inline checking there.

@@ -9,6 +9,7 @@ import {
 } from '../core/localServers';
 import { BUILT_IN_ACTIONS, VARIETIES } from '../core/prompts';
 import { reportFormUrl } from '../core/news';
+import { exportBackup, parseBackup } from '../core/backup';
 import {
   describeInBrowserState,
   IN_BROWSER_DOWNLOAD_BYTES,
@@ -38,8 +39,10 @@ import {
 import {
   connectionChain,
   connectionFromPreset,
+  defaultSettings,
   loadSettings,
   newConnectionId,
+  normalizeSettings,
   resolveActions,
   mergeOnSave,
   saveSettings,
@@ -112,6 +115,10 @@ let localFinder: { searching: boolean; lines: string[]; kind: 'ok' | 'error' | '
 const openActionIds = new Set<string>();
 /** Same for the live-check timing panel. */
 let liveTimingOpen = false;
+
+/** The backup card's box and its last result, both kept across re-renders. */
+let backupIncludeSecrets = false;
+let backupNotice: { text: string; kind: 'ok' | 'error' | 'warn' } | null = null;
 
 /** Survives the re-render that follows binding a key, so the result is readable. */
 let shortcutNotice: { actionId: string; text: string; kind: 'ok' | 'error' } | null = null;
@@ -234,6 +241,7 @@ function render(): void {
     renderProfile(),
     renderActions(),
     renderLiveCheck(),
+    renderBackup(),
     renderReports(),
     renderFooter(),
   );
@@ -1974,6 +1982,111 @@ function renderLiveCheck(): HTMLElement {
  * went. A plain link: nothing is sent unless the user submits the form there,
  * and the only thing filled in for them is the installed version.
  */
+// ------------------------------------------------------------------ backup
+
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+function renderBackup(): HTMLElement {
+  const fileInput = el('input', {
+    type: 'file',
+    hidden: true,
+    attrs: { accept: '.json,application/json', 'aria-label': 'Settings file to import' },
+    dataset: { settingsFile: 'input' },
+    on: {
+      change: (event) => {
+        const file = (event.target as HTMLInputElement).files?.[0];
+        if (file) void importSettingsFile(file);
+      },
+    },
+  });
+  const secrets = checkbox('Include API keys and the extra fields you added', backupIncludeSecrets, (value) => {
+    backupIncludeSecrets = value;
+    render();
+  });
+  secrets.dataset.settingsFile = 'secrets';
+  return section(
+    'Back up your settings',
+    'Save everything on this page to a file on your computer, to keep it safe or to move it to another computer. ' +
+      'Open the file here later to bring it all back. The file stays on your computer; ProofKey sends it nowhere.',
+    secrets,
+    backupIncludeSecrets
+      ? el('p', {
+          class: 'field__hint status--warn',
+          text: 'Anyone who gets this file can use your API keys. Keep it private, and do not attach it to a bug report.',
+        })
+      : el('p', {
+          class: 'field__hint',
+          text: 'Left unticked, the file holds no API keys and no header, query or body fields you added yourself (they can hold a token). You type those in again after importing.',
+        }),
+    el(
+      'div',
+      { class: 'row row--wrap settings-file' },
+      button('Export to a file', exportSettingsFile),
+      button('Import from a file…', () => fileInput.click()),
+      fileInput,
+    ),
+    backupNotice
+      ? el('p', { class: `status status--${backupNotice.kind}`, text: backupNotice.text, dataset: { settingsFile: 'notice' } })
+      : null,
+  );
+}
+
+function exportSettingsFile(): void {
+  const file = exportBackup(settings, {
+    includeSecrets: backupIncludeSecrets,
+    presetDefaults: (id) => getPreset(id as PresetId),
+    extensionVersion: chrome.runtime.getManifest().version,
+    now: new Date(),
+  });
+  const url = URL.createObjectURL(new Blob([file.text], { type: 'application/json' }));
+  const link = el('a', { attrs: { href: url, download: file.fileName } });
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+
+  const parts = [
+    file.leftOut.apiKeys ? plural(file.leftOut.apiKeys, 'API key', 'API keys') : '',
+    file.leftOut.fields ? plural(file.leftOut.fields, 'extra field', 'extra fields') : '',
+  ].filter(Boolean);
+  const unsaved = isDirty() ? ' It holds this page as it is now, including changes not saved yet.' : '';
+  backupNotice = {
+    kind: 'ok',
+    text: `Exported ${file.fileName}.${parts.length ? ` Left out: ${parts.join(' and ')}.` : ''}${unsaved}`,
+  };
+  render();
+}
+
+async function importSettingsFile(file: File): Promise<void> {
+  const parsed = parseBackup(await file.text(), defaultSettings());
+  if ('error' in parsed) {
+    backupNotice = { kind: 'error', text: `Nothing was imported. ${parsed.error}` };
+    render();
+    return;
+  }
+  // A key typed on this computer for the same provider comes back with it: the
+  // file usually holds none, and the user should not have to find them again.
+  const keys: Record<string, string> = {};
+  for (const connection of settings.connections) {
+    if (connection.apiKey) keys[connection.id] = connection.apiKey;
+  }
+  const imported = normalizeSettings(parsed.settings, keys);
+  const ids = new Set(imported.connections.map((c) => c.id));
+  if (!ids.has(imported.activeConnectionId)) imported.activeConnectionId = imported.connections[0]!.id;
+  imported.fallbackConnectionIds = imported.fallbackConnectionIds.filter((id) => ids.has(id));
+
+  settings = imported;
+  expandedConnectionId = settings.activeConnectionId;
+  const missing = settings.connections.filter((c) => !c.apiKey && getPreset(c.presetId).requiresApiKey).length;
+  backupNotice = {
+    kind: 'warn',
+    text:
+      `Loaded ${file.name}. Check it, then click Save to keep it.` +
+      (missing ? ` ${plural(missing, 'provider needs its', 'providers need their')} API key typed in again.` : ''),
+  };
+  render();
+}
+
 function renderReports(): HTMLElement {
   const version = chrome.runtime.getManifest().version;
   const link = (kind: 'site' | 'provider', label: string, hint: string) =>

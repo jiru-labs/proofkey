@@ -74,7 +74,16 @@ export async function loadSettings(): Promise<Settings> {
   const [stored, keys] = await Promise.all([chrome.storage.sync.get(KEY_SETTINGS), localApiKeys()]);
   const raw = stored[KEY_SETTINGS] as Partial<Settings> | undefined;
   if (!raw) return defaultSettings();
+  return normalizeSettings(raw, keys);
+}
 
+/**
+ * Stored or imported settings made whole: defaults for anything an older
+ * version did not write, migrated connections, and each empty key filled from
+ * `keys` (by connection id). Import goes through here too, so a file from an
+ * older version reads the same as that version's storage would.
+ */
+export function normalizeSettings(raw: Partial<Settings>, keys: Record<string, string>): Settings {
   // Shallow merge against defaults so a settings object written by an older
   // version keeps working after new fields are added.
   const defaults = defaultSettings();
