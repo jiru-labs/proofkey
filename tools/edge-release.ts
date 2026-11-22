@@ -69,7 +69,7 @@ function daysLeft(env: Record<string, string>): number | null {
  * Authenticate without changing anything: ask for the status of an operation
  * that cannot exist. A key that is refused gets 401; a key that is accepted gets
  * past auth and is told the operation is not found (404, per the reference's
- * error table). That reading is from the docs; the first real run measures it.
+ * error table). Measured 2026-11-22 on the real product: real key 404, fake key 401.
  */
 async function check(env: Record<string, string>): Promise<boolean> {
   const url = `${API}/v1/products/${product(env)}/submissions/operations/00000000-0000-0000-0000-000000000000`
