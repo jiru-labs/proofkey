@@ -48,7 +48,8 @@ import {
   connectionChain,
   findAction,
   loadSettings,
-  mirrorApiKeys,
+  migrateSettingsToLocal,
+  SETTINGS_STORAGE_KEY,
   offeredActions,
   runsOnActiveConnection,
   saveSettings,
@@ -67,8 +68,8 @@ chrome.runtime.onInstalled.addListener((details) => {
   void rebuildContextMenus();
   void syncRegistration();
   // An update is the moment every installed copy runs this release, so each
-  // computer takes its copy of the keys here, not only when settings change.
-  void mirrorApiKeys();
+  // computer moves its settings out of sync here, before anything is opened.
+  void migrateSettingsToLocal();
   // Nothing works until a provider exists, so send first-time users straight there.
   if (details.reason === 'install') void chrome.runtime.openOptionsPage();
   // Nothing that ships today is news to someone who has only just installed it.
@@ -77,16 +78,15 @@ chrome.runtime.onInstalled.addListener((details) => {
 
 chrome.runtime.onStartup.addListener(() => {
   void syncRegistration();
-  void mirrorApiKeys();
+  void migrateSettingsToLocal();
 });
 
-// Menu labels come from the user's actions, so they have to follow edits. Keys
-// follow too, whether saved here or arriving from another computer's sync.
-chrome.storage.onChanged.addListener((_changes, area) => {
-  if (area !== 'sync') return;
+// Menu labels come from the user's actions, so they have to follow edits.
+// Local also holds the review and news counters, which change on their own.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !(SETTINGS_STORAGE_KEY in changes)) return;
   void rebuildContextMenus();
   void syncRegistration();
-  void mirrorApiKeys();
 });
 
 // Host access can be revoked from chrome://extensions without ProofKey being

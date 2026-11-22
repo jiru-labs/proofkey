@@ -275,7 +275,7 @@ function renderConnections(): HTMLElement {
 
   return section(
     'Providers',
-    'The AI that reads your text. Your text and key go from this browser straight to the one you pick, and nowhere else. Add a second one and tick Backup on it: ProofKey tries it when the active one fails. If this browser syncs, these settings go to your other copies of it; keys stay on this computer.',
+    'The AI that reads your text. Your text and key go from this browser straight to the one you pick, and nowhere else. Add a second one and tick Backup on it: ProofKey tries it when the active one fails. Settings stay on this computer; to move them to another, use Back up your settings below.',
     isFreshDefault() ? renderFirstChoice() : null,
     list,
     el(
@@ -490,7 +490,7 @@ function renderConnectionBody(connection: Connection, problem: string | null): H
         on: { input: (e) => (connection.apiKey = (e.target as HTMLInputElement).value) },
       }),
       [
-        'Kept on this computer only: it does not sync to your other browsers.',
+        'Kept on this computer only.',
         getPreset(connection.presetId).docsUrl ? `Get one at ${getPreset(connection.presetId).docsUrl}` : '',
       ].join(' ').trim(),
     ),
@@ -619,9 +619,9 @@ function renderConnectionBody(connection: Connection, problem: string | null): H
 }
 
 /**
- * Settings sync, the connection in use with them, so a server on one computer
- * is tried on every computer that receives it. A backup is tried, in the order
- * the connections are listed, when the one in use fails.
+ * A backup is tried, in the order the connections are listed, when the one in
+ * use fails: a local server that is not running, a provider that is down, a key
+ * out of credit.
  */
 function backupBox(connection: Connection): HTMLElement {
   const box = checkbox(
@@ -642,7 +642,7 @@ function backupBox(connection: Connection): HTMLElement {
     box,
     el('p', {
       class: 'field__hint',
-      text: 'Settings sync to your other copies of this browser, the active connection too. A backup covers a computer where the active one cannot run, such as a local server that is only on another computer.',
+      text: 'Useful when the active one is not always there: a server on this computer that is not running, a provider that is down, an account out of credit.',
     }),
   );
 }
@@ -2208,7 +2208,7 @@ async function save(status: HTMLElement): Promise<void> {
         : 'Saved, but access to some sites was not granted, so shortcuts and live checking will not start there on their own.';
   } catch (error) {
     status.className = 'status status--error';
-    // storage.sync rejects items over its per-item quota; long prompts get there.
+    // Storage can refuse a write, for example when the disk is full.
     status.textContent = `Could not save: ${error instanceof Error ? error.message : String(error)}`;
   }
 }

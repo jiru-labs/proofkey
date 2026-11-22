@@ -191,7 +191,7 @@ async function run() {
   console.log(`\nProofKey ${version} in ${executablePath ?? 'Playwright Chromium'} (${browserVersion})`);
   console.log(`provider ${base}, model ${model}${temperature === undefined ? '' : `, temperature ${temperature}`}`);
 
-  const store = (value) => options.evaluate((s) => chrome.storage.sync.set({ 'proofkey:settings': s }), value);
+  const store = (value) => options.evaluate((s) => chrome.storage.local.set({ 'proofkey:settings': s }), value);
   const ask = (message) => options.evaluate((m) => chrome.runtime.sendMessage(m), message);
   const timed = async (message) => {
     const started = Date.now();
@@ -257,7 +257,7 @@ async function run() {
   {
     const reply = await ask({ type: 'proofkey:add-word', word: 'ProofKey' });
     check('a word is added', reply?.ok === true && reply.value.includes('ProofKey'), JSON.stringify(reply?.value ?? reply?.error));
-    const stored = await options.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+    const stored = await options.evaluate(async () => (await chrome.storage.local.get('proofkey:settings'))['proofkey:settings']);
     check('and survives in storage', stored?.liveCheck?.dictionary?.includes('ProofKey'));
   }
 

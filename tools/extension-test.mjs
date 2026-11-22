@@ -401,7 +401,7 @@ async function run() {
   // Chrome will be in, so it is the one that has to fail legibly.
   {
     console.log('\nfresh install, no built-in model:');
-    const stored = await page.evaluate(() => chrome.storage.sync.get(null));
+    const stored = await page.evaluate(() => chrome.storage.local.get('proofkey:settings'));
     check('nothing is saved yet, so defaults apply', Object.keys(stored).length === 0, JSON.stringify(stored));
     check(
       'the default connection is Chrome built-in AI',
@@ -568,7 +568,7 @@ async function run() {
         await english.selectOption('en-GB');
         await page.locator('button', { hasText: 'Save' }).last().click();
         await page.waitForTimeout(400);
-        const pinned = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+        const pinned = await page.evaluate(async () => (await chrome.storage.local.get('proofkey:settings'))['proofkey:settings']);
         check('Save stores the pinned variety', pinned?.profile?.varieties?.en === 'en-GB', JSON.stringify(pinned?.profile?.varieties));
         await page.reload();
         await page.getByLabel('English variety').waitFor({ timeout: 10_000 });
@@ -576,7 +576,7 @@ async function run() {
         await page.getByLabel('English variety').selectOption('');
         await page.locator('button', { hasText: 'Save' }).last().click();
         await page.waitForTimeout(400);
-        const cleared = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+        const cleared = await page.evaluate(async () => (await chrome.storage.local.get('proofkey:settings'))['proofkey:settings']);
         check('back on the default, nothing is stored for English', cleared?.profile?.varieties?.en === undefined, JSON.stringify(cleared?.profile?.varieties));
       }
     }
@@ -616,10 +616,10 @@ async function run() {
       check('so it is handed none', fresh?.ok === true && fresh.value === null, JSON.stringify(fresh));
 
       // An existing user: no news state yet, live checking on somewhere.
-      const before = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+      const before = await page.evaluate(async () => (await chrome.storage.local.get('proofkey:settings'))['proofkey:settings']);
       await page.evaluate(async (settings) => {
         await chrome.storage.local.remove('proofkey:news');
-        await chrome.storage.sync.set({
+        await chrome.storage.local.set({
           'proofkey:settings': { ...settings, liveCheck: { ...settings.liveCheck, enabledOrigins: ['https://news-user.example'], autoCorrect: false } },
         });
       }, before);
@@ -630,7 +630,7 @@ async function run() {
       const unknown = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:news-act', id: 'not-a-note' }));
       check('a button for a note the worker does not have does nothing', unknown?.ok === false, JSON.stringify(unknown));
       const acted = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:news-act', id: 'auto-correct' }));
-      const now = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+      const now = await page.evaluate(async () => (await chrome.storage.local.get('proofkey:settings'))['proofkey:settings']);
       check('Turn on switches automatic correction on', acted?.ok === true && now?.liveCheck?.autoCorrect === true, JSON.stringify(acted));
 
       // A day later, the report forms. Its button opens the form in a tab, the
@@ -664,14 +664,14 @@ async function run() {
           formUrl.searchParams.get('template') === 'site-report.yml' && formUrl.searchParams.get('version') === version,
         `${JSON.stringify(reported)} ${createdUrl}`,
       );
-      await page.evaluate((settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }), before);
+      await page.evaluate((settings) => chrome.storage.local.set({ 'proofkey:settings': settings }), before);
     }
 
     // A disabled action can still be the default one behind Ctrl+Shift+K. Being
     // disabled must not slip it past the built-in model's restriction.
-    const saved = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+    const saved = await page.evaluate(async () => (await chrome.storage.local.get('proofkey:settings'))['proofkey:settings']);
     await page.evaluate(
-      (settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }),
+      (settings) => chrome.storage.local.set({ 'proofkey:settings': settings }),
       { ...saved, defaultActionId: 'translate', builtInOverrides: { translate: { enabled: false } } },
     );
     const disabledDefault = await page.evaluate(() =>
@@ -734,7 +734,7 @@ async function run() {
 
         await page.locator('button', { hasText: 'Save' }).last().click();
         await page.waitForTimeout(500);
-        const stored = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+        const stored = await page.evaluate(async () => (await chrome.storage.local.get('proofkey:settings'))['proofkey:settings']);
         const first = stored?.connections?.find((c) => c.id === stored.activeConnectionId);
         check(
           'once saved, the local server is the provider tried first',
@@ -751,14 +751,14 @@ async function run() {
     // refill its base URL, name and model, not keep llama.cpp's (2026-11-20).
     {
       console.log('\nswitching the provider of a found server:');
-      const saved = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+      const saved = await page.evaluate(async () => (await chrome.storage.local.get('proofkey:settings'))['proofkey:settings']);
       const llama = {
         ...saved.connections.find((c) => c.transport !== 'chrome_builtin'),
         id: 'found-llama', presetId: 'vllm', label: 'llama.cpp (local)',
         baseUrl: 'http://127.0.0.1:8080/v1', model: 'Qwen3-4B-Instruct-2507-Q4_K_M.gguf',
       };
       await page.evaluate(
-        (settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }),
+        (settings) => chrome.storage.local.set({ 'proofkey:settings': settings }),
         { ...saved, connections: [...saved.connections, llama], activeConnectionId: llama.id },
       );
       await page.reload();
@@ -781,7 +781,7 @@ async function run() {
     // first; a request before that says so instead of starting 2.4 GB.
     {
       console.log('\nno built-in model: a model inside this browser (stand-in engine):');
-      await page.evaluate(() => chrome.storage.sync.clear());
+      await page.evaluate(() => chrome.storage.local.remove(['proofkey:settings', 'proofkey:apiKeys']));
       await page.reload();
       await page.waitForTimeout(500);
       await page.evaluate(() => { chrome.permissions.request = async () => true; });
@@ -902,7 +902,7 @@ async function run() {
     }
 
     // Leave the profile as the sections below expect to find it.
-    await page.evaluate(() => chrome.storage.sync.clear());
+    await page.evaluate(() => chrome.storage.local.remove(['proofkey:settings', 'proofkey:apiKeys']));
     await page.reload();
     await page.waitForTimeout(500);
   }
@@ -1077,7 +1077,7 @@ async function run() {
     await page.waitForTimeout(600);
 
     const stored = await page.evaluate(async () => {
-      const all = await chrome.storage.sync.get('proofkey:settings');
+      const all = await chrome.storage.local.get('proofkey:settings');
       return all['proofkey:settings'] ?? null;
     });
     check(
@@ -1094,7 +1094,7 @@ async function run() {
     await page.waitForTimeout(600);
 
     const afterRemoval = await page.evaluate(async () => {
-      const all = await chrome.storage.sync.get('proofkey:settings');
+      const all = await chrome.storage.local.get('proofkey:settings');
       const settings = all['proofkey:settings'];
       return settings ? { overrides: settings.builtInOverrides ?? {} } : null;
     });
@@ -1106,7 +1106,7 @@ async function run() {
     check(
       'and does not leave an empty override behind',
       afterRemoval !== null && !('fix-grammar' in afterRemoval.overrides),
-      'storage.sync has a per-item quota; empty objects are not worth any of it',
+      'empty objects would only clutter an exported settings file',
     );
 
     // Save has to ask the browser for the sites live checking was switched on
@@ -1159,7 +1159,7 @@ async function run() {
       );
 
       const live = await page.evaluate(async () => {
-        const all = await chrome.storage.sync.get('proofkey:settings');
+        const all = await chrome.storage.local.get('proofkey:settings');
         return all['proofkey:settings']?.liveCheck ?? null;
       });
       check(
@@ -1182,10 +1182,10 @@ async function run() {
     const origin = `http://localhost:${PORT}`;
     const setOrigins = (origins) =>
       page.evaluate(async (list) => {
-        const all = await chrome.storage.sync.get('proofkey:settings');
+        const all = await chrome.storage.local.get('proofkey:settings');
         const settings = all['proofkey:settings'] ?? {};
         settings.shortcutOrigins = list;
-        await chrome.storage.sync.set({ 'proofkey:settings': settings });
+        await chrome.storage.local.set({ 'proofkey:settings': settings });
       }, origins);
     const registeredIds = () =>
       page.evaluate(() => chrome.scripting.getRegisteredContentScripts());
@@ -1244,10 +1244,10 @@ async function run() {
       const altOrigin = `http://localhost:${ALT_PORT}`;
       const strangerOrigin = `http://127.0.0.1:${PORT}`;
       await page.evaluate(async (parent) => {
-        const all = await chrome.storage.sync.get('proofkey:settings');
+        const all = await chrome.storage.local.get('proofkey:settings');
         const settings = all['proofkey:settings'] ?? {};
         settings.liveCheck = { ...(settings.liveCheck ?? {}), enabledOrigins: [parent] };
-        await chrome.storage.sync.set({ 'proofkey:settings': settings });
+        await chrome.storage.local.set({ 'proofkey:settings': settings });
       }, origin);
       await page.waitForTimeout(600);
 
@@ -1297,7 +1297,7 @@ async function run() {
       );
 
       const stored = await page.evaluate(async () => {
-        const all = await chrome.storage.sync.get('proofkey:settings');
+        const all = await chrome.storage.local.get('proofkey:settings');
         return all['proofkey:settings'] ?? null;
       });
       check(
@@ -1342,11 +1342,11 @@ async function run() {
     // switched it on for two origins, so both lists are emptied here.
     const setLiveOrigins = (enabled, blocked = []) =>
       page.evaluate(async ([enabledOrigins, blockedOrigins]) => {
-        const all = await chrome.storage.sync.get('proofkey:settings');
+        const all = await chrome.storage.local.get('proofkey:settings');
         const settings = all['proofkey:settings'] ?? {};
         settings.liveCheck = { ...(settings.liveCheck ?? {}), enabledOrigins, blockedOrigins };
         settings.frameOrigins = {};
-        await chrome.storage.sync.set({ 'proofkey:settings': settings });
+        await chrome.storage.local.set({ 'proofkey:settings': settings });
       }, [enabled, blocked]);
     await setLiveOrigins([]);
     await setOrigins([]);
@@ -1431,7 +1431,7 @@ async function run() {
       check('the click that loads the script leaves live checking on', /is on/.test(clicked), JSON.stringify(clicked));
       check(
         'and the site stays switched on in storage',
-        (await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings'].liveCheck.enabledOrigins))
+        (await page.evaluate(async () => (await chrome.storage.local.get('proofkey:settings'))['proofkey:settings'].liveCheck.enabledOrigins))
           .includes(liveOrigin),
       );
       check('no offer to allow a site the browser already granted', !/Allow/.test(clicked), JSON.stringify(clicked));
@@ -1451,16 +1451,16 @@ async function run() {
     await stale.waitForTimeout(800);
     // What the toolbar button and "add to dictionary" store through the worker.
     await page.evaluate(async () => {
-      const all = await chrome.storage.sync.get('proofkey:settings');
+      const all = await chrome.storage.local.get('proofkey:settings');
       const settings = all['proofkey:settings'] ?? {};
       settings.liveCheck = { ...(settings.liveCheck ?? {}), enabledOrigins: ['https://switched-on.example'] };
-      await chrome.storage.sync.set({ 'proofkey:settings': settings });
+      await chrome.storage.local.set({ 'proofkey:settings': settings });
       await chrome.runtime.sendMessage({ type: 'proofkey:add-word', word: 'Proofkeyism' });
     });
     await stale.evaluate(() => { chrome.permissions.request = async () => true; });
     await stale.locator('button', { hasText: 'Save' }).last().click();
     await stale.waitForTimeout(800);
-    const after = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings'].liveCheck);
+    const after = await page.evaluate(async () => (await chrome.storage.local.get('proofkey:settings'))['proofkey:settings'].liveCheck);
     check(
       'a site switched on meanwhile survives a Save from settings opened before',
       after?.enabledOrigins?.includes('https://switched-on.example') === true,
@@ -1482,7 +1482,7 @@ async function run() {
     // that is not running on this computer does.
     const absent = { ...base.connections[0], id: 'absent-connection', label: 'Not on this computer', baseUrl: 'http://127.0.0.1:9/v1' };
     await page.evaluate(
-      (value) => chrome.storage.sync.set({ 'proofkey:settings': value }),
+      (value) => chrome.storage.local.set({ 'proofkey:settings': value }),
       { ...base, connections: [absent, base.connections[0]], activeConnectionId: absent.id, fallbackConnectionIds: [] },
     );
     const header = (name) => page.locator('.conn__header').filter({ has: page.locator('.conn__name', { hasText: new RegExp(`^${name}$`) }) });
@@ -1499,7 +1499,7 @@ async function run() {
       check('the one in use offers no backup box of its own', !(await page.locator('[data-backup]').isVisible().catch(() => false)));
       await page.locator('button', { hasText: 'Save' }).last().click();
       await page.waitForTimeout(500);
-      const stored = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+      const stored = await page.evaluate(async () => (await chrome.storage.local.get('proofkey:settings'))['proofkey:settings']);
       check('saved as the backup, the one in use unchanged',
         JSON.stringify(stored?.fallbackConnectionIds) === JSON.stringify(['test-connection']) && stored?.activeConnectionId === 'absent-connection',
         JSON.stringify({ active: stored?.activeConnectionId, backups: stored?.fallbackConnectionIds }));
@@ -1520,7 +1520,7 @@ async function run() {
     seen.length = 0;
 
     await page.evaluate(
-      (settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }),
+      (settings) => chrome.storage.local.set({ 'proofkey:settings': settings }),
       settingsFor(transport),
     );
 
@@ -1612,14 +1612,14 @@ async function run() {
       };
     };
     const storedModel = () =>
-      page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings'].connections[0].model);
+      page.evaluate(async () => (await chrome.storage.local.get('proofkey:settings'))['proofkey:settings'].connections[0].model);
     const run = () =>
       page.evaluate(() =>
         chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: 'Their is alot of things to do.' }),
       );
 
     seen.length = 0;
-    await page.evaluate((settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }), recoverSettings('retired-model'));
+    await page.evaluate((settings) => chrome.storage.local.set({ 'proofkey:settings': settings }), recoverSettings('retired-model'));
     const moved = await run();
     const asked = seen.filter((r) => r.method === 'POST').map((r) => r.body.model);
     check('a model the provider dropped still gets the text fixed', moved?.ok === true, moved?.ok ? moved.value.text : moved?.error);
@@ -1639,7 +1639,7 @@ async function run() {
     check('and the connection keeps the new model', saved === 'gpt-6-luna', saved);
 
     seen.length = 0;
-    await page.evaluate((settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }), recoverSettings('listed-model'));
+    await page.evaluate((settings) => chrome.storage.local.set({ 'proofkey:settings': settings }), recoverSettings('listed-model'));
     const refused = await run();
     const askedAgain = seen.filter((r) => r.method === 'POST').map((r) => r.body.model);
     check('a model the catalogue still lists is not replaced', refused?.ok === false && JSON.stringify(askedAgain) === '["listed-model"]', JSON.stringify(askedAgain));
@@ -1652,7 +1652,7 @@ async function run() {
     // the whole list is asked for — 1000 is the documented maximum.
     seen.length = 0;
     const anthropicBase = settingsFor('anthropic_messages');
-    await page.evaluate((settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }), {
+    await page.evaluate((settings) => chrome.storage.local.set({ 'proofkey:settings': settings }), {
       ...anthropicBase,
       connections: [{ ...anthropicBase.connections[0], apiKey: 'recover-key', model: 'retired-model' }],
     });
@@ -1673,7 +1673,7 @@ async function run() {
   seen.length = 0;
 
   await page.evaluate(
-    (settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }),
+    (settings) => chrome.storage.local.set({ 'proofkey:settings': settings }),
     { ...geminiSettings(), connections: [{ ...geminiSettings().connections[0], model: 'stub-model' }] },
   );
 
@@ -1759,13 +1759,13 @@ async function run() {
   const mixAlways = await rewrite('mix-always');
   check('if the second is in one language too, that rewrite is shown, after two requests and no third',
     mixAlways?.ok === true && seen.length === 2 && mixAlways.value.text.includes('almuerzo'), JSON.stringify(mixAlways));
-  const beforeCold = await page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
-  await page.evaluate((value) => chrome.storage.sync.set({ 'proofkey:settings': value }),
+  const beforeCold = await page.evaluate(async () => (await chrome.storage.local.get('proofkey:settings'))['proofkey:settings']);
+  await page.evaluate((value) => chrome.storage.local.set({ 'proofkey:settings': value }),
     { ...beforeCold, connections: beforeCold.connections.map((c) => ({ ...c, temperature: 0 })) });
   const mixCold = await rewrite('mix-always');
   check('at temperature 0, where the same request gives the same reply, it is not asked again',
     mixCold?.ok === true && seen.length === 1, `${seen.length} request(s)`);
-  await page.evaluate((value) => chrome.storage.sync.set({ 'proofkey:settings': value }), beforeCold);
+  await page.evaluate((value) => chrome.storage.local.set({ 'proofkey:settings': value }), beforeCold);
 
   // The setting is only worth having if it is visible and says what it did.
   await page.reload();
@@ -1791,7 +1791,7 @@ async function run() {
   console.log('\nmodel picker:');
 
   await page.evaluate(
-    (settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }),
+    (settings) => chrome.storage.local.set({ 'proofkey:settings': settings }),
     geminiSettings(),
   );
   await page.reload();
@@ -1892,38 +1892,46 @@ async function run() {
   // key without apiKeysLocal is a cleared one and its copy goes; with the mark
   // it is kept. Sync is written the way another computer's would be, so the
   // worker has to notice it on its own.
-  console.log('\nAPI keys kept in local storage only:');
+  // Settings left sync in 0.1.27. The first read after the update copies them
+  // to storage.local, once; sync stays as it was for computers that have not
+  // updated. Keys keep their own local record, as since 0.1.19.
+  console.log('\nsettings move from sync to this computer:');
   {
     const localKeys = () => page.evaluate(async () => (await chrome.storage.local.get('proofkey:apiKeys'))['proofkey:apiKeys']);
+    const localSettings = () => page.evaluate(async () => (await chrome.storage.local.get('proofkey:settings'))['proofkey:settings']);
     const syncSettings = () => page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
-    const until = async (read, done) => {
-      for (let i = 0; i < 20; i++) {
-        const value = await read();
-        if (done(value)) return value;
-        await page.waitForTimeout(100);
-      }
-      return read();
+    // What an earlier version left: settings in sync, nothing in local.
+    const leftBy = async (syncValue, keys) => {
+      // Settings removed last: the worker reacts to that by moving whatever sync
+      // holds, so sync and the key record have to be in place first.
+      await page.evaluate(async ({ syncValue, keys }) => {
+        await chrome.storage.sync.set({ 'proofkey:settings': syncValue });
+        if (keys) await chrome.storage.local.set({ 'proofkey:apiKeys': keys });
+        else await chrome.storage.local.remove('proofkey:apiKeys');
+        await chrome.storage.local.remove('proofkey:settings');
+      }, { syncValue, keys });
+      await page.reload();
+      await page.waitForTimeout(600);
     };
-    const settle = (want) => until(localKeys, (keys) => JSON.stringify(keys) === JSON.stringify(want));
-    const stripped = () => until(syncSettings, (value) => value?.connections?.every((c) => c.apiKey === ''));
     const settings = settingsFor('chat_completions');
     const second = { ...settings.connections[0], id: 'second-connection', apiKey: 'second-key-456' };
-    await page.evaluate(
-      (value) => chrome.storage.sync.set({ 'proofkey:settings': value }),
-      { ...settings, connections: [settings.connections[0], second] },
-    );
-    const copied = await settle({ 'test-connection': 'test-key-123', 'second-connection': 'second-key-456' });
-    check('a key that arrives in sync is copied to storage.local, by connection',
-      copied?.['test-connection'] === 'test-key-123' && copied?.['second-connection'] === 'second-key-456',
-      JSON.stringify(copied));
-    const afterCopy = await stripped();
-    check('and taken out of sync, which is marked apiKeysLocal',
-      afterCopy?.apiKeysLocal === true && !/test-key|second-key/.test(JSON.stringify(afterCopy)),
-      JSON.stringify(afterCopy?.connections?.map((c) => c.apiKey)));
-    check('the rest of the settings survive the rewrite',
-      afterCopy?.connections?.length === 2 && afterCopy.activeConnectionId === settings.activeConnectionId
-        && afterCopy.connections[0].baseUrl === settings.connections[0].baseUrl,
-      JSON.stringify(afterCopy?.connections?.map((c) => c.id)));
+
+    // 0.1.18 or older: keys still in sync.
+    await leftBy({ ...settings, connections: [settings.connections[0], second] });
+    const moved = await localSettings();
+    check('settings in sync are copied to storage.local on the first read',
+      moved?.connections?.length === 2 && moved.activeConnectionId === settings.activeConnectionId
+        && moved.connections[0].baseUrl === settings.connections[0].baseUrl,
+      JSON.stringify(moved?.connections?.map((c) => c.id)));
+    const keys = await localKeys();
+    check('their keys go to the local key record, by connection, and not into the settings',
+      keys?.['test-connection'] === 'test-key-123' && keys?.['second-connection'] === 'second-key-456'
+        && !/test-key|second-key/.test(JSON.stringify(moved)),
+      JSON.stringify(keys));
+    const syncAfter = await syncSettings();
+    check('sync keeps the settings, for computers not yet updated, without the keys',
+      syncAfter?.connections?.length === 2 && !/test-key|second-key/.test(JSON.stringify(syncAfter)),
+      JSON.stringify(syncAfter?.connections?.map((c) => c.apiKey)));
 
     seen.length = 0;
     const reply = await page.evaluate(() =>
@@ -1933,52 +1941,62 @@ async function run() {
       reply?.ok === true && seen[0]?.headers['authorization'] === 'Bearer test-key-123',
       reply?.ok ? seen[0]?.headers['authorization'] : reply?.error);
 
-    // Settings from before the mark: an empty key there is one the user cleared.
+    // Once moved, sync is no longer read: another computer's change stays there.
     await page.evaluate(
       (value) => chrome.storage.sync.set({ 'proofkey:settings': value }),
-      { ...settings, connections: [settings.connections[0], { ...second, apiKey: '' }] },
+      { ...settings, activeConnectionId: 'second-connection', connections: [{ ...second, apiKey: '' }] },
     );
-    const cleared = await settle({ 'test-connection': 'test-key-123' });
-    check('without apiKeysLocal, a key cleared in settings leaves storage.local too',
-      JSON.stringify(cleared) === JSON.stringify({ 'test-connection': 'test-key-123' }), JSON.stringify(cleared));
-
-    // What every save writes now: empty keys and the mark. A third connection's
-    // key is the witness that the worker has run.
-    const third = { ...settings.connections[0], id: 'third-connection', apiKey: 'third-key-789' };
-    await page.evaluate(
-      (value) => chrome.storage.sync.set({ 'proofkey:settings': value }),
-      { ...settings, apiKeysLocal: true, connections: [{ ...settings.connections[0], apiKey: '' }, third] },
-    );
-    const kept = await settle({ 'test-connection': 'test-key-123', 'third-connection': 'third-key-789' });
-    check('with apiKeysLocal, an empty key in sync keeps its copy in storage.local',
-      kept?.['test-connection'] === 'test-key-123' && kept?.['third-connection'] === 'third-key-789', JSON.stringify(kept));
-
-    await page.evaluate(
-      (value) => chrome.storage.sync.set({ 'proofkey:settings': value }),
-      { ...settings, apiKeysLocal: true, activeConnectionId: 'third-connection', connections: [{ ...third, apiKey: '' }] },
-    );
-    const removed = await settle({ 'third-connection': 'third-key-789' });
-    check('with apiKeysLocal, a connection that is removed loses its copy',
-      JSON.stringify(removed) === JSON.stringify({ 'third-connection': 'third-key-789' }), JSON.stringify(removed));
-
-    // The options page shows this computer's key, and Save keeps it out of sync.
     await page.reload();
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(600);
+    const unmoved = await localSettings();
+    check('after the move, a change in sync does not reach this computer',
+      unmoved?.connections?.length === 2 && unmoved.activeConnectionId === settings.activeConnectionId,
+      JSON.stringify(unmoved?.connections?.map((c) => c.id)));
+
+    // 0.1.19 to 0.1.26: sync marked apiKeysLocal, keys already in the record.
+    await leftBy(
+      { ...settings, apiKeysLocal: true, connections: [{ ...settings.connections[0], apiKey: '' }] },
+      { 'test-connection': 'kept-key-1' },
+    );
+    check('with apiKeysLocal, the key already on this computer is kept',
+      (await localKeys())?.['test-connection'] === 'kept-key-1', JSON.stringify(await localKeys()));
+
+    // Without the mark, an empty key in sync is one the user cleared.
+    await leftBy(
+      { ...settings, connections: [{ ...settings.connections[0], apiKey: '' }] },
+      { 'test-connection': 'stale-key' },
+    );
+    check('without apiKeysLocal, a key cleared in settings leaves storage.local too',
+      (await localKeys()) === undefined, JSON.stringify(await localKeys()));
+
+    // The options page shows this computer's key, and Save stays on this computer.
+    await leftBy(
+      { ...settings, apiKeysLocal: true, connections: [{ ...settings.connections[0], apiKey: '' }] },
+      { 'test-connection': 'shown-key' },
+    );
     const shown = await page.locator('input[type="password"]').first().inputValue();
-    check('the options page shows the key kept on this computer', shown === 'third-key-789', shown);
-    await page.locator('input[type="password"]').first().fill('third-key-new');
+    check('the options page shows the key kept on this computer', shown === 'shown-key', shown);
+    const syncBefore = JSON.stringify(await syncSettings());
+    await page.locator('input[type="password"]').first().fill('saved-key');
+    // Over sync's 8 KB per-item quota, which made Save fail with long prompts.
+    const longGuide = 'Write "e-mail", not "email".\n'.repeat(700);
+    await page.locator('textarea[placeholder^="We write"]').fill(longGuide);
     await page.locator('button', { hasText: 'Save' }).last().click();
     await page.waitForTimeout(600);
-    const savedSync = JSON.stringify(await syncSettings());
-    const savedLocal = await localKeys();
-    check('Save writes the key to storage.local and not to sync',
-      savedLocal?.['third-connection'] === 'third-key-new' && !savedSync.includes('third-key') && savedSync.includes('"apiKeysLocal":true'),
-      `${JSON.stringify(savedLocal)} / ${savedSync.slice(0, 120)}`);
+    const savedLocal = await localSettings();
+    check('Save writes the key to its record and the settings to storage.local, without it',
+      (await localKeys())?.['test-connection'] === 'saved-key' && !JSON.stringify(savedLocal).includes('saved-key'),
+      JSON.stringify(await localKeys()));
+    check('Save does not touch sync', JSON.stringify(await syncSettings()) === syncBefore);
+    check('a style guide over 8 KB saves',
+      savedLocal?.profile?.styleGuide === longGuide && longGuide.length > 8192,
+      `${savedLocal?.profile?.styleGuide?.length} chars; ${await page.locator('.status').last().innerText()}`);
 
-    await page.evaluate(() => chrome.storage.sync.clear());
-    const none = await settle(undefined);
-    check('no key in settings, no copy left behind',
-      cleared !== undefined && none === undefined, `${JSON.stringify(cleared)} -> ${JSON.stringify(none)}`);
+    await page.evaluate(() => Promise.all([
+      chrome.storage.sync.clear(),
+      chrome.storage.local.remove(['proofkey:settings', 'proofkey:apiKeys']),
+    ]));
+    check('no settings, no key record left behind', (await localKeys()) === undefined && (await localSettings()) === undefined);
   }
 
   // ------------------------------------------------------- export and import
@@ -1987,13 +2005,13 @@ async function run() {
   // ticked, and importing it into a fresh profile must give the same settings.
   console.log('\nexport and import:');
   {
-    const syncSettings = () => page.evaluate(async () => (await chrome.storage.sync.get('proofkey:settings'))['proofkey:settings']);
+    const storedSettings = () => page.evaluate(async () => (await chrome.storage.local.get('proofkey:settings'))['proofkey:settings']);
     const localKeys = () => page.evaluate(async () => (await chrome.storage.local.get('proofkey:apiKeys'))['proofkey:apiKeys']);
     const base = settingsFor('anthropic_messages');
     const connection = { ...base.connections[0], extraHeaders: { 'x-gateway-token': 'gateway-secret-42' } };
     await page.evaluate(
       ({ value, key }) => Promise.all([
-        chrome.storage.sync.set({ 'proofkey:settings': value }),
+        chrome.storage.local.set({ 'proofkey:settings': value }),
         chrome.storage.local.set({ 'proofkey:apiKeys': key }),
       ]),
       { value: { ...base, apiKeysLocal: true, connections: [{ ...connection, apiKey: '' }] }, key: { [connection.id]: 'backup-key-77' } },
@@ -2023,7 +2041,7 @@ async function run() {
       full.text.includes('backup-key-77') && full.text.includes('gateway-secret-42'));
 
     // A fresh profile: nothing in storage, the page on its defaults.
-    await page.evaluate(() => Promise.all([chrome.storage.sync.clear(), chrome.storage.local.remove('proofkey:apiKeys')]));
+    await page.evaluate(() => Promise.all([chrome.storage.local.remove(['proofkey:settings', 'proofkey:apiKeys']), chrome.storage.local.remove('proofkey:apiKeys')]));
     await page.reload();
     await page.waitForTimeout(500);
     await page.locator('[data-settings-file="input"]').setInputFiles({ name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{"connections":[]}') });
@@ -2033,10 +2051,10 @@ async function run() {
     await page.locator('[data-settings-file="input"]').setInputFiles(plain.path);
     await page.waitForTimeout(300);
     check('a plain file loads and asks for its key again', /Loaded .*Save.*1 provider needs its API key/.test(await notice()), await notice());
-    check('nothing is stored before Save', (await syncSettings()) === undefined);
+    check('nothing is stored before Save', (await storedSettings()) === undefined);
     await page.locator('button', { hasText: 'Save' }).last().click();
     await page.waitForTimeout(600);
-    const restored = await syncSettings();
+    const restored = await storedSettings();
     check('Save stores the imported provider',
       restored?.connections?.[0]?.id === connection.id && restored.connections[0].baseUrl === connection.baseUrl
         && JSON.stringify(restored.connections[0].extraHeaders) === '{}',
@@ -2049,12 +2067,12 @@ async function run() {
     await page.locator('button', { hasText: 'Save' }).last().click();
     await page.waitForTimeout(600);
     const keys = await localKeys();
-    const withSecrets = JSON.stringify(await syncSettings());
+    const withSecrets = JSON.stringify(await storedSettings());
     check('a file with secrets restores the key to this computer only',
       keys?.[connection.id] === 'backup-key-77' && !withSecrets.includes('backup-key-77'), JSON.stringify(keys));
     check('and the added header comes back', withSecrets.includes('gateway-secret-42'));
 
-    await page.evaluate(() => Promise.all([chrome.storage.sync.clear(), chrome.storage.local.remove('proofkey:apiKeys')]));
+    await page.evaluate(() => Promise.all([chrome.storage.local.remove(['proofkey:settings', 'proofkey:apiKeys']), chrome.storage.local.remove('proofkey:apiKeys')]));
   }
 
   // --------------------------------------------------------- unbound command

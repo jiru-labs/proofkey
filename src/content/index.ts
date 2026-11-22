@@ -97,11 +97,14 @@ async function refreshState(): Promise<void> {
   frames.setActive(state.value.liveEnabled || state.value.shortcuts.length > 0);
 }
 
+/** `SETTINGS_STORAGE_KEY` in core/storage; not imported, to keep presets out of this bundle. */
+const SETTINGS_KEY = 'proofkey:settings';
+
 // Edits in the options page reach open tabs without a reload. Without this a
 // shortcut the user just bound would do nothing until every tab was refreshed,
 // which reads as the feature being broken.
-chrome.storage.onChanged.addListener((_changes, area) => {
-  if (area === 'sync') void refreshState();
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && SETTINGS_KEY in changes) void refreshState();
 });
 
 async function toggleLive(injected: boolean): Promise<void> {

@@ -205,7 +205,7 @@ deviceScaleFactor: 1,
   // "Needs setup" and "No base URL set", which is honest about a new install and
   // a poor advertisement for what the thing does once it is running.
   await page.evaluate(
-    (settings) => chrome.storage.sync.set({ 'proofkey:settings': settings }),
+    (settings) => chrome.storage.local.set({ 'proofkey:settings': settings }),
     SHOWCASE,
   );
   await page.reload();

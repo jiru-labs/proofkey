@@ -65,16 +65,17 @@ export function defaultSettings(): Settings {
 }
 
 /**
- * Settings as the rest of the extension sees them: what sync holds, with each
- * connection's API key filled in from this computer's own copy. A key still in
- * sync wins — it was written by a computer that has not stopped syncing keys
- * yet, and `mirrorApiKeys` takes it out of sync and into the copy.
+ * Settings as the rest of the extension sees them: what this computer holds,
+ * with each connection's API key filled in from its own record.
+ *
+ * Since 0.1.27 settings live in `chrome.storage.local` and no longer sync.
+ * The first read after the update copies them from `chrome.storage.sync`,
+ * where every earlier version kept them (`migrateSettingsToLocal`).
  */
 export async function loadSettings(): Promise<Settings> {
-  const [stored, keys] = await Promise.all([chrome.storage.sync.get(KEY_SETTINGS), localApiKeys()]);
-  const raw = stored[KEY_SETTINGS] as Partial<Settings> | undefined;
+  const raw = await migrateSettingsToLocal();
   if (!raw) return defaultSettings();
-  return normalizeSettings(raw, keys);
+  return normalizeSettings(raw, await localApiKeys());
 }
 
 /**
@@ -121,12 +122,12 @@ function migrateConnection(stored: Connection): Connection {
 }
 
 /**
- * Saves settings with every API key kept on this computer only: the keys go to
- * `chrome.storage.local`, which never syncs, and sync gets the rest with the
- * keys emptied and `apiKeysLocal` set. The caller's object keeps its keys.
+ * Saves settings on this computer: the keys to their own record, the rest
+ * with the keys emptied. Kept apart so a copy of the settings — an export, a
+ * test fixture, a bug report — never carries a key by accident. The caller's
+ * object keeps its keys.
  *
- * Local is written first, so when the sync write wakes `mirrorApiKeys` on this
- * computer the copy it finds is already the new one.
+ * Keys first, so a reader woken by the settings write finds the new ones.
  */
 export async function saveSettings(settings: Settings): Promise<void> {
   const keys: Record<string, string> = {};
@@ -134,7 +135,7 @@ export async function saveSettings(settings: Settings): Promise<void> {
     if (connection.apiKey) keys[connection.id] = connection.apiKey;
   }
   await writeLocalApiKeys(await localApiKeys(), keys);
-  await chrome.storage.sync.set({ [KEY_SETTINGS]: withoutApiKeys(settings) });
+  await chrome.storage.local.set({ [KEY_SETTINGS]: withoutApiKeys(settings) });
 }
 
 /** API keys by connection id, in `chrome.storage.local`, which never syncs. */
@@ -158,35 +159,45 @@ function withoutApiKeys<T extends Partial<Settings>>(settings: T): T {
   };
 }
 
+/** Where settings live; exported so listeners can tell a settings change from the rest. */
+export const SETTINGS_STORAGE_KEY = KEY_SETTINGS;
+
 /**
- * Keeps this computer's copy of the keys in step with sync, and takes any key
- * still in sync out of it.
+ * Moves settings from `chrome.storage.sync`, where every version up to 0.1.26
+ * kept them, to `chrome.storage.local`, once. Returns what local holds after.
  *
- * A key reaches sync two ways now: settings written before this release, and a
- * computer still running an older one. Either way it is copied here first,
- * then sync is rewritten without it. From 0.1.16 a computer that sees the
- * emptied key with `apiKeysLocal` keeps its own copy and picks it up when it
- * updates; 0.1.14 and 0.1.15 drop theirs, which is why this waited until 0.1.16
- * had been out for weeks.
+ * Sync is copied, not cleared: a computer that has not updated yet still reads
+ * it, and an empty sync would put that computer back on the defaults. A later
+ * release clears it.
  *
- * Without the mark, an empty key is a key the user cleared, and the copy goes
- * too. With it, a copy only goes when its connection is removed.
+ * Keys come along. Since 0.1.19 sync holds none and each computer already has
+ * its own record, which is kept. A copy written by 0.1.18 or older still holds
+ * them; they move to the record, as `mirrorApiKeys` did, and sync is rewritten
+ * without them so they stop travelling.
  */
-export async function mirrorApiKeys(): Promise<void> {
-  const readSync = async () => (await chrome.storage.sync.get(KEY_SETTINGS))[KEY_SETTINGS] as Partial<Settings> | undefined;
-  const raw = await readSync();
+export async function migrateSettingsToLocal(): Promise<Partial<Settings> | undefined> {
+  const readLocal = async () => (await chrome.storage.local.get(KEY_SETTINGS))[KEY_SETTINGS] as Partial<Settings> | undefined;
+  const local = await readLocal();
+  if (local) return local;
+  const raw = (await chrome.storage.sync.get(KEY_SETTINGS))[KEY_SETTINGS] as Partial<Settings> | undefined;
+  if (!raw) return undefined;
+
   const stored = await localApiKeys();
   const keys: Record<string, string> = {};
-  for (const connection of raw?.connections ?? []) {
-    const key = connection.apiKey || (raw?.apiKeysLocal ? stored[connection.id] : undefined);
+  for (const connection of raw.connections ?? []) {
+    // Without the mark, an empty key in sync is one the user cleared.
+    const key = connection.apiKey || (raw.apiKeysLocal ? stored[connection.id] : undefined);
     if (key) keys[connection.id] = key;
   }
+  // Another context may have finished the move, or the user saved, meanwhile.
+  const now = await readLocal();
+  if (now) return now;
   await writeLocalApiKeys(stored, keys);
-  if (!raw?.connections?.some((connection) => connection.apiKey)) return;
-  // Settings saved in the meantime are newer than these and already hold no
-  // keys; writing these back over them would undo that save.
-  if (JSON.stringify(await readSync()) !== JSON.stringify(raw)) return;
-  await chrome.storage.sync.set({ [KEY_SETTINGS]: withoutApiKeys(raw) });
+  await chrome.storage.local.set({ [KEY_SETTINGS]: withoutApiKeys(raw) });
+  if (raw.connections?.some((connection) => connection.apiKey)) {
+    await chrome.storage.sync.set({ [KEY_SETTINGS]: withoutApiKeys(raw) });
+  }
+  return withoutApiKeys(raw);
 }
 
 /**
@@ -341,8 +352,7 @@ export function setActionShortcut(settings: Settings, id: string, chord: string 
   else delete override.shortcut;
 
   // An override holding nothing is not the same as no override, but it should
-  // be: settings live in `chrome.storage.sync`, which has a per-item quota that
-  // long prompts already push against. Empty objects are not worth any of it.
+  // be, and the empty objects would only clutter an exported settings file.
   if (Object.keys(override).length > 0) settings.builtInOverrides[id] = override;
   else delete settings.builtInOverrides[id];
 }

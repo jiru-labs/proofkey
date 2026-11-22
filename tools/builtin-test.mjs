@@ -105,7 +105,7 @@ const worker = (message) => page(`chrome.runtime.sendMessage(${JSON.stringify(me
 console.log('\nA fresh install:');
 check(
   'nothing is saved, so the defaults are what runs',
-  (await page(`chrome.storage.sync.get(null).then((all) => Object.keys(all).length)`)) === 0,
+  (await page(`chrome.storage.local.get('proofkey:settings').then((all) => Object.keys(all).length)`)) === 0,
 );
 const text = await page(`(async () => {
   for (let i = 0; i < 40; i++) {

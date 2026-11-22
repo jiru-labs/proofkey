@@ -220,7 +220,8 @@ The plan for the next quarter is in the shared folder, with the budget and the p
       };
 
       window.__pkFireStorageChange = () => {
-        for (const listener of storageListeners) listener({}, 'sync');
+        // What the options page's Save writes, as the content script sees it.
+        for (const listener of storageListeners) listener({ 'proofkey:settings': {} }, 'local');
       };
 
       window.chrome = {
