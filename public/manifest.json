@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ProofKey: AI Grammar Checker & Writing Assistant with Your Own API Key",
   "short_name": "ProofKey",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "Grammar checker that can run free on your computer, or with your own AI key. Private, open source: no account, no telemetry.",
   "minimum_chrome_version": "116",
   "permissions": ["storage", "contextMenus", "activeTab", "scripting", "offscreen"],
