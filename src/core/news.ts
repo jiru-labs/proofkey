@@ -63,6 +63,14 @@ export const NEWS: readonly NewsItem[] = [
     text: 'New in ProofKey: tick Backup on a second provider in Settings, and it is tried when the active one fails.',
     relevant: (settings) => (settings.connections?.length ?? 0) > 1 && (settings.fallbackConnectionIds ?? []).length === 0,
   },
+  {
+    // From 0.1.27 settings stay in storage.local. Someone who set up a provider
+    // would otherwise find it missing on their next computer with no word why;
+    // someone still on the built-in default has nothing to move.
+    id: 'settings-local',
+    text: 'New in ProofKey: your settings now stay on this computer and no longer sync. To move them, use Settings → Back up your settings.',
+    relevant: (settings) => (settings.connections ?? []).some((connection) => connection.presetId !== 'chrome-builtin'),
+  },
 ];
 
 export interface NewsState {

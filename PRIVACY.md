@@ -56,26 +56,29 @@ Stored using the browser's own extension storage, on your device:
 - if you downloaded the in-browser model, its files, in the browser's storage
   for the extension. **Remove the downloaded model** in settings deletes them.
 
-**Your API keys stay on this computer** (since 0.1.19): each one is
-kept in `chrome.storage.local`, by connection, which never syncs
-(`src/core/storage.ts`). Every other setting above is kept in
-`chrome.storage.sync`. If your browser's own sync is switched on for
-extensions, the browser copies those settings — with every API key emptied —
-through its sync service to your other copies of the same browser: Chrome
-through your Google account, Brave through Brave Sync, and other browsers
-through their own where they sync extension settings. Settings never cross from one
-browser to another. That is the browser's mechanism and its provider's policy;
-ProofKey neither operates nor can read that channel. With sync off, or not
-signed in, they stay on this computer. The downloaded in-browser model never
-syncs. A key has to be entered once on each computer you use ProofKey on.
+**Your settings stay on this computer** (from 0.1.27): all of the above is
+kept in `chrome.storage.local`, which never syncs (`src/core/storage.ts`), and
+each API key in its own record there, by connection. To move your settings to
+another computer, **Export to a file** in settings writes them to a file on
+your disk and **Import from a file** reads it back; ProofKey sends that file
+nowhere. It holds no API key, and none of the header, query or body fields you
+added yourself, unless you tick the box that includes them.
 
-Up to 0.1.18, the keys were also kept in
-`chrome.storage.sync` and travelled with the rest. The first time 0.1.19
-runs, it moves each key it finds there into `chrome.storage.local`
-and rewrites the synced settings without it, marked as holding no keys. A
-computer on 0.1.16 to 0.1.18 that receives those settings keeps its own local copy (it
-has made one since 0.1.14, and keeps it under that mark since 0.1.16) and uses
-it again once it updates; until then it reads the emptied key and asks for one.
+Up to 0.1.26, every setting except the keys was kept in `chrome.storage.sync`.
+If your browser's own sync was switched on for extensions, the browser copied
+them — with every API key emptied — through its sync service to your other
+copies of the same browser: Chrome through your Google account, Brave through
+Brave Sync, and other browsers through their own. That is the browser's
+mechanism and its provider's policy; ProofKey neither operates nor can read
+that channel. The first time 0.1.27 runs, it copies the settings from there to
+`chrome.storage.local` and from then on reads and writes only there. It leaves
+the synced copy in place for your computers that have not updated yet; a later
+version removes it.
+
+Up to 0.1.18, the keys were also kept in `chrome.storage.sync` and travelled
+with the rest. From 0.1.19, each key found there moves into
+`chrome.storage.local` and the synced settings are rewritten without it; 0.1.27
+does the same for any it still finds when it copies the settings.
 
 One more thing is kept, in `chrome.storage.local`, which never syncs: how many
 suggestions you have applied, when you applied the first, and whether ProofKey
@@ -126,9 +129,12 @@ What ProofKey protects you from, and what it does not, in the terms
 
 - **The provider you pick.** With an API key, the text you check goes to that
   provider, under its own privacy policy, tied to your account and billing.
-- **Your browser's own sync.** Settings travel through your browser's sync
-  service (Google's, Brave's or another's) if its sync is on for
-  extensions (see above). API keys do not since 0.1.19; up to 0.1.18 they did.
+- **Your browser's own sync, up to 0.1.26.** Settings travelled through your
+  browser's sync service (Google's, Brave's or another's) if its sync was on for
+  extensions (see above); API keys did not from 0.1.19. From 0.1.27 nothing new
+  is written there, and the old copy stays until a later version removes it.
+- **A settings file you export.** It is an ordinary file on your disk. If you
+  ticked the box that includes API keys, anyone who gets the file can use them.
 - **The browser and the page.** Chrome's built-in model is Chrome's code; the
   site you type into already sees what you type there; another extension, or
   malware on the device, can read the same fields ProofKey does.

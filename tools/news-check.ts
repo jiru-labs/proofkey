@@ -62,9 +62,20 @@ twoProviders.fallbackConnectionIds = [];
 const third = takeNews(takeNews(second.state, twoProviders, NOW + 2 * NEWS_GAP_MS).state, twoProviders, NOW + 3 * NEWS_GAP_MS);
 check('someone with two providers and no backup hears about Backup',
   takeNews(second.state, twoProviders, NOW + 2 * NEWS_GAP_MS).item?.id === 'backup', String(takeNews(second.state, twoProviders, NOW + 2 * NEWS_GAP_MS).item?.id));
-check('and only once', third.item === null, String(third.item?.id));
+check('and only once', third.item?.id !== 'backup', String(third.item?.id));
 const hasBackup = { ...twoProviders, fallbackConnectionIds: ['two'] } as Settings;
-check('not someone who already has a backup', takeNews(second.state, hasBackup, NOW + 2 * NEWS_GAP_MS).item === null);
+check('not someone who already has a backup', takeNews(second.state, hasBackup, NOW + 2 * NEWS_GAP_MS).item?.id !== 'backup');
+
+// 0.1.27 stops syncing settings. Whoever set up a provider of their own would
+// otherwise find it missing on their next computer with no word why.
+const seenAll = { seen: ['auto-correct', 'report-forms', 'backup'], lastShownAt: 0 };
+const ownProvider = defaultSettings();
+ownProvider.connections = [{ id: 'one', presetId: 'openai' }] as unknown as Settings['connections'];
+check('someone with a provider of their own hears that settings no longer sync',
+  takeNews(seenAll, ownProvider, NOW).item?.id === 'settings-local', String(takeNews(seenAll, ownProvider, NOW).item?.id));
+const builtinOnly = defaultSettings();
+builtinOnly.connections = [{ id: 'one', presetId: 'chrome-builtin' }] as unknown as Settings['connections'];
+check('not someone still on the built-in model, who has nothing to move', takeNews(seenAll, builtinOnly, NOW).item === null);
 
 check('a fresh install gets none of what ships today', takeNews(installedNewsState(), user, NOW).item === null);
 
