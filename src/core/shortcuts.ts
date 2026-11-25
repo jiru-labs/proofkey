@@ -239,9 +239,21 @@ export function chordProblem(chord: Chord): string | null {
  * shrink the usable space for no reason, which is the opposite of the problem
  * this feature has.
  */
-export function chordWarning(chord: Chord): string | null {
+export function chordWarning(chord: Chord, options: { mac?: boolean } = {}): string | null {
   if (BROWSER_SHARED.has(serializeChord(chord))) {
     return 'Chrome also uses this one. ProofKey takes it first, so you would lose that on the sites below.';
+  }
+
+  // On macOS Option is the character-composing modifier (Option+Shift+L is "|"
+  // on a French layout), so a chord with it in can steal a character the user
+  // types mid-word — the multilingual case this extension exists for. Still
+  // only a caution: the binding works, and the user may want it anyway. Bare
+  // function keys, arrows and named keys never compose, so they say nothing.
+  if (options.mac && chord.alt && !chord.ctrl && !chord.meta) {
+    const composes = /^(Key[A-Z]|Digit[0-9])$/.test(chord.code) || PUNCTUATION[chord.code] !== undefined;
+    if (composes) {
+      return 'On a Mac, Option with this key types a character on many keyboards (| on a French one), so ProofKey would take it while you type. Try ⌃ Control+Shift and a letter.';
+    }
   }
   return null;
 }
@@ -252,7 +264,9 @@ export function chordWarning(chord: Chord): string | null {
  * The pool is `Alt+Shift` and a letter, which is the pattern Chrome's extension
  * documentation points developers at, minus the four `Alt+Shift` chords Chrome
  * documents for itself. Two bare function keys close it out for anyone whose
- * desktop has claimed Alt+Shift for switching layouts.
+ * desktop has claimed Alt+Shift for switching layouts. That pattern is for
+ * Windows and Linux only: on macOS Option composes, so there `MAC_SUGGESTIONS`
+ * takes over with Ctrl+Shift instead.
  *
  * This exists because validation alone left the user hunting: it could say a
  * chord was taken but never name one that was not.
@@ -278,7 +292,39 @@ const SUGGESTIONS = [
   'F9',
 ];
 
-export function suggestChord(taken: Iterable<string> = [], label = ''): string | null {
+/**
+ * The Mac pool. There, Option composes: Option+Shift+L types "|" on a French
+ * layout, Option+L types "@" on a German one, and the capture-phase handler
+ * would swallow that character every time the user types. Control is the
+ * modifier that composes on no layout, and Ctrl+Shift is not a text-editing
+ * chord of macOS either, so this pool is Ctrl+Shift and a letter.
+ *
+ * It is computed by filtering the alphabet through the reserved tables rather
+ * than hand-listed, because the profile syncs to Windows and Linux, where
+ * Ctrl+Shift is Chrome's home ground — a hand list would drift from the very
+ * checks that decide what is free. U and E are left out by hand: on Linux,
+ * IBus takes Ctrl+Shift+U for Unicode input and Ctrl+Shift+E for emoji before
+ * the page sees them, and Chrome documents neither.
+ */
+const MAC_SUGGESTIONS = 'ABCDFGHIJKLMNOPQRSTVWXYZ'
+  .split('')
+  .map((letter) => `Ctrl+Shift+Key${letter}`)
+  .filter((chord) => {
+    const parsed = parseChord(chord)!;
+    return (
+      chordProblem(parsed) === null &&
+      chordWarning(parsed) === null &&
+      chordWarning(parsed, { mac: true }) === null
+    );
+  })
+  .concat(['F8', 'F9']);
+
+export function suggestChord(
+  taken: Iterable<string> = [],
+  label = '',
+  options: { mac?: boolean } = {},
+): string | null {
+  const pool = options.mac ? MAC_SUGGESTIONS : SUGGESTIONS;
   const used = new Set(taken);
   // A letter from the action's own name first, so the key can be remembered
   // ("R from Translate") — but only from the vetted pool: the letters a user
@@ -286,15 +332,15 @@ export function suggestChord(taken: Iterable<string> = [], label = ''): string |
   // picking a key by hand so hard.
   const letters = label.normalize('NFD').toUpperCase().replace(/[^A-Z]/g, '');
   for (const letter of letters) {
-    const chord = `Alt+Shift+Key${letter}`;
-    if (SUGGESTIONS.includes(chord) && !used.has(chord)) return chord;
+    const chord = pool.find((entry) => /Key[A-Z]$/.test(entry) && entry.endsWith(`Key${letter}`));
+    if (chord && !used.has(chord)) return chord;
   }
-  return SUGGESTIONS.find((chord) => !used.has(chord)) ?? null;
+  return pool.find((chord) => !used.has(chord)) ?? null;
 }
 
 /** The letter of `label` a suggested chord was taken from, if it was. */
 export function suggestionLetter(chord: string, label: string): string | null {
-  const letter = /^Alt\+Shift\+Key([A-Z])$/.exec(chord)?.[1];
+  const letter = /^(?:Alt|Ctrl)\+Shift\+Key([A-Z])$/.exec(chord)?.[1];
   const letters = label.normalize('NFD').toUpperCase().replace(/[^A-Z]/g, '');
   return letter && letters.includes(letter) ? letter : null;
 }

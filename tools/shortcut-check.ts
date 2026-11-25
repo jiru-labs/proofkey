@@ -29,6 +29,7 @@ import {
   parseCommandShortcut,
   serializeChord,
   suggestChord,
+  suggestionLetter,
   type Chord,
 } from '../src/core/shortcuts.ts';
 
@@ -202,6 +203,87 @@ equal('skipping letters Chrome keeps (T, A, N in Translate)', suggestChord([], '
 equal('and letters already bound', suggestChord(['Alt+Shift+KeyF'], 'Fix grammar'), 'Alt+Shift+KeyG');
 equal('accents do not hide a letter', suggestChord([], 'Éxito'), 'Alt+Shift+KeyE');
 equal('a name with no usable letter falls back to the pool', suggestChord([], 'Zzz'), suggestChord([]));
+
+// ---------------------------------------------------------------- mac pool
+
+console.log('\nMac suggestions:');
+
+// On macOS Option composes: on a French layout Option+Shift+L types "|", on a
+// German one Option+L types "@". The default pool is all Alt+Shift, so every
+// one of its suggestions would eat a character mid-word on exactly the layouts
+// this extension is for. On a Mac the suggestions come from Ctrl+Shift, which
+// composes a character on no layout.
+const macFirst = suggestChord([], 'Translate', { mac: true });
+check('a mac suggestion never uses Option', !!macFirst && macFirst.startsWith('Ctrl+Shift+Key'), macFirst ?? '');
+
+// The mac pool, exhausted the same way the default one is, and each entry held
+// to the same standard twice over: the profile syncs to Windows and Linux,
+// where Ctrl+Shift is Chrome's home ground.
+const macPool: string[] = [];
+for (let taken = macPool.slice(); ; ) {
+  const next = suggestChord(taken, '', { mac: true });
+  if (!next) break;
+  macPool.push(next);
+  taken = macPool.slice();
+}
+check(`the mac pool is not thin — ${macPool.length} chords`, macPool.length >= 8, `${macPool.length}`);
+const badMacEntry = macPool.find((raw) => {
+  const chord = parseChord(raw);
+  return (
+    !chord ||
+    chordProblem(chord) !== null ||
+    chordWarning(chord) !== null ||
+    chordWarning(chord, { mac: true }) !== null
+  );
+});
+equal('every mac pooled chord is clean, here and where the profile syncs to', badMacEntry ?? null, null);
+// IBus on Linux eats Ctrl+Shift+U (Unicode input) and Ctrl+Shift+E (emoji).
+equal(
+  'the mac pool leaves out the chords IBus takes on Linux',
+  macPool.filter((raw) => raw === 'Ctrl+Shift+KeyU' || raw === 'Ctrl+Shift+KeyE').join(','),
+  '',
+);
+
+// The letter-from-the-name logic has to work on the mac pool too. "Fix
+// grammar": F is the first letter of the name that is free of every reserved
+// table (G warns as view-source, I is DevTools, M is history).
+equal(
+  'mac: a suggestion takes a letter from the action name',
+  suggestChord([], 'Fix grammar', { mac: true }),
+  'Ctrl+Shift+KeyF',
+);
+equal(
+  'mac: skipping letters Chrome keeps (T, R, A, N before S in Translate)',
+  suggestChord([], 'Translate', { mac: true }),
+  'Ctrl+Shift+KeyS',
+);
+equal(
+  'mac: a name with no usable letter falls back to the pool',
+  suggestChord([], 'Zzz', { mac: true }),
+  suggestChord([], '', { mac: true }),
+);
+equal('mac: returns null once the pool is exhausted', suggestChord(macPool, '', { mac: true }), null);
+
+equal('suggestionLetter recognises a mac chord', suggestionLetter('Ctrl+Shift+KeyS', 'Translate'), 'S');
+
+// The recorder's caution, so a Mac user who binds Option themselves is told
+// why their "|" comes out wrong — a warning, not a refusal: the binding works.
+const altShiftL = chordFromEvent(press('KeyL', { alt: true, shift: true }));
+check(
+  'on a mac, Alt+Shift+L warns that Option composes',
+  chordWarning(altShiftL, { mac: true }) !== null,
+  chordWarning(altShiftL, { mac: true }) ?? '',
+);
+check('and so does plain Alt+L', chordWarning(chordFromEvent(press('KeyL', { alt: true })), { mac: true }) !== null);
+check(
+  'a function key does not compose, so Alt+F8 warns about nothing',
+  chordWarning(chordFromEvent(press('F8', { alt: true })), { mac: true }) === null,
+);
+check(
+  'Ctrl+Shift is the fix being pointed at, so it warns about nothing',
+  chordWarning(chordFromEvent(press('KeyL', { ctrl: true, shift: true })), { mac: true }) === null,
+);
+check('off a mac the same Option chord warns about nothing', chordWarning(altShiftL) === null);
 
 // ---------------------------------------------------------------- matching
 

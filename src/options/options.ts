@@ -1514,7 +1514,7 @@ function renderActions(): HTMLElement {
           // free among ProofKey's own and outside the chords Chrome documents
           // for itself — the same pool the per-action suggestion draws from.
           (() => {
-            const free = suggestChord(takenChords(''));
+            const free = suggestChord(takenChords(''), '', { mac: IS_MAC });
             return free
               ? el('p', {
                   class: 'notice__text',
@@ -1631,7 +1631,7 @@ function labelOf(actionId: string): string {
 /** The caution for a stored chord, if it has one. */
 function warningFor(stored: string): string | null {
   const chord = parseChord(stored);
-  return chord ? chordWarning(chord) : null;
+  return chord ? chordWarning(chord, { mac: IS_MAC }) : null;
 }
 
 /**
@@ -1647,7 +1647,7 @@ function takenChords(exceptActionId: string): string[] {
 }
 
 function applySuggestion(action: WritingAction): void {
-  const chord = suggestChord(takenChords(action.id), action.label);
+  const chord = suggestChord(takenChords(action.id), action.label, { mac: IS_MAC });
   shortcutNotice = chord
     ? {
         actionId: action.id,
@@ -1740,7 +1740,7 @@ function startRecording(
       hint.className = 'field__hint field__hint--error';
       // Naming a free key here is the difference between a dead end and a next
       // step: the recorder is still armed, so the user can press what it names.
-      const free = suggestChord(takenChords(action.id), action.label);
+      const free = suggestChord(takenChords(action.id), action.label, { mac: IS_MAC });
       hint.textContent = free ? `${problem} ${shortcutLabel(free)} is free.` : problem;
       return;
     }
@@ -1767,7 +1767,7 @@ function startRecording(
     if (previous) setActionShortcut(settings, previous.id, null);
 
     setActionShortcut(settings, action.id, serialized);
-    const caution = chordWarning(chord);
+    const caution = chordWarning(chord, { mac: IS_MAC });
     shortcutNotice = {
       actionId: action.id,
       text: previous
