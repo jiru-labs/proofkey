@@ -88,6 +88,8 @@ const BROWSER_RESERVED = new Set([
   'Meta+Alt+KeyI', 'Meta+Alt+KeyJ', 'Meta+Alt+KeyC',
   // The address bar swallows the keydown entirely.
   'Ctrl+KeyL', 'Alt+KeyD', 'Ctrl+KeyK', 'Ctrl+KeyE',
+  // The Chrome menu (Windows, Linux).
+  'Alt+KeyF', 'Alt+KeyE',
   // Function keys Chrome claims. F8 and F9 are deliberately absent — Chrome
   // documents no use for either, which is what makes them a safe suggestion.
   'F1', 'F3', 'F5', 'F6', 'F7', 'F10', 'F11', 'F12',
