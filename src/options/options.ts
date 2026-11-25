@@ -153,6 +153,27 @@ async function init(): Promise<void> {
   ]);
   render();
   watchUnsavedChanges();
+  // The browser's shortcut page is where a clash with ProofKey's own command is
+  // cleared, and nothing tells an extension it happened. Reading the bindings
+  // again on return makes the next recording see the key as free.
+  window.addEventListener('focus', () => void refreshCommandChords());
+}
+
+async function refreshCommandChords(): Promise<void> {
+  const before = JSON.stringify(commandChords);
+  await loadCommandChords();
+  // An armed recorder keeps its own DOM; repainting would orphan it.
+  if (JSON.stringify(commandChords) !== before && !cancelRecording) render();
+}
+
+/**
+ * The browser's own shortcut page, the only place a browser shortcut can be
+ * changed or cleared: Chrome gives extensions no way to rebind or remove their
+ * commands (`chrome.commands` can only read them). `tabs.create` may open
+ * chrome:// URLs and needs no permission; Edge and Brave rewrite the scheme.
+ */
+function openShortcutSettings(): void {
+  void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
 }
 
 function isDirty(): boolean {
@@ -1502,17 +1523,14 @@ function renderActions(): HTMLElement {
               : null;
           })(),
           // The most an extension is permitted to do about its own command:
-          // open the page. `tabs.create` may open chrome:// URLs even though
-          // nothing else can touch them, and it needs no permission.
-          button(
-            'Open Chrome’s shortcut settings',
-            () => void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }),
-          ),
+          // open the page.
+          button('Open browser shortcut settings', openShortcutSettings),
         ),
     list,
     el(
       'div',
       { class: 'row row--end' },
+      button('Browser shortcut settings', openShortcutSettings, 'ghost'),
       button(
         '+ Add action',
         () => {
@@ -1691,7 +1709,9 @@ function startRecording(
   // Clicking anywhere else means the user moved on; leaving the recorder armed
   // would swallow the next key they pressed for some other purpose.
   const onPointerDown = (event: PointerEvent): void => {
-    if (event.target !== trigger) abandon('Left unchanged.');
+    const target = event.target as Element | null;
+    if (target === trigger || target?.closest?.('[data-keep-recording]')) return;
+    abandon('Left unchanged.');
   };
 
   const onKey = (event: KeyboardEvent): void => {
@@ -1727,7 +1747,10 @@ function startRecording(
     if (taken) {
       trigger.textContent = PROMPT;
       hint.className = 'field__hint field__hint--error';
-      hint.textContent = `${shortcutLabel(serialized)} is ProofKey's own browser shortcut (${taken.label}), so the page never sees it. Change that one at chrome://extensions/shortcuts.`;
+      hint.textContent = `${shortcutLabel(serialized)} is ProofKey's own browser shortcut (${taken.label}), so the page never sees it. Clear or change it in the browser, then press it here again. `;
+      const go = button('Open browser shortcut settings', openShortcutSettings, 'ghost');
+      go.dataset.keepRecording = '';
+      hint.append(go);
       return;
     }
 

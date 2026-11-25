@@ -2098,7 +2098,7 @@ async function run() {
     });
     check('losing the shortcut is reported, not silent', (await notice.count()) > 0);
 
-    const openButton = notice.getByRole('button', { name: 'Open Chrome’s shortcut settings' });
+    const openButton = notice.getByRole('button', { name: 'Open browser shortcut settings' });
     check('the notice carries a button to fix it', (await openButton.count()) > 0);
 
     // Asked for by the user, 2026-09-30: "which shortcut should I set?" — so
@@ -2124,6 +2124,62 @@ async function run() {
 
     if (shortcutsTab) await shortcutsTab.close();
     await unboundPage.close();
+  }
+
+  // ------------------------------------------------- clash with the browser key
+  // Asked for by the user, 2026-11-25: a key recorded on an action that the
+  // browser already holds for ProofKey should lead straight to freeing it.
+  // Chrome gives extensions no way to clear their own command, so the page
+  // opens the browser's shortcut page, keeps the recorder armed, and re-reads
+  // the bindings when the user comes back. The command is reported bound to
+  // Alt+Shift+J — a key the browser does not actually hold, so the page sees
+  // the press — and "cleared" by a flag the stub reads.
+  console.log('\nclash with the browser shortcut:');
+  {
+    const clashPage = await context.newPage();
+    await clashPage.addInitScript(() => {
+      const real = chrome.commands.getAll.bind(chrome.commands);
+      chrome.commands.getAll = async () =>
+        (await real()).map((command) => ({ ...command, shortcut: window.__pkCleared ? '' : 'Alt+Shift+J' }));
+    });
+    await clashPage.goto(`chrome-extension://${extensionId}/options/index.html`);
+    await clashPage.waitForTimeout(400);
+
+    check(
+      'the browser shortcut page is reachable while the command is bound',
+      (await clashPage.getByRole('button', { name: 'Browser shortcut settings' }).count()) > 0,
+    );
+
+    await clashPage.locator('details.action').first().evaluate((node) => (node.open = true));
+    const recorder = clashPage.locator('[data-shortcut-for="fix-grammar"]');
+    await recorder.click();
+    await clashPage.keyboard.press('Alt+Shift+KeyJ');
+    await clashPage.waitForTimeout(150);
+    const hint = clashPage.locator('.shortcut .field__hint--error').first();
+    const go = hint.getByRole('button', { name: 'Open browser shortcut settings' });
+    check('the clash is explained with a button to free the key', (await go.count()) > 0,
+      (await hint.textContent().catch(() => '')) ?? '');
+
+    const [shortcutsTab] = await Promise.all([
+      context.waitForEvent('page', { timeout: 5000 }).catch(() => null),
+      go.click(),
+    ]);
+    check('the button opens the browser\'s shortcut page',
+      !!shortcutsTab && /^[a-z]+:\/\/extensions\/shortcuts/.test(shortcutsTab.url()),
+      shortcutsTab ? shortcutsTab.url() : 'no tab opened');
+    if (shortcutsTab) await shortcutsTab.close();
+    check('and the recorder stays armed', (await recorder.textContent()) === 'Press a key…');
+
+    // The user clears it there and comes back.
+    await clashPage.bringToFront();
+    await clashPage.evaluate(() => { window.__pkCleared = true; window.dispatchEvent(new Event('focus')); });
+    await clashPage.waitForTimeout(200);
+    await clashPage.keyboard.press('Alt+Shift+KeyJ');
+    await clashPage.waitForTimeout(200);
+    check('once cleared, the same key is accepted',
+      (await clashPage.locator('[data-shortcut-for="fix-grammar"]').textContent()) === 'Alt+Shift+J',
+      (await clashPage.locator('[data-shortcut-for="fix-grammar"]').textContent()) ?? '');
+    await clashPage.close();
   }
 
   check('no uncaught worker errors', workerErrors.length === 0, workerErrors.join('; ') || 'clean');
