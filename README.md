@@ -199,12 +199,12 @@ The symptom is worth knowing because it does not look like a missing shortcut. T
 
 Honestly: probably, but nobody has checked. ProofKey has to survive two things it doesn't control — the editor you're typing into and the provider you point it at — and neither can be covered exhaustively by one person.
 
-[COMPATIBILITY.md](COMPATIBILITY.md) tracks both, and separates *an automated test asserts this* from *a maintainer ran it* from *a user reported it* from *nobody has tried*. Today that is nine sites and five providers confirmed by a human; almost everything else is untested. A row only moves when there's a link to point at.
+[COMPATIBILITY.md](COMPATIBILITY.md) tracks both, and separates *an automated test asserts this* from *a maintainer ran it* from *a user reported it* from *nobody has tried*. Today that is nine sites and six provider presets confirmed by a human; almost everything else is untested. A row only moves when there's a link to point at.
 
 Which makes the most useful contribution right now a one-minute report:
 
 - **[Site report](https://github.com/jiru-labs/proofkey/issues/new?template=site-report.yml)** — it works on Slack, or it scrambled your text
-- **[Provider report](https://github.com/jiru-labs/proofkey/issues/new?template=provider-report.yml)** — you have a key for one of the other 31 presets
+- **[Provider report](https://github.com/jiru-labs/proofkey/issues/new?template=provider-report.yml)** — you have a key for one of the other 30 presets
 
 Since 0.1.24 both are also linked at the bottom of ProofKey's settings, with your version filled in; since 0.1.25, a one-time note in pages where live checking runs points to them too.
 

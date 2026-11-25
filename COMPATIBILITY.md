@@ -589,7 +589,7 @@ above:
 
 ### Everything else
 
-The other 31 of the 36 presets in `src/core/presets.ts` are `Untested` end-to-end: the
+The other 30 of the 36 presets in `src/core/presets.ts` are `Untested` end-to-end: the
 base URLs come from Hermes Agent's registry rather than from anyone here having
 called them with a key. Three use `anthropic_messages` — Anthropic, MiniMax and
 MiniMax (China) — and the rest use `chat_completions`.
