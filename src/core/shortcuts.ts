@@ -276,9 +276,25 @@ const SUGGESTIONS = [
   'F9',
 ];
 
-export function suggestChord(taken: Iterable<string> = []): string | null {
+export function suggestChord(taken: Iterable<string> = [], label = ''): string | null {
   const used = new Set(taken);
+  // A letter from the action's own name first, so the key can be remembered
+  // ("R from Translate") — but only from the vetted pool: the letters a user
+  // reaches for first are often Chrome's (every T chord is), which is what made
+  // picking a key by hand so hard.
+  const letters = label.normalize('NFD').toUpperCase().replace(/[^A-Z]/g, '');
+  for (const letter of letters) {
+    const chord = `Alt+Shift+Key${letter}`;
+    if (SUGGESTIONS.includes(chord) && !used.has(chord)) return chord;
+  }
   return SUGGESTIONS.find((chord) => !used.has(chord)) ?? null;
+}
+
+/** The letter of `label` a suggested chord was taken from, if it was. */
+export function suggestionLetter(chord: string, label: string): string | null {
+  const letter = /^Alt\+Shift\+Key([A-Z])$/.exec(chord)?.[1];
+  const letters = label.normalize('NFD').toUpperCase().replace(/[^A-Z]/g, '');
+  return letter && letters.includes(letter) ? letter : null;
 }
 
 // ------------------------------------------------------------------ display

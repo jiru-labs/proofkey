@@ -190,6 +190,16 @@ equal(
 );
 equal('returns null once the pool is exhausted', suggestChord(pool), null);
 
+// Asked for by the user, 2026-11-25: finding a key for Translate was "sumamente
+// difícil". Every T chord is Chrome's or AltGr, and the suggestion ignored the
+// action, offering Alt+Shift+G for Translate. A letter from the action's own
+// name is one the user can remember.
+equal('a suggestion takes a letter from the action name', suggestChord([], 'Fix grammar'), 'Alt+Shift+KeyF');
+equal('skipping letters Chrome keeps (T, A, N in Translate)', suggestChord([], 'Translate'), 'Alt+Shift+KeyR');
+equal('and letters already bound', suggestChord(['Alt+Shift+KeyF'], 'Fix grammar'), 'Alt+Shift+KeyG');
+equal('accents do not hide a letter', suggestChord([], 'Éxito'), 'Alt+Shift+KeyE');
+equal('a name with no usable letter falls back to the pool', suggestChord([], 'Zzz'), suggestChord([]));
+
 // ---------------------------------------------------------------- matching
 
 console.log('\nMatching:');

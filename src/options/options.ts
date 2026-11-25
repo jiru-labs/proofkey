@@ -35,6 +35,7 @@ import {
   parseCommandShortcut,
   serializeChord,
   suggestChord,
+  suggestionLetter,
 } from '../core/shortcuts';
 import {
   connectionChain,
@@ -1646,11 +1647,13 @@ function takenChords(exceptActionId: string): string[] {
 }
 
 function applySuggestion(action: WritingAction): void {
-  const chord = suggestChord(takenChords(action.id));
+  const chord = suggestChord(takenChords(action.id), action.label);
   shortcutNotice = chord
     ? {
         actionId: action.id,
-        text: `Set to ${shortcutLabel(chord)}. Nothing else claims it — remember to save.`,
+        text: `Set to ${shortcutLabel(chord)}${
+          suggestionLetter(chord, action.label) ? ` (${suggestionLetter(chord, action.label)} from "${action.label}")` : ''
+        }. Nothing else claims it — remember to save.`,
         kind: 'ok',
       }
     : {
@@ -1737,7 +1740,7 @@ function startRecording(
       hint.className = 'field__hint field__hint--error';
       // Naming a free key here is the difference between a dead end and a next
       // step: the recorder is still armed, so the user can press what it names.
-      const free = suggestChord(takenChords(action.id));
+      const free = suggestChord(takenChords(action.id), action.label);
       hint.textContent = free ? `${problem} ${shortcutLabel(free)} is free.` : problem;
       return;
     }
