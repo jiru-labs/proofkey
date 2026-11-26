@@ -35,6 +35,7 @@ import {
   parseCommandShortcut,
   serializeChord,
   suggestChord,
+  suggestChords,
   suggestionLetter,
 } from '../core/shortcuts';
 import {
@@ -1596,29 +1597,32 @@ function renderShortcutRow(
         })
       : null;
 
+  // While a key is held, "Suggest another" sits next to "Remove": without it,
+  // disliking the suggestion meant removing the key and asking again — and
+  // getting the same one back, since nothing else had become free in between.
+  const rowButtons = action.shortcut
+    ? [
+        button('Suggest another', () => applySuggestion(action, action.shortcut!), 'ghost'),
+        button(
+          'Remove',
+          () => {
+            setActionShortcut(settings, action.id, null);
+            shortcutNotice = { actionId: action.id, text: 'Key removed.', kind: 'ok' };
+            focusShortcutFor = action.id;
+            render();
+          },
+          'ghost',
+        ),
+      ]
+    : // Offered exactly where the user gets stuck. Recording alone could say
+      // a chord was taken but never name one that was free, which turned
+      // setting a key into guesswork against Chrome, the OS and the site.
+      [button('Suggest one', () => applySuggestion(action), 'ghost')];
+
   return el(
     'div',
     { class: 'shortcut' },
-    el(
-      'div',
-      { class: 'row' },
-      trigger,
-      action.shortcut
-        ? button(
-            'Remove',
-            () => {
-              setActionShortcut(settings, action.id, null);
-              shortcutNotice = { actionId: action.id, text: 'Key removed.', kind: 'ok' };
-              focusShortcutFor = action.id;
-              render();
-            },
-            'ghost',
-          )
-        : // Offered exactly where the user gets stuck. Recording alone could say
-          // a chord was taken but never name one that was free, which turned
-          // setting a key into guesswork against Chrome, the OS and the site.
-          button('Suggest one', () => applySuggestion(action), 'ghost'),
-    ),
+    el('div', { class: 'row' }, trigger, ...rowButtons),
     hint,
     stranded,
   );
@@ -1646,8 +1650,29 @@ function takenChords(exceptActionId: string): string[] {
   return [...bound, ...commandChords.map((command) => command.chord)];
 }
 
-function applySuggestion(action: WritingAction): void {
-  const chord = suggestChord(takenChords(action.id), action.label, { mac: IS_MAC });
+function applySuggestion(action: WritingAction, after?: string): void {
+  const free = suggestChords(takenChords(action.id), action.label, { mac: IS_MAC });
+  // "Suggest another" passes the key it is leaving: takenChords already
+  // excludes this action's own chord, so that key is still in `free`, and the
+  // pick is the entry after it, wrapping round to the first. A key recorded by
+  // hand is not in the pool, so its -1 lands on the first entry — the same
+  // fallback "Suggest one" uses.
+  const at = after === undefined ? -1 : free.indexOf(after);
+  const chord = at >= 0 ? free[(at + 1) % free.length] : free[0] ?? null;
+
+  if (after !== undefined && (!chord || chord === after)) {
+    // Cycling would land back on the key being left: it is the only one free.
+    // Keeping it and saying so beats re-setting the same key as if it were new.
+    shortcutNotice = {
+      actionId: action.id,
+      text: 'No other key ProofKey can vouch for is free. Record one yourself.',
+      kind: 'error',
+    };
+    focusShortcutFor = action.id;
+    render();
+    return;
+  }
+
   shortcutNotice = chord
     ? {
         actionId: action.id,

@@ -29,6 +29,7 @@ import {
   parseCommandShortcut,
   serializeChord,
   suggestChord,
+  suggestChords,
   suggestionLetter,
   type Chord,
 } from '../src/core/shortcuts.ts';
@@ -204,6 +205,30 @@ equal('and letters already bound', suggestChord(['Alt+Shift+KeyF'], 'Fix grammar
 equal('accents do not hide a letter', suggestChord([], 'Éxito'), 'Alt+Shift+KeyE');
 equal('a name with no usable letter falls back to the pool', suggestChord([], 'Zzz'), suggestChord([]));
 
+// "Suggest another" walks the whole list instead of taking its first entry, so
+// the list is held to the rules the first suggestion is: the name's letters
+// first, nothing taken, nothing twice.
+const listed = suggestChords([], 'Fix grammar');
+equal('the list starts where the one suggestion does', listed[0], suggestChord([], 'Fix grammar'));
+check(
+  'the list has no duplicates',
+  new Set(listed).size === listed.length,
+  `${listed.length} entries, ${new Set(listed).size} distinct`,
+);
+equal('and holds every free chord exactly once', listed.length, pool.length);
+check(
+  'a name letter the pool order would bury still comes first (R before K)',
+  listed.indexOf('Alt+Shift+KeyR') < listed.indexOf('Alt+Shift+KeyK'),
+  listed.join(' '),
+);
+check(
+  'a taken chord is absent from the list',
+  !suggestChords(['Alt+Shift+KeyF'], 'Fix grammar').includes('Alt+Shift+KeyF'),
+  'Alt+Shift+KeyF came back',
+);
+equal('and the rest keep their count with one gone', suggestChords(['Alt+Shift+KeyF'], 'Fix grammar').length, pool.length - 1);
+equal('nothing free means an empty list', suggestChords(pool).join(','), '');
+
 // ---------------------------------------------------------------- mac pool
 
 console.log('\nMac suggestions:');
@@ -263,6 +288,23 @@ equal(
   suggestChord([], '', { mac: true }),
 );
 equal('mac: returns null once the pool is exhausted', suggestChord(macPool, '', { mac: true }), null);
+
+// Same rules for the list the mac pool feeds, since "Suggest another" cycles
+// through it there too.
+const macListed = suggestChords([], 'Fix grammar', { mac: true });
+equal('mac: the list starts where the one suggestion does', macListed[0], suggestChord([], 'Fix grammar', { mac: true }));
+check(
+  'mac: the list has no duplicates',
+  new Set(macListed).size === macListed.length,
+  `${macListed.length} entries, ${new Set(macListed).size} distinct`,
+);
+equal('mac: and holds every free chord exactly once', macListed.length, macPool.length);
+check(
+  'mac: a taken chord is absent from the list',
+  !suggestChords(['Ctrl+Shift+KeyF'], 'Fix grammar', { mac: true }).includes('Ctrl+Shift+KeyF'),
+  'Ctrl+Shift+KeyF came back',
+);
+equal('mac: nothing free means an empty list', suggestChords(macPool, '', { mac: true }).join(','), '');
 
 equal('suggestionLetter recognises a mac chord', suggestionLetter('Ctrl+Shift+KeyS', 'Translate'), 'S');
 

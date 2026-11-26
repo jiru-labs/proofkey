@@ -319,11 +319,18 @@ const MAC_SUGGESTIONS = 'ABCDFGHIJKLMNOPQRSTVWXYZ'
   })
   .concat(['F8', 'F9']);
 
-export function suggestChord(
+/**
+ * Every free suggestion, in the order they are worth having: chords whose
+ * letter comes from the label first, in the label's letter order and
+ * de-duplicated, then the rest of the pool in pool order. "Suggest another"
+ * needs the whole list, not just its head, to know what follows the key it is
+ * leaving.
+ */
+export function suggestChords(
   taken: Iterable<string> = [],
   label = '',
   options: { mac?: boolean } = {},
-): string | null {
+): string[] {
   const pool = options.mac ? MAC_SUGGESTIONS : SUGGESTIONS;
   const used = new Set(taken);
   // A letter from the action's own name first, so the key can be remembered
@@ -331,11 +338,24 @@ export function suggestChord(
   // reaches for first are often Chrome's (every T chord is), which is what made
   // picking a key by hand so hard.
   const letters = label.normalize('NFD').toUpperCase().replace(/[^A-Z]/g, '');
+  const fromLabel: string[] = [];
   for (const letter of letters) {
     const chord = pool.find((entry) => /Key[A-Z]$/.test(entry) && entry.endsWith(`Key${letter}`));
-    if (chord && !used.has(chord)) return chord;
+    if (chord && !used.has(chord) && !fromLabel.includes(chord)) fromLabel.push(chord);
   }
-  return pool.find((chord) => !used.has(chord)) ?? null;
+  return [...fromLabel, ...pool.filter((chord) => !used.has(chord) && !fromLabel.includes(chord))];
+}
+
+/**
+ * The head of `suggestChords`: what "Suggest one" has always offered, or null
+ * if the pool is exhausted.
+ */
+export function suggestChord(
+  taken: Iterable<string> = [],
+  label = '',
+  options: { mac?: boolean } = {},
+): string | null {
+  return suggestChords(taken, label, options)[0] ?? null;
 }
 
 /** The letter of `label` a suggested chord was taken from, if it was. */

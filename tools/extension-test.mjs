@@ -1086,6 +1086,28 @@ async function run() {
       JSON.stringify(stored?.builtInOverrides?.['fix-grammar'] ?? null),
     );
 
+    // "Suggest another" while a key is held: it has to move to a different
+    // key every time, not bounce between two. A hand-recorded key (Alt+G) is
+    // not in the pool, so the first press lands on the pool's head for this
+    // action: F from "Fix grammar".
+    const shownKeys = [];
+    for (let press = 0; press < 4; press += 1) {
+      await page.locator('details.action').first().evaluate((node) => (node.open = true));
+      await page.locator('.shortcut button', { hasText: 'Suggest another' }).first().click();
+      await page.waitForTimeout(150);
+      shownKeys.push(await page.locator('[data-shortcut-for="fix-grammar"]').textContent());
+    }
+    check(
+      '"Suggest another" replaces a held key with the first suggestion',
+      shownKeys[0] === 'Alt+Shift+F',
+      shownKeys.join(' → '),
+    );
+    check(
+      'and every further press offers a key not offered before',
+      new Set(['Alt+G', ...shownKeys]).size === shownKeys.length + 1,
+      shownKeys.join(' → '),
+    );
+
     // Removal has to clear the key rather than leave a stale one behind.
     await page.locator('details.action').first().evaluate((node) => (node.open = true));
     await page.locator('.shortcut button', { hasText: 'Remove' }).first().click();
