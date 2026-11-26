@@ -12,7 +12,7 @@ No backend, no account, no telemetry. Your text goes from your browser straight 
 
 *Recorded against the shipped content script with canned corrections, so no key was involved. On a real site the suggestions come from the model you configured.*
 
-> **[Install from the Chrome Web Store](https://chromewebstore.google.com/detail/loibjoemoahkajjnfioajcibcamhdafc)** — or [build it from source](#install-from-source) if you would rather read the code first.
+> **[Install from the Chrome Web Store](https://chromewebstore.google.com/detail/loibjoemoahkajjnfioajcibcamhdafc)** — or [from Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/proofkey/injbhjhfppbonpnnbblclcanmfbjkema), where a new version arrives after Microsoft's review, so it can trail Chrome by a few releases. Or [build it from source](#install-from-source) if you would rather read the code first.
 >
 > **New here?** In Google Chrome it works as installed: [Chrome's built-in model](#no-api-key-at-all-chromes-built-in-model) checks your writing on your own computer — free, no account, one download. For every action rather than two, [start with Gemini](#no-api-key-yet-start-with-gemini): about two minutes to a key, and ordinary use usually costs nothing.
 >
