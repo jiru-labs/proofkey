@@ -1073,6 +1073,23 @@ async function run() {
       'otherwise the only symptom is a key that does nothing',
     );
 
+    // Both warnings were computed at render time only, so typing the site they
+    // ask for left them on screen until the page was reloaded.
+    {
+      const stale = () =>
+        page.locator('[data-stranded-warning]:visible').count();
+      const sites = page.getByRole('textbox', { name: 'Shortcuts run on' });
+      check('both "no sites" warnings are showing before a site is listed', (await stale()) === 2, String(await stale()));
+      await sites.fill(`http://localhost:${PORT}`);
+      await sites.blur();
+      await page.waitForTimeout(150);
+      check('listing a site hides both warnings without a reload', (await stale()) === 0, String(await stale()));
+      await sites.fill('');
+      await sites.blur();
+      await page.waitForTimeout(150);
+      check('emptying the list brings both back', (await stale()) === 2, String(await stale()));
+    }
+
     await page.locator('button', { hasText: 'Save' }).last().click();
     await page.waitForTimeout(600);
 

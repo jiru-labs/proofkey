@@ -1589,13 +1589,17 @@ function renderShortcutRow(
   // survive the "Set to Ctrl+Shift+H" confirmation. A key bound with no site
   // listed cannot fire anywhere, and the confirmation used to be the last thing
   // said on the subject — which reads as "done" when nothing is done.
-  const stranded =
-    action.shortcut && settings.shortcutOrigins.length === 0
-      ? el('p', {
-          class: 'field__hint field__hint--error',
-          text: 'No sites are listed under "Shortcuts run on" below, so this key cannot run anywhere yet.',
-        })
-      : null;
+  // Always built while a key is held and hidden once a site is listed, rather
+  // than built only when none is: the origins box edits the list without a
+  // render, and a warning that exists only at render time outlives the fix.
+  const stranded = action.shortcut
+    ? el('p', {
+        class: 'field__hint field__hint--error',
+        text: 'No sites are listed under "Shortcuts run on" below, so this key cannot run anywhere yet.',
+        attrs: { 'data-stranded-warning': '' },
+      })
+    : null;
+  if (stranded) stranded.hidden = settings.shortcutOrigins.length > 0;
 
   // While a key is held, "Suggest another" sits next to "Remove": without it,
   // disliking the suggestion meant removing the key and asking again — and
@@ -1855,6 +1859,7 @@ function renderShortcutOrigins(): HTMLElement {
         const raw = (e.target as HTMLTextAreaElement).value;
         settings.shortcutOrigins = lines(raw);
         validate(raw);
+        syncStrandedWarnings();
       },
       // Rewritten on the way out rather than as you type, which would fight the
       // cursor. `github.com` and a pasted page URL both become the origin.
@@ -1867,6 +1872,7 @@ function renderShortcutOrigins(): HTMLElement {
         node.value = [...cleaned, ...unusable].join('\n');
         settings.shortcutOrigins = cleaned;
         validate(node.value);
+        syncStrandedWarnings();
       },
     },
   });
@@ -1874,17 +1880,21 @@ function renderShortcutOrigins(): HTMLElement {
   validate(box.value);
 
   const bound = resolveActions(settings).filter((action) => action.enabled && action.shortcut);
-  const stranded = bound.length > 0 && settings.shortcutOrigins.length === 0;
+  // The count is fixed at render; only whether it shows follows the box.
+  const stranded =
+    bound.length > 0
+      ? el('p', {
+          class: 'notice notice--warn',
+          text: `${bound.length === 1 ? 'A key is' : `${bound.length} keys are`} bound above, but no site is listed here — so ${bound.length === 1 ? 'it' : 'they'} cannot run anywhere. Add the site you want to use ${bound.length === 1 ? 'it' : 'them'} on, then Save.`,
+          attrs: { 'data-stranded-warning': '' },
+        })
+      : null;
+  if (stranded) stranded.hidden = settings.shortcutOrigins.length > 0;
 
   return el(
     'div',
     { class: 'shortcut-origins' },
-    stranded
-      ? el('p', {
-          class: 'notice notice--warn',
-          text: `${bound.length === 1 ? 'A key is' : `${bound.length} keys are`} bound above, but no site is listed here — so ${bound.length === 1 ? 'it' : 'they'} cannot run anywhere. Add the site you want to use ${bound.length === 1 ? 'it' : 'them'} on, then Save.`,
-        })
-      : null,
+    stranded,
     field(
       'Shortcuts run on',
       box,
@@ -1892,6 +1902,15 @@ function renderShortcutOrigins(): HTMLElement {
     ),
     problems,
   );
+}
+
+/** Shows the "no sites listed" warnings only while the list is empty. A full
+ * render from the origins box would steal its focus, so they toggle in place. */
+function syncStrandedWarnings(): void {
+  const none = settings.shortcutOrigins.length === 0;
+  document.querySelectorAll<HTMLElement>('[data-stranded-warning]').forEach((node) => {
+    node.hidden = !none;
+  });
 }
 
 function setActionEnabled(id: string, isBuiltIn: boolean, enabled: boolean): void {
