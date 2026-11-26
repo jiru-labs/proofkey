@@ -220,6 +220,11 @@ export function chordProblem(chord: Chord): string | null {
   }
 
   const serialized = serializeChord(chord);
+  // Named apart from the generic refusal: "Chrome keeps this one" leaves the
+  // user guessing which of Chrome's features took Alt+F.
+  if (serialized === 'Alt+KeyF' || serialized === 'Alt+KeyE') {
+    return `Alt+${serialized.slice(-1)} opens Chrome's menu, so it would never reach the page.`;
+  }
   if (BROWSER_RESERVED.has(serialized)) {
     return 'Chrome keeps this one, so it would never reach the page.';
   }

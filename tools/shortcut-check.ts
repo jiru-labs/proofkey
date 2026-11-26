@@ -199,6 +199,13 @@ equal('returns null once the pool is exhausted', suggestChord(pool), null);
 // Chrome's published list: "Alt+F or Alt+E: open the Chrome menu" (Windows, Linux).
 check('Alt+F, which opens the Chrome menu, is refused', chordProblem(parseChord('Alt+KeyF')!) !== null);
 check('and so is Alt+E', chordProblem(parseChord('Alt+KeyE')!) !== null);
+check('Alt+F names the menu as the reason', /menu/.test(chordProblem(parseChord('Alt+KeyF')!) ?? ''));
+check('Alt+E names the menu as the reason', /menu/.test(chordProblem(parseChord('Alt+KeyE')!) ?? ''));
+equal(
+  'another Chrome-held chord keeps the generic sentence',
+  chordProblem(parseChord('Ctrl+KeyT')!),
+  'Chrome keeps this one, so it would never reach the page.',
+);
 equal('a suggestion takes a letter from the action name', suggestChord([], 'Fix grammar'), 'Alt+Shift+KeyF');
 equal('skipping letters Chrome keeps (T, A, N in Translate)', suggestChord([], 'Translate'), 'Alt+Shift+KeyR');
 equal('and letters already bound', suggestChord(['Alt+Shift+KeyF'], 'Fix grammar'), 'Alt+Shift+KeyG');
