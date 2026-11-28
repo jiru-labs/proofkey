@@ -478,5 +478,12 @@ for (const [key, { options }] of Object.entries(VARIETIES)) {
   check(`${key}: every option has a distinct code`, new Set(options.map((o) => o.code)).size === options.length);
 }
 
+console.log('\nLive-check prompt — cache-invariant across batch sizes:');
+check(
+  'composeCheckPrompt is byte-identical across batch sizes',
+  composeCheckPrompt(emptyProfile(), 1) === composeCheckPrompt(emptyProfile(), 8) &&
+    composeCheckPrompt(emptyProfile(), 1) === composeCheckPrompt(emptyProfile(), 14),
+);
+
 console.log(failures === 0 ? '\nPrompt checks passed.' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

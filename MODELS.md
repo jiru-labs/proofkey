@@ -79,21 +79,21 @@ prompts are edited.
 
 | Operation | Input tokens | Output tokens | What it is |
 |---|---|---|---|
-| Live check | 641 | 188 | one request, 8 sentences in and back |
-| Fix grammar | 855 | 150 | one paragraph, rewritten at about the same length |
-| Summarize | 451 | 45 | one paragraph in, a short summary out |
+| Live check | 643 | 188 | one request, 8 sentences in and back |
+| Fix grammar | 991 | 150 | one paragraph, rewritten at about the same length |
+| Summarize | 667 | 45 | one paragraph in, a short summary out |
 
 ### Cost per 1,000 operations — Google Gemini
 
 | Model | Live check | Fix grammar | Summarize | Thinking |
 |---|---|---|---|---|
-| `gemini-2.5-flash-lite` | $0.14 | $0.15 | $0.06 | off via `reasoning_effort` |
-| `gemini-3.1-flash-lite` | $0.44 | $0.44 | $0.18 | cannot be disabled |
-| `gemini-2.5-flash` | $0.66 | $0.63 | $0.25 | off via `reasoning_effort` |
-| `gemini-3.5-flash-lite` | $0.66 | $0.63 | $0.25 | cannot be disabled |
-| `gemini-3.6-flash` | $2.37 | $2.41 | $1.01 | cannot be disabled |
-| `gemini-3.5-flash` | $2.65 | $2.63 | $1.08 | cannot be disabled |
-| `gemini-2.5-pro` | $2.68 | $2.57 | $1.01 | cannot be disabled |
+| `gemini-2.5-flash-lite` | $0.14 | $0.16 | $0.08 | off via `reasoning_effort` |
+| `gemini-3.1-flash-lite` | $0.44 | $0.47 | $0.23 | cannot be disabled |
+| `gemini-2.5-flash` | $0.66 | $0.67 | $0.31 | off via `reasoning_effort` |
+| `gemini-3.5-flash-lite` | $0.66 | $0.67 | $0.31 | cannot be disabled |
+| `gemini-3.6-flash` | $2.37 | $2.61 | $1.34 | cannot be disabled |
+| `gemini-3.5-flash` | $2.66 | $2.84 | $1.41 | cannot be disabled |
+| `gemini-2.5-pro` | $2.68 | $2.74 | $1.28 | cannot be disabled |
 
 Prices checked **2026-08-01** against
 [ai.google.dev/gemini-api/docs/pricing](https://ai.google.dev/gemini-api/docs/pricing).
@@ -102,11 +102,11 @@ Prices checked **2026-08-01** against
 
 | Model | Live check | Fix grammar | Summarize | Thinking |
 |---|---|---|---|---|
-| `grok-4.20-0309-non-reasoning` | $1.50 | $1.67 | $0.91 | never thinks |
-| `grok-4.3 + reasoning_effort:none` | $1.50 | $1.67 | $0.91 | disabled |
-| `grok-4.3` | $3.21 | $1.67 | $0.91 | on by default |
-| `grok-build-0.1` | $5.12 | $1.34 | $0.72 | cannot be disabled |
-| `grok-4.5` | $5.69 | $2.98 | $1.54 | cannot be disabled |
+| `grok-4.20-0309-non-reasoning` | $1.50 | $1.84 | $1.18 | never thinks |
+| `grok-4.3 + reasoning_effort:none` | $1.50 | $1.84 | $1.18 | disabled |
+| `grok-4.3` | $3.22 | $1.84 | $1.18 | on by default |
+| `grok-build-0.1` | $5.12 | $1.47 | $0.94 | cannot be disabled |
+| `grok-4.5` | $5.69 | $3.25 | $1.97 | cannot be disabled |
 
 The live-check column includes **measured** thinking tokens where thinking
 cannot be turned off, which is why `grok-build-0.1` is the second most expensive
@@ -126,17 +126,17 @@ doubles, which ProofKey never approaches.
 | Model | Live check | Fix grammar | Summarize | Thinking |
 |---|---|---|---|---|
 | `mistralai/mistral-nemo` | $0.02 | $0.02 | $0.01 | never thinks |
-| `qwen/qwen3.7-flash + reasoning_effort:none` | $0.04 | $0.05 | $0.02 | disabled |
-| `mistralai/mistral-small-3.2-24b-instruct` | $0.09 | $0.09 | $0.04 | never thinks |
-| `openai/gpt-oss-20b` | $0.12 | $0.05 | $0.02 | cannot be disabled |
-| `google/gemini-2.5-flash-lite` | $0.14 | $0.15 | $0.06 | off via `reasoning_effort` |
-| `openai/gpt-4.1-nano` | $0.14 | $0.15 | $0.06 | never thinks |
-| `deepseek/deepseek-v4-flash + reasoning_effort:none` | $0.14 | $0.16 | $0.08 | disabled |
-| `meta-llama/llama-3.3-70b-instruct` | $0.16 | $0.17 | $0.08 | never thinks |
-| `qwen/qwen3.7-flash` | $0.28 | $0.05 | $0.02 | on by default |
-| `deepseek/deepseek-v4-flash` | $0.28 | $0.16 | $0.08 | on by default |
-| `openai/gpt-4.1-mini` | $0.56 | $0.58 | $0.26 | never thinks |
-| `anthropic/claude-haiku-4.5` | $1.59 | $1.61 | $0.68 | off by default |
+| `qwen/qwen3.7-flash + reasoning_effort:none` | $0.04 | $0.05 | $0.03 | disabled |
+| `mistralai/mistral-small-3.2-24b-instruct` | $0.09 | $0.10 | $0.06 | never thinks |
+| `openai/gpt-oss-20b` | $0.12 | $0.05 | $0.03 | cannot be disabled |
+| `google/gemini-2.5-flash-lite` | $0.14 | $0.16 | $0.08 | off via `reasoning_effort` |
+| `openai/gpt-4.1-nano` | $0.14 | $0.16 | $0.09 | never thinks |
+| `deepseek/deepseek-v4-flash + reasoning_effort:none` | $0.14 | $0.18 | $0.11 | disabled |
+| `meta-llama/llama-3.3-70b-instruct` | $0.16 | $0.19 | $0.11 | never thinks |
+| `qwen/qwen3.7-flash` | $0.28 | $0.05 | $0.03 | on by default |
+| `deepseek/deepseek-v4-flash` | $0.28 | $0.18 | $0.11 | on by default |
+| `openai/gpt-4.1-mini` | $0.56 | $0.64 | $0.34 | never thinks |
+| `anthropic/claude-haiku-4.5` | $1.59 | $1.75 | $0.90 | off by default |
 
 Overhead is per **model** here rather than per provider, because an aggregator
 has no single upstream: a one-character message bills 1 token through Google, 7
@@ -155,18 +155,18 @@ actually routed to. Checked **2026-08-01** against the key's own catalogue.
 
 | Model | Live check | Fix grammar | Summarize | Thinking |
 |---|---|---|---|---|
-| `gpt-5-nano` | $0.11 | $0.10 | $0.04 | not measured |
-| `deepseek-v4-flash` | $0.14 | $0.16 | $0.08 | not measured |
-| `gpt-5.6-luna` | $0.35 | $0.35 | $0.15 | not measured |
-| `qwen3.5-plus` | $0.36 | $0.35 | $0.15 | not measured |
-| `gpt-5.4-nano` | $0.36 | $0.36 | $0.15 | not measured |
-| `minimax-m2.5` | $0.43 | $0.45 | $0.20 | not measured |
-| `gpt-5.1-codex-mini` | $0.54 | $0.51 | $0.20 | not measured |
-| `qwen3.7-plus` | $0.56 | $0.58 | $0.25 | not measured |
-| `gemini-3.5-flash-lite` | $0.66 | $0.63 | $0.25 | cannot be disabled |
-| `gemini-3-flash` | $0.88 | $0.88 | $0.36 | not measured |
-| `claude-haiku-4-5` | $1.58 | $1.60 | $0.68 | off by default |
-| `grok-4.5` | $5.21 | $3.02 | $1.58 | cannot be disabled |
+| `gpt-5-nano` | $0.11 | $0.11 | $0.05 | not measured |
+| `deepseek-v4-flash` | $0.14 | $0.18 | $0.11 | not measured |
+| `gpt-5.6-luna` | $0.36 | $0.38 | $0.19 | not measured |
+| `qwen3.5-plus` | $0.36 | $0.38 | $0.19 | not measured |
+| `gpt-5.4-nano` | $0.36 | $0.39 | $0.19 | not measured |
+| `minimax-m2.5` | $0.43 | $0.49 | $0.27 | not measured |
+| `gpt-5.1-codex-mini` | $0.54 | $0.55 | $0.26 | not measured |
+| `qwen3.7-plus` | $0.56 | $0.64 | $0.34 | not measured |
+| `gemini-3.5-flash-lite` | $0.66 | $0.67 | $0.31 | cannot be disabled |
+| `gemini-3-flash` | $0.89 | $0.95 | $0.47 | not measured |
+| `claude-haiku-4-5` | $1.58 | $1.74 | $0.89 | off by default |
+| `grok-4.5` | $5.21 | $3.29 | $2.02 | cannot be disabled |
 
 The ProofKey-relevant end of a 60-model catalogue; the rest is coding-agent
 tooling at Opus and GPT-5.5-Pro prices. **This table is Zen, the pay-as-you-go
