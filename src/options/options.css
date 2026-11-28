@@ -3,14 +3,18 @@
   --bg: #f7f8fa;
   --surface: #ffffff;
   --fg: #1f2430;
-  --muted: #626b7d;
+  --muted: #505868;
   --border: #dfe3ea;
   --border-strong: #c6ccd8;
   --accent: #4f46e5;
+  --accent-hover: #4338ca;
   --accent-fg: #ffffff;
   --ok: #15803d;
-  --warn: #b45309;
+  --warn: #92400e;
   --danger: #b91c1c;
+  --badge-fg: #3e4656;
+  --badge-active-fg: #3730a3;
+  --badge-warn-fg: #78350f;
   --radius: 10px;
 }
 
@@ -19,14 +23,18 @@
     --bg: #101218;
     --surface: #191c24;
     --fg: #e8eaef;
-    --muted: #99a1b3;
+    --muted: #9aa3b5;
     --border: #2a2f3a;
     --border-strong: #3a4150;
-    --accent: #7c74f4;
+    --accent: #818cf8;
+    --accent-hover: #6366f1;
     --accent-fg: #0d0f14;
     --ok: #4ade80;
     --warn: #fbbf24;
     --danger: #f87171;
+    --badge-fg: #cbd2e0;
+    --badge-active-fg: #c7d2fe;
+    --badge-warn-fg: #fde68a;
   }
 }
 
@@ -108,6 +116,11 @@ body {
   color: var(--muted);
 }
 
+.field__hint a {
+  color: var(--accent);
+  font-weight: 500;
+}
+
 .field__hint--error {
   color: var(--danger);
 }
@@ -143,8 +156,18 @@ body {
   font-size: 14px;
 }
 
-.input:focus-visible {
+.input:focus-visible,
+.btn:focus-visible,
+.conn__header:focus-visible,
+summary:focus-visible,
+.checkbox input:focus-visible,
+.reports a:focus-visible,
+.field__hint a:focus-visible {
   outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.input:focus-visible {
   outline-offset: -1px;
 }
 
@@ -181,8 +204,13 @@ body {
   white-space: nowrap;
 }
 
-.btn:hover {
+.btn:hover:not(:disabled) {
   border-color: var(--accent);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .btn--primary {
@@ -192,16 +220,31 @@ body {
   font-weight: 600;
 }
 
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
 .btn--ghost {
   border-color: transparent;
   background: transparent;
   color: var(--accent);
 }
 
+.btn--ghost:hover:not(:disabled) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
 .btn--danger {
   border-color: transparent;
   background: transparent;
   color: var(--danger);
+}
+
+.btn--danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 .row {
@@ -238,6 +281,7 @@ body {
 .row--between {
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 /* Export and Import: buttons clear of the hint above, status clear of them. */
@@ -269,9 +313,30 @@ body {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
+  width: 100%;
   padding: 12px 15px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   user-select: none;
+}
+
+.conn__header:hover {
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+
+.conn__chevron {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+
+.conn--open .conn__chevron {
+  transform: rotate(90deg);
 }
 
 .conn__identity {
@@ -308,13 +373,13 @@ body {
   padding: 2px 7px;
   border-radius: 20px;
   background: var(--border);
-  color: var(--muted);
+  color: var(--badge-fg);
   white-space: nowrap;
 }
 
 .badge--active {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--accent);
+  color: var(--badge-active-fg);
 }
 
 .conn__backup {
@@ -322,8 +387,8 @@ body {
 }
 
 .badge--warn {
-  background: color-mix(in srgb, var(--warn) 20%, transparent);
-  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: var(--badge-warn-fg);
 }
 
 .notice {
@@ -335,7 +400,7 @@ body {
 
 .notice--warn {
   background: color-mix(in srgb, var(--warn) 14%, transparent);
-  color: var(--warn);
+  color: var(--badge-warn-fg);
 }
 
 .notice__text {
@@ -372,6 +437,17 @@ body {
   list-style: none;
 }
 
+.action__summary::before {
+  content: '▸';
+  font-size: 11px;
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+
+.action[open] .action__summary::before {
+  transform: rotate(90deg);
+}
+
 .action__summary::-webkit-details-marker {
   display: none;
 }
@@ -395,7 +471,7 @@ body {
    the modifiers held mid-recording, and the final chord. */
 .shortcut__key {
   min-width: 148px;
-  justify-content: center;
+  text-align: center;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
 }
@@ -491,6 +567,27 @@ body {
   50% { box-shadow: 0 0 0 6px transparent; }
 }
 
+@media (max-width: 600px) {
+  .page {
+    padding: 24px 14px 120px;
+  }
+  .card {
+    padding: 16px;
+  }
+  .row {
+    flex-wrap: wrap;
+  }
+  .btn {
+    white-space: normal;
+  }
+  .footer {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .footer--dirty .btn--primary { animation: none; outline: 2px solid var(--warn); }
+  .conn__chevron,
+  .action__summary::before { transition: none; }
 }

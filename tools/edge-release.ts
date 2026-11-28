@@ -16,9 +16,10 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
+import { fileURLToPath } from 'node:url'
 import { readEnv, writeEnvValue, requireKeys } from './env.ts'
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const API = 'https://api.addons.microsoftedge.microsoft.com'
 // Partner Center product id (not secret; it is in the dashboard URL). The CRX id
 // is the public one in the store URL, and Partner Center shows it under
@@ -210,7 +211,7 @@ function certificationNotes(): string {
   const copy = readFileSync(`${ROOT}/.claude/skills/proofkey-store/copy/edge-addons.md`, 'utf8')
   const m = copy.match(/- Notes for certification: "([\s\S]+?)"\n/)
   if (!m) throw new Error('No "Notes for certification" paragraph in copy/edge-addons.md')
-  return m[1].replace(/\s+/g, ' ').trim()
+  return m[1]!.replace(/\s+/g, ' ').trim()
 }
 
 async function credentials() {

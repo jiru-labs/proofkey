@@ -19,6 +19,7 @@ import {
   BUILT_IN_ACTIONS,
   composeCheckPrompt,
   composeSystemPrompt,
+  emptyProfile,
   formatCheckPayload,
 } from '../src/core/prompts.ts';
 import type { WritingProfile } from '../src/core/types.ts';
@@ -62,13 +63,7 @@ const ASSUMPTIONS = [
   'thinking tokens counted on the live check only, where they have been measured',
 ];
 
-const EMPTY_PROFILE: WritingProfile = {
-  styleGuide: '',
-  neverFlag: [],
-  nativeLanguage: '',
-  explainLanguage: '',
-  translateLanguage: '',
-};
+const EMPTY_PROFILE: WritingProfile = emptyProfile();
 
 // ------------------------------------------------------------------- pricing
 

@@ -20,10 +20,11 @@ import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
 
 const BASE = 'http://localhost:8777/tools/harness.html';
-const SHOTS = new URL('../.test-shots/', import.meta.url).pathname;
-const ROOT = new URL('..', import.meta.url).pathname;
+const SHOTS = fileURLToPath(new URL('../.test-shots/', import.meta.url));
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 const MIRRORED = [
   'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'wordSpacing',
@@ -248,10 +249,14 @@ async function run() {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   const page = await context.newPage();
 
+  const pageErrors = [];
   page.on('console', (message) => {
     if (message.type() === 'error') console.log(`    [page error] ${message.text()}`);
   });
-  page.on('pageerror', (error) => console.log(`    [page exception] ${error.message}`));
+  page.on('pageerror', (error) => {
+    pageErrors.push(error.message);
+    console.log(`    [page exception] ${error.message}`);
+  });
 
   for (const field of ['plain', 'odd', 'scrolled', 'single', 'chat', 'rich']) {
     console.log(`\n${field}:`);
@@ -1391,6 +1396,118 @@ async function run() {
     check('and the note is not asked for, so it is not used up', (await sent('proofkey:news')) === 0,
       `${await sent('proofkey:news')} asks`);
   }
+
+  // Clicking Explain on an open card must keep the card open and show the
+  // explanation (a capture-phase document click handler used to close the card
+  // before the button's handler could run).
+  {
+    console.log('\ncard — Explain button and Ctrl+Enter shortcut:');
+    await page.goto(`${BASE}?field=plain`, { waitUntil: 'load' });
+    await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const before = await page.evaluate(probe, ['plain', MIRRORED]);
+    const rect = before.marks[0]?.rect;
+    check('underline available for Explain check', !!rect);
+    if (rect) {
+      await page.mouse.click(rect.x + rect.w / 2, rect.y + rect.h / 2);
+      await page.waitForTimeout(200);
+      const explainPos = await page.evaluate(() => {
+        const shadow = document.getElementById('proofkey-root')?.shadowRoot;
+        const btn = [...(shadow?.querySelectorAll('.pk-btn--ghost') ?? [])].find((b) => b.textContent === 'Explain');
+        if (!btn) return null;
+        const r = btn.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      });
+      check('Explain button is visible in the card', !!explainPos);
+      if (explainPos) {
+        await page.mouse.click(explainPos.x, explainPos.y);
+        await page.waitForTimeout(250);
+        const explained = await page.evaluate(() => {
+          const shadow = document.getElementById('proofkey-root')?.shadowRoot;
+          const card = shadow?.querySelector('.pk-card');
+          const text = shadow?.querySelector('.pk-card__explanation')?.textContent ?? '';
+          return { open: !!card && !card.hidden, text };
+        });
+        check(
+          'clicking Explain keeps the card open and renders the explanation',
+          explained.open && explained.text.includes('Subject and verb must agree.'),
+          JSON.stringify(explained),
+        );
+      }
+
+      // Pressing Ctrl+Enter while the card is open applies the suggestion and
+      // does not leak the Enter keypress to page listeners.
+      await page.evaluate(() => {
+        window.__pkLeakedEnter = false;
+        window.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') window.__pkLeakedEnter = true;
+        });
+      });
+      await page.keyboard.press('Control+Enter');
+      await page.waitForTimeout(250);
+      const afterCtrlEnter = await page.evaluate(() => ({
+        leaked: !!window.__pkLeakedEnter,
+        cardOpen: !document.getElementById('proofkey-root')?.shadowRoot?.querySelector('.pk-card')?.hidden,
+        value: document.getElementById('plain').value,
+      }));
+      check(
+        'Ctrl+Enter applies the suggestion and closes the card',
+        !afterCtrlEnter.cardOpen && afterCtrlEnter.value.includes('There is'),
+        JSON.stringify(afterCtrlEnter),
+      );
+      check('Ctrl+Enter does not leak to page keydown listeners', !afterCtrlEnter.leaked);
+    }
+  }
+
+  // Sensitive fields (OTP / credit card / password) must never be live-checked.
+  {
+    console.log('\nsensitive field — never live-checked:');
+    await page.goto(`${BASE}?field=sensitive`, { waitUntil: 'load' });
+    await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(700);
+    const state = await page.evaluate(probe, ['sensitive', MIRRORED]);
+    const checkCount = await page.evaluate(() => window.__pkSent.filter((t) => t === 'proofkey:check').length);
+    check(
+      'sensitive field gets no underlines, no badge, and sends no check request',
+      state.marks.length === 0 && state.badge === null && checkCount === 0,
+      JSON.stringify({ marks: state.marks.length, badge: state.badge, checkCount }),
+    );
+  }
+
+  // Read-only selection invoke copies the result to the clipboard with an ok toast.
+  {
+    console.log('\nread-only selection — copies result to clipboard:');
+    await page.goto(`${BASE}?field=plain`, { waitUntil: 'load' });
+    await page.waitForTimeout(300);
+    await page.evaluate(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      const range = document.createRange();
+      range.selectNodeContents(document.getElementById('readonly'));
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      window.__pkInvoke('fix-grammar');
+    });
+    await page.waitForTimeout(400);
+    const ro = await page.evaluate(async () => {
+      const shadow = document.getElementById('proofkey-root')?.shadowRoot;
+      const toasts = [...(shadow?.querySelectorAll('.pk-toast') ?? [])].map((t) => ({
+        text: t.textContent,
+        ok: t.classList.contains('pk-toast--ok'),
+        err: t.classList.contains('pk-toast--err'),
+      }));
+      const clip = await navigator.clipboard.readText().catch(() => '');
+      return { toasts, clip };
+    });
+    check(
+      'read-only invoke copies the corrected text and shows an ok toast',
+      ro.clip === 'There is a lot of things to do.' && ro.toasts.some((t) => t.ok && /Copied to your clipboard/.test(t.text)) && !ro.toasts.some((t) => t.err),
+      JSON.stringify(ro),
+    );
+  }
+
+  check('no uncaught page exceptions', pageErrors.length === 0, pageErrors.join('; ') || 'clean');
 
   await browser.close();
   console.log(failures === 0 ? '\nAll render checks passed.' : `\n${failures} check(s) FAILED`);

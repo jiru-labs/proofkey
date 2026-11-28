@@ -45,7 +45,7 @@ npm run verify         # everything below, in order. Run this before opening a P
 
 | Command | What it covers | Needs |
 |---|---|---|
-| `npm test` | The word diff, in Node. Invariant: applying the changes to the original reproduces the rewrite exactly. Then the shortcut chords: a chord survives a round trip through storage, matches only the event it was recorded from, and the unusable ones are refused | nothing |
+| `npm test` | Fast Node unit checks (`tools/*-check.ts`): word diff & auto-correct heuristics, shortcut chords, prompt contracts, error extraction & redaction, thinking fragments, transports, presets, built-in/in-browser/local-server checks, review/news state, mixed-language detection, version sync, registration coalescing, backup validation, and core storage/sentence/browser/provider checks | nothing |
 | `npm run test:render` | The real built `dist/content.js` against `tools/harness.html`: underline rendering, overlay alignment, the card, apply, whole-field rewrite, and a bound key actually pressed | a static server on 8777 — reuses `npm run serve` if it is up, otherwise starts one and stops it after; Playwright |
 | `npm run test:ext` | The **actual** extension loaded in Chromium — real service worker, real provider code — pointed at a stub that records requests, so the wire format is asserted rather than assumed. Also that a recorded shortcut reaches `chrome.storage` and that removing it clears it | Playwright with `channel: 'chromium'` |
 
@@ -134,7 +134,7 @@ that way.
 
 ## Adding a provider
 
-If it speaks `POST /v1/chat/completions` or Anthropic's `POST /v1/messages`, it
+If it speaks `POST /v1/chat/completions`, `POST /v1/responses`, or Anthropic's `POST /v1/messages`, it
 is one row in `src/core/presets.ts` and no adapter code:
 
 ```ts

@@ -10,16 +10,18 @@ import { createFrameWatcher } from './frames';
 import { createShortcuts } from './keys';
 import { createLive, type LiveController } from './live';
 import { noteApplied } from './review';
-import { applyToTarget, readTarget, targetIsCurrent, type EditTarget } from './target';
+import { applyToTarget, deepActiveElement, readTarget, targetIsCurrent, type EditTarget } from './target';
 import { toast } from './toast';
 import css from './ui.css?inline';
 
 const HOST_ID = 'proofkey-root';
+const mountedFlag = globalThis as { __proofkeyMounted?: boolean };
 
 let shadow: ShadowRoot | null = null;
 
 function ui(): ShadowRoot {
-  if (shadow) return shadow;
+  if (shadow && shadow.host.isConnected) return shadow;
+  shadow = null;
 
   const existing = document.getElementById(HOST_ID);
   if (existing?.shadowRoot) {
@@ -43,6 +45,12 @@ function ui(): ShadowRoot {
 
 // ---------------------------------------------------------------- messages
 
+if (!mountedFlag.__proofkeyMounted) {
+  mountedFlag.__proofkeyMounted = true;
+  mount();
+}
+
+function mount(): void {
 chrome.runtime.onMessage.addListener((message: WorkerRequest, _sender, sendResponse) => {
   switch (message.type) {
     case 'proofkey:ping':
@@ -87,8 +95,7 @@ async function refreshState(): Promise<void> {
 
   shortcuts.setBindings(state.value.shortcuts);
   if (!live) live = createLive(ui(), state.value);
-  live.setEnabled(state.value.liveEnabled);
-  live.setAutoCorrect(state.value.autoCorrect === true, state.value.englishVarietyPinned === true);
+  else live.updateState(state.value);
 
   // Only on a page ProofKey was set up for. The script also arrives on demand,
   // from the menu or the toolbar button, and a page reached that way has
@@ -116,6 +123,10 @@ async function toggleLive(injected: boolean): Promise<void> {
   // switch turned it off: the user saw nothing, clicked to get it back, and
   // was told "off". A click means "the thing I see changes", so here it runs.
   const next = injected && live.isEnabled() ? true : !live.isEnabled();
+  if (window !== window.top) {
+    live.setEnabled(next);
+    return;
+  }
   if (next !== live.isEnabled()) {
     const saved = await askWorker<boolean>({ type: 'proofkey:set-live', enabled: next });
     if (!saved.ok) {
@@ -125,7 +136,7 @@ async function toggleLive(injected: boolean): Promise<void> {
   }
 
   live.setEnabled(next);
-  if (next && window === window.top && (await offerSite())) return;
+  if (next && (await offerSite())) return;
   toast(ui(), {
     kind: 'ok',
     text: next
@@ -184,6 +195,40 @@ void refreshState();
 
 let running = false;
 
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function showClipboardFallback(text: string, kind: 'ok' | 'info' | 'error', copiedMessage: string, uncopiedMessage: string): void {
+  void copyToClipboard(text).then((copied) => {
+    if (copied) {
+      toast(ui(), { kind, text: copiedMessage });
+      return;
+    }
+    toast(ui(), {
+      kind: kind === 'ok' ? 'info' : kind,
+      sticky: true,
+      text: uncopiedMessage,
+      action: {
+        label: 'Copy result',
+        run: () => {
+          void copyToClipboard(text).then((ok) =>
+            toast(ui(), {
+              kind: ok ? 'ok' : 'error',
+              text: ok ? 'Copied to your clipboard.' : 'Could not access the clipboard on this page.',
+            }),
+          );
+        },
+      },
+    });
+  });
+}
+
 async function invoke(actionId: string): Promise<void> {
   if (running) return;
 
@@ -194,12 +239,14 @@ async function invoke(actionId: string): Promise<void> {
     // set up, its own copy is handling this invocation and there is nothing to
     // say here; if it is not, the user just asked for an action in a place
     // ProofKey cannot reach, which is exactly when to offer the grant.
-    const focused = document.activeElement;
+    const focused = deepActiveElement();
     if (focused instanceof HTMLIFrameElement) {
       if (!frames) frames = createFrameWatcher(ui());
       await frames.offerFor(focused);
       return;
     }
+    // In a multi-frame broadcast, unfocused sibling frames have nothing to report.
+    if (window !== window.top && !document.hasFocus()) return;
     toast(ui(), {
       kind: 'error',
       text: 'Select some text, or put the cursor in a text field first.',
@@ -244,32 +291,56 @@ async function invoke(actionId: string): Promise<void> {
       return;
     }
 
+    // Read-only selections (e.g. Translate or Summarize on webpage prose) cannot
+    // be written back, so copy the result directly without claiming the text changed.
+    if (target.kind === 'readonly') {
+      const fallback = result.value.fallbackErrors[0];
+      const suffix = [
+        fallback ? `Via ${result.value.servedBy} — ${fallback.label} failed.` : '',
+        result.value.notice,
+      ]
+        .filter(Boolean)
+        .join(' ');
+      showClipboardFallback(
+        result.value.text,
+        'ok',
+        ['Copied to your clipboard.', suffix].filter(Boolean).join(' '),
+        ['Result ready (clipboard access was blocked).', suffix].filter(Boolean).join(' '),
+      );
+      return;
+    }
+
     // The round-trip takes seconds and the user can type through it. `target`
     // was read before the request went out, so writing now would land the
     // rewrite over text the model never saw. `applyToTarget` refuses this too;
     // catching it here is only so the message can say what actually happened.
     if (!targetIsCurrent(target)) {
-      await navigator.clipboard.writeText(result.value.text).catch(() => undefined);
-      toast(ui(), {
-        kind: 'error',
-        text: 'The text changed while this was running, so the result was copied to your clipboard instead.',
-      });
+      showClipboardFallback(
+        result.value.text,
+        'error',
+        'The text changed while this was running, so the result was copied to your clipboard instead.',
+        'The text changed while this was running, and the page blocked clipboard access.',
+      );
       return;
     }
 
     const applied = await applyToTarget(target, result.value.text);
     if (!applied) {
       // Rather than lose the result, hand it over so it can still be pasted.
-      await navigator.clipboard.writeText(result.value.text).catch(() => undefined);
       // Said only when it is true: an editor can take part of a write and refuse
       // to take it back, and "would not accept" over a changed field sends the
       // user off believing their text is untouched.
-      toast(ui(), {
-        kind: 'error',
-        text: targetIsCurrent(target)
+      const untouched = targetIsCurrent(target);
+      showClipboardFallback(
+        result.value.text,
+        'error',
+        untouched
           ? 'This editor would not accept the text, so it was copied to your clipboard instead.'
           : 'This editor changed the text in a way ProofKey could not check. Look it over before you send it; the result is on your clipboard.',
-      });
+        untouched
+          ? 'This editor would not accept the text, and the page blocked clipboard access.'
+          : 'This editor changed the text in a way ProofKey could not check. Look it over before you send it.',
+      );
       return;
     }
 
@@ -307,6 +378,7 @@ function showFailure(message: string): void {
       ? { label: 'Open settings', run: () => void askWorker({ type: 'proofkey:open-options' }) }
       : undefined,
   });
+}
 }
 
 export type { EditTarget };

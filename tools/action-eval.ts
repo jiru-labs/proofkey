@@ -75,6 +75,7 @@ import {
   scoreOutput,
   TRANSLATE_FIXTURES,
   type Fixture,
+  type Score,
 } from './action-eval-fixtures.ts';
 
 
@@ -134,41 +135,15 @@ function arg(name: string): string | undefined {
 }
 
 
-interface Attempt {
+interface Attempt extends Score {
   fixture: Fixture;
   output: string;
   ms: number;
   usage: Record<string, unknown>;
-  survived: string[];
-  lost: string[];
-  appeared: string[];
   /** Asked a second time, as the worker does, because the first reply lost the mixture. */
   retried: boolean;
   /** The first reply's score: what the check would be without that second request. */
   firstOk: boolean;
-  /**
-   * The strong signal, and the only one this harness will call a translation:
-   * a word from `mustNotAppear` is present. That is the model having reached
-   * for the other language's equivalent.
-   */
-  translated: boolean;
-  /**
-   * A `mustSurvive` entry went missing on a translating action, where the
-   * payload disappearing is itself the failure. Kept on the attempt rather than
-   * recomputed, so the reporting below can say which token went.
-   */
-  dropped: boolean;
-  /**
-   * The weak signal: a `mustSurvive` token is gone but no translation showed
-   * up in its place. Measured runs show this is usually orthography rather
-   * than translation — `standup` to `stand-up`, `feature flag` to
-   * `Featureflag`, which is ordinary German compounding. Reported separately
-   * because folding it into the headline number would overstate the bug, and
-   * a fix that "improved" this number by suppressing German spelling rules
-   * would be a worse product.
-   */
-  respelled: boolean;
-  ok: boolean;
 }
 
 interface Options {

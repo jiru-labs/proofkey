@@ -791,7 +791,8 @@ async function run() {
       const before = (await card.textContent()) ?? '';
       check('the card says the size and the host before anything is fetched', /2\.4 GB/.test(before) && /huggingface\.co/.test(before), before);
       const download = page.locator('button', { hasText: 'Download model (2.4 GB from huggingface.co)' });
-      check('and offers the download on a button that names both', await download.isVisible());
+      const canDownload = await download.isVisible();
+      check('and offers the download on a button that names both', canDownload);
 
       await page.locator('button', { hasText: 'Save' }).last().click();
       await page.waitForTimeout(500);
@@ -808,6 +809,7 @@ async function run() {
       const after = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:in-browser', op: 'status' }));
       check('and it did not start the download', after?.value?.kind === 'not-downloaded', JSON.stringify(after?.value));
 
+      if (canDownload) {
       await download.click();
       await page.waitForTimeout(700);
       const during = (await card.textContent()) ?? '';
@@ -856,39 +858,39 @@ async function run() {
       // Live checks continue one conversation, so WebLLM can reuse what it
       // already computed for the check prompt (3.7 s of GPU per check when sent
       // fresh, measured in Brave on an RX 6600, 2026-10-08).
+      // Run `proofkey:warm` FIRST — before any check has run — so it genuinely
+      // proves priming from a cold state rather than inheriting an earlier check.
       const turns = await page.evaluate(async () => {
         const ask = (sentence) => chrome.runtime.sendMessage({ type: 'proofkey:check', sentences: [sentence] });
-        await ask('A first sentence.');
+        await chrome.runtime.sendMessage({ type: 'proofkey:warm' });
+        const warmed = await ask('__turns__ first.');
         const chained = await ask('__turns__ second.');
         await chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: 'Todo esta bien.' });
-        const afterAction = await ask('__turns__ third.');
-        await chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: 'Todo esta bien.' });
-        await chrome.runtime.sendMessage({ type: 'proofkey:warm' });
-        const warmed = await ask('__turns__ fourth.');
-        await chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: 'Todo esta bien.' });
         await new Promise((resolve) => setTimeout(resolve, 300));
-        const quiet = await ask('__turns__ fifth.');
+        const afterAction = await ask('__turns__ third.');
         return {
+          warmed: warmed?.value?.corrections?.[0],
           chained: chained?.value?.corrections?.[0],
           afterAction: afterAction?.value?.corrections?.[0],
-          warmed: warmed?.value?.corrections?.[0],
-          quiet: quiet?.value?.corrections?.[0],
         };
       });
+      // Starting it reads the whole check prompt, which stalled typing for
+      // seconds on a real GPU; that is done before anyone types instead.
       check(
-        'a live check carries the earlier check and its reply',
-        turns.chained === 'system,user,assistant,user',
+        'a field taking focus starts the conversation ahead of the first check',
+        turns.warmed === 'system,user,assistant,user',
         JSON.stringify(turns),
       );
       check(
-        'and starts again after anything else ran on the model (only the neutral first turn, not the earlier checks)',
+        'a live check carries the earlier check and its reply',
+        turns.chained === 'system,user,assistant,user,assistant,user',
+        JSON.stringify(turns),
+      );
+      check(
+        'and starts again after a quick action (only the neutral first turn, not the earlier checks)',
         turns.afterAction === 'system,user,assistant,user',
         JSON.stringify(turns),
       );
-      // Starting it reads the whole check prompt, which stalled typing for
-      // seconds on a real GPU; that is done before anyone types instead.
-      check('a field taking focus starts the conversation ahead of the first check', turns.warmed === 'system,user,assistant,user', JSON.stringify(turns));
-      check('and so does the moment after a quick action', turns.quiet === 'system,user,assistant,user', JSON.stringify(turns));
       const offered = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:get-state' }));
       check(
         'the menu offers Fix grammar, bullet points and Translate',
@@ -897,8 +899,12 @@ async function run() {
       );
 
       await page.locator('button', { hasText: 'Remove the downloaded model' }).click();
+      const confirmRemove = page.locator('button', { hasText: 'Confirm remove' });
+      check('removing the 2.4 GB model asks for confirmation first', await confirmRemove.isVisible());
+      await confirmRemove.click();
       await page.waitForTimeout(800);
       check('removing it goes back to not downloaded', /Not downloaded yet/.test((await card.textContent()) ?? ''), (await card.textContent()) ?? '');
+      }
     }
 
     // Leave the profile as the sections below expect to find it.
@@ -1371,7 +1377,7 @@ async function run() {
       const strangerAnswer = await toastText();
       check(
         'and the worker gets as far as asking the browser',
-        !/user gesture/i.test(strangerAnswer),
+        !/user gesture/i.test(strangerAnswer) && !strangerAnswer.includes('Allow'),
         strangerAnswer || 'no toast (prompt pending)',
       );
       await xPage.close();
@@ -1551,6 +1557,16 @@ async function run() {
       check('a request the one in use cannot serve is served by the backup',
         reply?.ok === true && reply.value.servedBy === 'Stub' && reply.value.fallbackErrors?.[0]?.label === 'Not on this computer',
         JSON.stringify(reply));
+
+      // Live checking sends every sentence you pause on, so it must NOT fall
+      // through to a backup provider — only quick actions do.
+      seen.length = 0;
+      const liveReply = await page.evaluate(() =>
+        chrome.runtime.sendMessage({ type: 'proofkey:check', sentences: ['Their is alot of things to do.'] }),
+      );
+      check('live checking never falls through to a backup provider',
+        liveReply?.ok === false && seen.length === 0,
+        JSON.stringify({ ok: liveReply?.ok, error: liveReply?.error, requests: seen.length }));
     }
   }
 
@@ -1913,11 +1929,15 @@ async function run() {
     // the tab went to Google's consent page), so the worker's tabs.create is
     // replaced instead and the test opens nothing at all.
     await worker.evaluate(() => {
+      globalThis.__pkCreate = chrome.tabs.create;
       globalThis.__pkOpened = [];
       chrome.tabs.create = async (options) => { globalThis.__pkOpened.push(options.url); return {}; };
     });
     const opened = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'proofkey:open-review' }));
-    const urls = await worker.evaluate(() => globalThis.__pkOpened);
+    const urls = await worker.evaluate(() => {
+      chrome.tabs.create = globalThis.__pkCreate;
+      return globalThis.__pkOpened;
+    });
     const expected = `https://chromewebstore.google.com/detail/${extensionId}/reviews`;
     check('Rate ProofKey opens this extension\'s reviews page in the store, and nothing else',
       opened.ok && urls.length === 1 && urls[0] === expected, JSON.stringify(urls));
@@ -2219,6 +2239,57 @@ async function run() {
       (await clashPage.locator('[data-shortcut-for="fix-grammar"]').textContent()) === 'Alt+Shift+J',
       (await clashPage.locator('[data-shortcut-for="fix-grammar"]').textContent()) ?? '');
     await clashPage.close();
+  }
+
+  // ----------------------------------------- content script message isolation
+  console.log('\nmessage isolation:');
+  {
+    const tabPage = await context.newPage();
+    await tabPage.goto(`http://localhost:${PORT}/frame-child`, { waitUntil: 'load' });
+    const tabId = await page.evaluate(async (url) => {
+      const tabs = await chrome.tabs.query({ url });
+      return tabs[0]?.id ?? null;
+    }, `http://localhost:${PORT}/frame-child`);
+    check('located test tab for isolation check', typeof tabId === 'number', String(tabId));
+    if (typeof tabId === 'number') {
+      const result = await page.evaluate(async (id) => {
+        const [{ result: value }] = await chrome.scripting.executeScript({
+          target: { tabId: id },
+          func: async () => {
+            const inBrowser = await chrome.runtime.sendMessage({ type: 'proofkey:in-browser', op: 'status' });
+            return { inBrowser };
+          },
+        });
+        return value;
+      }, tabId);
+      check(
+        'a content script cannot invoke proofkey:in-browser',
+        result?.inBrowser?.ok === false && /settings/i.test(result?.inBrowser?.error ?? ''),
+        JSON.stringify(result),
+      );
+    }
+    await tabPage.close();
+  }
+
+  // ------------------------------------------------- custom action rename UI
+  console.log('\ncustom action rename:');
+  {
+    const actionPage = await context.newPage();
+    await actionPage.goto(`chrome-extension://${extensionId}/options/index.html`);
+    await actionPage.waitForTimeout(400);
+    await actionPage.getByRole('button', { name: '+ Add action' }).click();
+    const nameInput = actionPage.locator('[data-action-name-for]').last();
+    check('adding a custom action shows an editable Name field', await nameInput.isVisible());
+    if (await nameInput.isVisible()) {
+      await nameInput.fill('Make concise');
+      await actionPage.locator('button', { hasText: 'Save' }).last().click();
+      await actionPage.waitForTimeout(400);
+      await actionPage.reload();
+      await actionPage.waitForTimeout(400);
+      const persisted = await actionPage.locator('details.action summary', { hasText: 'Make concise' }).count();
+      check('renamed custom action persists across Save and reload', persisted === 1, `${persisted} match(es)`);
+    }
+    await actionPage.close();
   }
 
   check('no uncaught worker errors', workerErrors.length === 0, workerErrors.join('; ') || 'clean');

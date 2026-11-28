@@ -4,9 +4,9 @@ import { defineConfig } from 'vite';
 const at = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 /**
- * Content scripts run in the page's world and are not ES modules, so they must
- * ship as one self-contained IIFE with no import statements and no separate
- * CSS file (styles are imported with `?inline` and injected into a shadow root).
+ * Content scripts run in an isolated world on the page and are not ES modules,
+ * so they must ship as one self-contained IIFE with no import statements and no
+ * separate CSS file (styles are imported with `?inline` and injected into a shadow root).
  */
 export default defineConfig({
   publicDir: false,

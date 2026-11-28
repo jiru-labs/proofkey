@@ -57,6 +57,10 @@ async function retryOnReplacement(
   connection: Connection,
   request: CompletionRequest,
 ): Promise<ChainResult | undefined> {
+  const preset = getPreset(connection.presetId);
+  if (!preset.defaultModel || connection.model.trim() === preset.defaultModel) {
+    return undefined;
+  }
   const available = await listModels(connection, request.signal).catch((error: unknown) => {
     if (error instanceof DOMException && error.name === 'AbortError') throw error;
     return [] as string[];
@@ -142,7 +146,10 @@ export function validateConnection(
 
   if (!connection.baseUrl.trim()) return 'No base URL set.';
   try {
-    new URL(connection.baseUrl);
+    const parsed = new URL(connection.baseUrl.trim());
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return `"${connection.baseUrl}" must start with http:// or https://.`;
+    }
   } catch {
     return `"${connection.baseUrl}" is not a valid URL.`;
   }
@@ -170,7 +177,9 @@ export function originPattern(connection: Connection): string | null {
   // offscreen document and needs no host access.
   if (connection.transport === 'chrome_builtin' || connection.transport === 'in_browser') return null;
   try {
-    return `${new URL(connection.baseUrl).origin}/*`;
+    const parsed = new URL(connection.baseUrl.trim());
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return `${parsed.origin}/*`;
   } catch {
     return null;
   }

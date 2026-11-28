@@ -41,12 +41,22 @@ export interface CompletionResult {
 
 /** Joins the base URL with an endpoint path and applies the connection's query params. */
 export function buildUrl(connection: Connection, path: string): string {
-  const url = new URL(`${connection.baseUrl.replace(/\/+$/, '')}${path}`);
-  for (const [key, value] of Object.entries(connection.extraQuery)) {
+  const url = new URL(connection.baseUrl.trim());
+  const qIndex = path.indexOf('?');
+  const pathPart = qIndex >= 0 ? path.slice(0, qIndex) : path;
+  const queryPart = qIndex >= 0 ? path.slice(qIndex + 1) : '';
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}/${pathPart.replace(/^\/+/, '')}`;
+  if (queryPart) {
+    for (const [key, value] of new URLSearchParams(queryPart)) {
+      url.searchParams.set(key, value);
+    }
+  }
+  for (const [key, value] of Object.entries(connection.extraQuery ?? {})) {
     url.searchParams.set(key, value);
   }
-  if (connection.authStyle === 'query' && connection.authQueryParam) {
-    url.searchParams.set(connection.authQueryParam, connection.apiKey);
+  const key = connection.apiKey.trim();
+  if (connection.authStyle === 'query' && connection.authQueryParam && key) {
+    url.searchParams.set(connection.authQueryParam, key);
   }
   return url.toString();
 }
@@ -54,25 +64,30 @@ export function buildUrl(connection: Connection, path: string): string {
 /**
  * Applies the connection's auth style plus any endpoint-specific headers.
  * `base` holds headers the transport itself requires and that the user's
- * `extraHeaders` may deliberately override.
+ * `extraHeaders` may deliberately override (matched case-insensitively).
  */
 export function buildHeaders(
   connection: Connection,
   base: Record<string, string>,
 ): Record<string, string> {
-  const headers: Record<string, string> = { 'content-type': 'application/json', ...base };
-  const key = connection.apiKey.trim();
+  const entries = new Map<string, [string, string]>();
+  const set = (name: string, value: string): void => {
+    entries.set(name.toLowerCase(), [name, value]);
+  };
 
+  for (const [name, value] of Object.entries(base)) set(name, value);
+
+  const key = connection.apiKey.trim();
   if (key) {
     switch (connection.authStyle) {
       case 'bearer':
-        headers['authorization'] = `Bearer ${key}`;
+        set('authorization', `Bearer ${key}`);
         break;
       case 'x-api-key':
-        headers['x-api-key'] = key;
+        set('x-api-key', key);
         break;
       case 'header':
-        if (connection.authHeaderName) headers[connection.authHeaderName] = key;
+        if (connection.authHeaderName) set(connection.authHeaderName, key);
         break;
       case 'query':
       case 'none':
@@ -80,7 +95,11 @@ export function buildHeaders(
     }
   }
 
-  return { ...headers, ...connection.extraHeaders };
+  for (const [name, value] of Object.entries(connection.extraHeaders ?? {})) set(name, value);
+
+  const headers: Record<string, string> = {};
+  for (const [name, value] of entries.values()) headers[name] = value;
+  return headers;
 }
 
 export const REQUEST_TIMEOUT_MS = 60_000;
@@ -96,26 +115,10 @@ export async function postJson(
   body: unknown,
   signal?: AbortSignal,
 ): Promise<unknown> {
-  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-  const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
-
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: combined,
-    });
-  } catch (cause) {
-    throw new ProviderError(describeNetworkFailure(cause, url), connection.label);
-  }
-
-  const payload = await readBody(response);
-  if (!response.ok) {
-    throw new ProviderError(extractErrorMessage(payload, response), connection.label, response.status);
-  }
-  return payload;
+  const withContentType = Object.keys(headers).some((k) => k.toLowerCase() === 'content-type')
+    ? headers
+    : { 'content-type': 'application/json', ...headers };
+  return requestJson(connection, url, { method: 'POST', headers: withContentType, body: JSON.stringify(body) }, signal);
 }
 
 export async function getJson(
@@ -124,21 +127,47 @@ export async function getJson(
   headers: Record<string, string>,
   signal?: AbortSignal,
 ): Promise<unknown> {
+  return requestJson(connection, url, { method: 'GET', headers }, signal);
+}
+
+async function requestJson(
+  connection: Connection,
+  url: string,
+  init: RequestInit,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  if (signal?.aborted) throw signal.reason ?? new DOMException('Request cancelled.', 'AbortError');
   const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
 
   let response: Response;
+  let payload: unknown;
   try {
-    response = await fetch(url, { method: 'GET', headers, signal: combined });
+    response = await fetch(url, { ...init, signal: combined });
+    payload = await readBody(response);
   } catch (cause) {
-    throw new ProviderError(describeNetworkFailure(cause, url), connection.label);
+    // Caller-initiated aborts must propagate unwrapped so `runCompletion` stops
+    // instead of treating cancellation as a provider failure and hitting backups.
+    if (signal?.aborted) {
+      throw signal.reason ?? (cause instanceof Error ? cause : new DOMException('Request cancelled.', 'AbortError'));
+    }
+    throw new ProviderError(redactKey(describeNetworkFailure(cause, url), connection.apiKey), connection.label);
   }
 
-  const payload = await readBody(response);
   if (!response.ok) {
-    throw new ProviderError(extractErrorMessage(payload, response), connection.label, response.status);
+    throw new ProviderError(
+      redactKey(extractErrorMessage(payload, response), connection.apiKey),
+      connection.label,
+      response.status,
+    );
   }
   return payload;
+}
+
+function redactKey(message: string, apiKey: string | undefined): string {
+  const key = apiKey?.trim();
+  if (!key || key.length < 6 || !message.includes(key)) return message;
+  return message.split(key).join('[redacted]');
 }
 
 async function readBody(response: Response): Promise<unknown> {
@@ -188,14 +217,18 @@ function extractErrorMessage(payload: unknown, response: Response): string {
   if (body && typeof body === 'object') {
     const record = body as Record<string, unknown>;
     const error = record['error'];
-    if (typeof error === 'string') return error;
+    if (typeof error === 'string' && error.trim()) return error.trim().slice(0, 500);
     if (error && typeof error === 'object') {
       const message = (error as Record<string, unknown>)['message'];
-      if (typeof message === 'string') return message;
+      if (typeof message === 'string' && message.trim()) return message.trim().slice(0, 500);
     }
-    if (typeof record['message'] === 'string') return record['message'] as string;
+    if (typeof record['message'] === 'string' && record['message'].trim()) {
+      return record['message'].trim().slice(0, 500);
+    }
     // Ollama and llama.cpp report failures on a bare `detail` field.
-    if (typeof record['detail'] === 'string') return record['detail'] as string;
+    if (typeof record['detail'] === 'string' && record['detail'].trim()) {
+      return record['detail'].trim().slice(0, 500);
+    }
   }
 
   return `${response.status} ${response.statusText || 'request failed'}`;

@@ -28,10 +28,6 @@ export type ContentRequest =
   | { type: 'proofkey:frame-offer'; origin: string }
   /** The user clicked Allow on that offer. Must be sent from the click itself. */
   | { type: 'proofkey:frame-grant'; origin: string }
-  /**
-   * Typing resumed while a live check was running. The in-browser model drops
-   * that check so the GPU is free for the page; it runs again at the next pause.
-   */
   /** A suggestion or rewrite was applied. Counted on this computer, only to ask once for a rating. */
   | { type: 'proofkey:applied' }
   /** The user clicked the rating link. The worker picks the URL; the page does not get a say. */
@@ -134,6 +130,8 @@ export interface ContentState {
   englishVarietyPinned: boolean;
   /** True when at least one usable connection exists. */
   configured: boolean;
+  /** Opaque signature of the live-check model and writing profile; a change invalidates cached checks. */
+  checkSignature?: string;
 }
 
 /** Typed wrapper around `chrome.runtime.sendMessage` for the content script. */

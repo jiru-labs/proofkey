@@ -10,6 +10,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 permissions:
   contents: read
 
@@ -24,7 +28,19 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npx playwright install --with-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+      - run: npx playwright install-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+      - uses: actions/cache@v4
+        with:
+          path: public/webllm
+          key: webllm-${{ hashFiles('src/core/providers/inBrowserModel.ts') }}
       # Not in git; fetched and hash-checked. Without it the check that the
       # bundled library is the pinned one is skipped and nothing says so.
       - run: node tools/fetch-webllm-lib.mjs

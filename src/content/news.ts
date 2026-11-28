@@ -19,7 +19,7 @@ const NEWS_MIN_MS = 10_000;
 let asked = false;
 
 export function offerNews(shadow: ShadowRoot): void {
-  if (asked) return;
+  if (asked || window !== window.top) return;
   asked = true;
   window.setTimeout(() => void show(shadow), NEWS_DELAY_MS);
 }
@@ -28,7 +28,7 @@ async function show(shadow: ShadowRoot): Promise<void> {
   // Asking hands the note out and marks it seen, so ask only when it can be shown.
   if (toastShowing()) return;
   const news = await askWorker<NewsResult>({ type: 'proofkey:news' });
-  if (!news.ok || !news.value) return;
+  if (!news.ok || !news.value || toastShowing()) return;
   const note = news.value;
 
   toast(shadow, {

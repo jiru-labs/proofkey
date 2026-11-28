@@ -119,5 +119,24 @@ console.log('\nThe status code reaches the error object:');
 const { status } = await messageFor('[{"error": {"message": "nope"}}]', rateLimited);
 check('a 429 arrives as 429', status === 429, status === 429 ? '' : `got ${String(status)}`);
 
+console.log('\nAPI key redaction and empty JSON error fallback:');
+const secretConn = { label: 'Secret', apiKey: 'sk-super-secret-123456' } as Connection;
+globalThis.fetch = (async () =>
+  new Response('{"error": {"message": "Invalid key sk-super-secret-123456 on request"}}', { status: 401 })) as typeof fetch;
+try {
+  await postJson(secretConn, 'https://example.test/v1/chat/completions', {}, {});
+  check('redacts apiKey from error message', false, 'no error thrown');
+} catch (error) {
+  const msg = (error as ProviderError).message;
+  check('redacts apiKey from error message', !msg.includes('sk-super-secret-123456') && msg.includes('[redacted]'), msg);
+}
+
+await equal(
+  'empty JSON error string falls back to HTTP status',
+  '{"error": ""}',
+  { status: 500, statusText: 'Internal Server Error' },
+  '500 Internal Server Error',
+);
+
 console.log(failures ? `\n${failures} check(s) failed.\n` : '\nError checks passed.\n');
 process.exit(failures ? 1 : 0);

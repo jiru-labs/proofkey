@@ -243,7 +243,9 @@
 .pk-card {
   position: fixed;
   z-index: 2147483647;
+  box-sizing: border-box;
   width: 320px;
+  max-width: calc(100vw - 16px);
   padding: 12px 14px 12px;
   border-radius: 10px;
   border: 1px solid rgba(0, 0, 0, 0.08);
@@ -349,14 +351,58 @@
   cursor: default;
 }
 
+.pk-btn:focus-visible,
+.pk-badge:focus-visible,
+.pk-card__close:focus-visible,
+.pk-toast__action:focus-visible,
+.pk-toast__close:focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+}
+
 @media (prefers-color-scheme: dark) {
   .pk-card {
     background: #1c1f28;
     color: #e8eaef;
     border-color: rgba(255, 255, 255, 0.09);
   }
+  .pk-card__before,
+  .pk-card__arrow {
+    color: #9aa3b5;
+  }
   .pk-card__explanation {
     color: #b6bdcc;
     border-top-color: rgba(255, 255, 255, 0.09);
+  }
+  .pk-chip {
+    background: rgba(248, 113, 113, 0.16);
+    color: #fca5a5;
+  }
+  .pk-chip--style {
+    background: rgba(96, 165, 250, 0.16);
+    color: #93c5fd;
+  }
+  .pk-btn {
+    color: #a5b4fc;
+  }
+  .pk-btn--primary {
+    background: #4f46e5;
+    color: #ffffff;
+  }
+  .pk-btn:focus-visible,
+  .pk-badge:focus-visible,
+  .pk-card__close:focus-visible,
+  .pk-toast__action:focus-visible,
+  .pk-toast__close:focus-visible {
+    outline-color: #a5b4fc;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pk-toast,
+  .pk-card,
+  .pk-badge--checking,
+  .pk-spinner {
+    animation: none;
   }
 }

@@ -5,7 +5,8 @@ const at = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 /**
  * Builds everything that is allowed to be an ES module: the MV3 service worker
- * (declared with `"type": "module"`) and the options page.
+ * (declared with `"type": "module"`), the options page, and the offscreen
+ * document for the in-browser model.
  *
  * Content scripts cannot be ES modules, so they are built separately by
  * `vite.content.config.ts` into a single IIFE bundle.
@@ -15,7 +16,7 @@ export default defineConfig({
   publicDir: at('./public'),
   build: {
     outDir: at('./dist'),
-    emptyOutDir: true,
+    emptyOutDir: !process.env.PROOFKEY_WATCH,
     target: 'chrome116',
     modulePreload: { polyfill: false },
     rollupOptions: {

@@ -7,7 +7,7 @@ import { createHighlighter, type FieldRef, type Highlighter } from './highlight'
 import { offerNews } from './news';
 import { noteApplied } from './review';
 import { toast } from './toast';
-import { applyToTarget, flatten, offsetOfPoint, rangeFor } from './target';
+import { applyToTarget, deepActiveElement, flatten, isSensitive, offsetOfPoint, outermostEditableHost, rangeFor, type FlatText } from './target';
 
 /**
  * The as-you-type layer.
@@ -30,8 +30,11 @@ import { applyToTarget, flatten, offsetOfPoint, rangeFor } from './target';
  * never re-sends paragraphs one through three.
  */
 
-const TEXTUAL_INPUT_TYPES = new Set(['text', 'search', 'url', 'tel', 'email', '']);
+// `<input type="email">` rejects `setSelectionRange` per HTML spec and should
+// not be live-proofread anyway.
+const TEXTUAL_INPUT_TYPES = new Set(['text', 'search', 'url', 'tel', '']);
 const MIN_SENTENCE_LENGTH = 4;
+const MAX_CACHE_ENTRIES = 500;
 
 /** Events that mean a person is editing the field, as opposed to ProofKey writing to it. */
 const USER_EDIT_EVENTS = ['keydown', 'paste', 'compositionstart', 'drop'] as const;
@@ -79,6 +82,11 @@ interface Session {
   lastUserAt: number;
   /** True while automatic correction is writing, so its own `input` events are not read as typing. */
   autoRunning: boolean;
+  /** True during an active IME/dead-key composition; checking and auto-correct stand down. */
+  composing: boolean;
+  /** Last badge state, so scroll/resize can reposition it without recomputing suggestions. */
+  badgeKind: 'checking' | 'clean' | 'issues' | 'error' | 'waiting' | null;
+  badgeTitle: string;
   /**
    * Sentence texts automatic correction has already written into, by content
    * hash. A sentence that comes back to one of these — Undo, Ctrl+Z, a paste —
@@ -98,15 +106,46 @@ export interface LiveController {
   isEnabled(): boolean;
   setEnabled(enabled: boolean): void;
   setAutoCorrect(enabled: boolean, englishVarietyPinned: boolean): void;
+  updateState(next: ContentState): void;
   destroy(): void;
 }
 
-export function createLive(shadow: ShadowRoot, state: ContentState): LiveController {
+/** Splits a per-occurrence suggestion id (`key#index@start`) into its parts. */
+function parseSuggestionId(id: string): { key: string; index: number; dismissId: string } {
+  const at = id.lastIndexOf('@');
+  const base = at >= 0 ? id.slice(0, at) : id;
+  const hash = base.lastIndexOf('#');
+  return {
+    key: hash >= 0 ? base.slice(0, hash) : base,
+    index: hash >= 0 ? Number(base.slice(hash + 1)) : -1,
+    dismissId: base,
+  };
+}
+
+function capMap<K, V>(map: Map<K, V>, max: number): void {
+  while (map.size > max) {
+    const oldest = map.keys().next().value;
+    if (oldest === undefined) break;
+    map.delete(oldest);
+  }
+}
+
+function capSet<T>(set: Set<T>, max: number): void {
+  while (set.size > max) {
+    const oldest = set.values().next().value;
+    if (oldest === undefined) break;
+    set.delete(oldest);
+  }
+}
+
+export function createLive(shadow: ShadowRoot, initialState: ContentState): LiveController {
+  let state = { ...initialState };
   let enabled = state.liveEnabled;
   let autoCorrectOn = state.autoCorrect === true;
   let englishPinned = state.englishVarietyPinned === true;
   let session: Session | null = null;
-  const dictionary = new Set(state.dictionary.map((word) => word.toLowerCase()));
+  let dictionary = new Set(state.dictionary.map((word) => word.toLowerCase()));
+  let repositionFrame = 0;
 
   const badge = document.createElement('button');
   badge.className = 'pk-badge';
@@ -117,7 +156,10 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
   const card: SuggestionCard = createCard(shadow, {
     apply: (suggestion) => void applySuggestion(suggestion),
     dismiss: (suggestion) => {
-      session?.dismissed.add(suggestion.id);
+      if (session) {
+        session.dismissed.add(parseSuggestionId(suggestion.id).dismissId);
+        capSet(session.dismissed, MAX_CACHE_ENTRIES);
+      }
       rebuild();
     },
     addToDictionary: (suggestion) => {
@@ -131,8 +173,9 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
   // ------------------------------------------------------------ field wiring
 
   function eligible(node: EventTarget | null): FieldRef | null {
+    if (!(node instanceof Element)) return null;
     if (node instanceof HTMLTextAreaElement && !node.readOnly && !node.disabled) {
-      return { kind: 'input', node };
+      return isSensitive(node) ? null : { kind: 'input', node };
     }
     if (
       node instanceof HTMLInputElement &&
@@ -141,13 +184,58 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
       TEXTUAL_INPUT_TYPES.has(node.type.toLowerCase()) &&
       node.type.toLowerCase() !== 'password'
     ) {
-      return { kind: 'input', node };
+      return isSensitive(node) ? null : { kind: 'input', node };
     }
     if (node instanceof HTMLElement && node.isContentEditable) {
-      return { kind: 'contenteditable', node };
+      const host = outermostEditableHost(node);
+      return host && !isSensitive(host) ? { kind: 'contenteditable', node: host } : null;
     }
     return null;
   }
+
+  function readField(field: FieldRef): { text: string; flat?: FlatText } {
+    if (field.kind === 'input') return { text: field.node.value };
+    const flat = flatten(field.node);
+    return { text: flat.text, flat };
+  }
+
+  const syncFloating = () => {
+    repositionFrame = 0;
+    if (!session) return;
+    if (!session.field.node.isConnected) {
+      detach();
+      return;
+    }
+    if (session.badgeKind) setBadge(session.badgeKind, session.badgeTitle);
+    const openId = card.currentId();
+    if (openId) {
+      const rect = session.highlighter.rectFor(openId);
+      if (rect) card.move(rect);
+      else card.hide();
+    }
+  };
+
+  const onViewportChange = () => {
+    if (!session || repositionFrame !== 0) return;
+    repositionFrame = requestAnimationFrame(syncFloating);
+  };
+
+  const onCompositionStart = () => {
+    if (!session) return;
+    session.composing = true;
+    session.lastUserAt = performance.now();
+    clearTimeout(session.timer);
+    clearTimeout(session.settleTimer);
+  };
+
+  const onCompositionEnd = () => {
+    if (!session) return;
+    session.composing = false;
+    session.lastUserAt = performance.now();
+    session.lastText = fieldText(session.field);
+    if (session.inFlight) session.dirtyWhileChecking = true;
+    schedule();
+  };
 
   function attach(field: FieldRef): void {
     detach();
@@ -166,12 +254,19 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
       lastText: fieldText(field),
       lastUserAt: 0,
       autoRunning: false,
+      composing: false,
+      badgeKind: null,
+      badgeTitle: '',
       autoTouched: new Set(),
       rejected: new Set(),
     };
     session = active;
     field.node.addEventListener('input', onInput);
+    field.node.addEventListener('compositionstart', onCompositionStart, true);
+    field.node.addEventListener('compositionend', onCompositionEnd, true);
     for (const type of USER_EDIT_EVENTS) field.node.addEventListener(type, onUserEdit, true);
+    window.addEventListener('scroll', onViewportChange, { passive: true, capture: true });
+    window.addEventListener('resize', onViewportChange, { passive: true });
     void askWorker({ type: 'proofkey:warm' }).catch(() => undefined);
     offerNews(shadow);
 
@@ -191,11 +286,17 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     // check anything.
     if (field.kind === 'contenteditable') {
       const observer = new MutationObserver(() => {
-        if (session !== active) return;
-        const text = fieldText(active.field);
+        if (session !== active || active.autoRunning || active.composing) return;
+        if (!active.field.node.isConnected) {
+          detach();
+          return;
+        }
+        const { text, flat } = readField(active.field);
         if (text === active.lastText) return;
         active.lastText = text;
-        noteTakenBack(active, text);
+        active.lastUserAt = performance.now();
+        if (active.inFlight) active.dirtyWhileChecking = true;
+        noteTakenBack(active, text, caretOffset(active.field, flat));
         schedule();
       });
       observer.observe(field.node, { childList: true, characterData: true, subtree: true });
@@ -209,9 +310,17 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     if (!session) return;
     clearTimeout(session.timer);
     clearTimeout(session.settleTimer);
+    if (repositionFrame) {
+      cancelAnimationFrame(repositionFrame);
+      repositionFrame = 0;
+    }
     session.observer?.disconnect();
     session.field.node.removeEventListener('input', onInput);
+    session.field.node.removeEventListener('compositionstart', onCompositionStart, true);
+    session.field.node.removeEventListener('compositionend', onCompositionEnd, true);
     for (const type of USER_EDIT_EVENTS) session.field.node.removeEventListener(type, onUserEdit, true);
+    window.removeEventListener('scroll', onViewportChange, { capture: true });
+    window.removeEventListener('resize', onViewportChange);
     session.highlighter.destroy();
     session = null;
     card.hide();
@@ -220,7 +329,8 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
 
   const onFocusIn = (event: FocusEvent) => {
     if (!enabled) return;
-    const field = eligible(event.target);
+    const rawTarget = event.composedPath()[0] ?? event.target;
+    const field = eligible(rawTarget);
     // Focus moving into our own card must not tear the session down.
     if (!field) return;
     if (session && field.node === session.field.node) return;
@@ -231,13 +341,15 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     if (session) session.lastUserAt = performance.now();
   };
 
-  const onInput = () => {
+  const onInput = (event: Event) => {
     if (!session) return;
+    if ((event as InputEvent).isComposing || session.composing) return;
     if (!session.autoRunning) session.lastUserAt = performance.now();
     // Keeps the observer's baseline current, so an edit that fires `input` is
     // not then re-reported as a mutation the observer has never seen.
-    session.lastText = fieldText(session.field);
-    noteTakenBack(session, session.lastText);
+    const { text, flat } = readField(session.field);
+    session.lastText = text;
+    noteTakenBack(session, text, caretOffset(session.field, flat));
     if (session.inFlight) session.dirtyWhileChecking = true;
     // Typing keeps the in-browser model loaded: it is unloaded after a quiet
     // spell, and loading it again stalls the page while it happens.
@@ -250,7 +362,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
   };
 
   function schedule(): void {
-    if (!session) return;
+    if (!session || session.composing) return;
     clearTimeout(session.timer);
     // Any keystroke also cancels a pending settle: the sentence just changed,
     // so the pause it was waiting for did not happen.
@@ -279,12 +391,16 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
    * only the ordinary check arms a settle — so a settle never arms another, and
    * a failed one is retried by the next keystroke rather than by a loop.
    */
-  function maybeScheduleSettle(): void {
-    if (!session) return;
+  function maybeScheduleSettle(precomputed?: { text: string; flat?: FlatText }): void {
+    if (!session || session.composing) return;
     const active = session;
+    if (!active.field.node.isConnected) {
+      detach();
+      return;
+    }
 
-    const text = fieldText(active.field);
-    const caret = caretOffset(active.field);
+    const { text, flat } = precomputed ?? readField(active.field);
+    const caret = caretOffset(active.field, flat);
 
     const sentences = segment(text);
     const sentence = sentences[sentenceAt(sentences, caret)];
@@ -305,44 +421,56 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     return field.kind === 'input' ? field.node.value : flatten(field.node).text;
   }
 
-  function caretOffset(field: FieldRef): number {
+  function caretOffset(field: FieldRef, precomputedFlat?: FlatText): number {
     if (field.kind === 'input') return field.node.selectionStart ?? -1;
     const selection = window.getSelection();
     if (!selection?.focusNode) return -1;
     if (!field.node.contains(selection.focusNode)) return -1;
-    return offsetOfPoint(flatten(field.node), selection.focusNode, selection.focusOffset) ?? -1;
+    return offsetOfPoint(precomputedFlat ?? flatten(field.node), selection.focusNode, selection.focusOffset) ?? -1;
   }
 
   async function check(includeCaret: boolean): Promise<void> {
-    if (!session || session.inFlight) return;
+    if (!session || session.inFlight || session.composing) return;
     const active = session;
+    if (!active.field.node.isConnected || isSensitive(active.field.node)) {
+      detach();
+      return;
+    }
+    if (document.hidden) return;
     const startedAt = performance.now();
 
-    const text = fieldText(active.field);
+    const snapshot = readField(active.field);
+    const { text, flat } = snapshot;
     if (text.trim().length < state.minChars) {
       active.suggestions = [];
       active.highlighter.clear();
+      active.badgeKind = null;
       badge.hidden = true;
       return;
     }
 
     const sentences = segment(text);
-    const caret = caretOffset(active.field);
+    const caret = caretOffset(active.field, flat);
     // A settle pass is the one that has waited for typing to stop, so it is the
     // one allowed to send the sentence the caret is in.
     const skipIndex = includeCaret ? -1 : sentenceAt(sentences, caret);
 
-    const pending = sentences.filter(
-      (sentence, index) =>
-        index !== skipIndex &&
-        sentence.text.trim().length >= MIN_SENTENCE_LENGTH &&
-        !active.cache.has(sentenceKey(sentence.text)),
-    );
+    // Deduplicate identical uncached sentences so repeated lines in one field
+    // are not sent and billed twice in the same batch.
+    const seenKeys = new Set<string>();
+    const pending = sentences.filter((sentence, index) => {
+      if (index === skipIndex) return false;
+      if (sentence.text.trim().length < MIN_SENTENCE_LENGTH) return false;
+      const key = sentenceKey(sentence.text);
+      if (active.cache.has(key) || seenKeys.has(key)) return false;
+      seenKeys.add(key);
+      return true;
+    });
 
     if (pending.length === 0) {
-      rebuild();
+      rebuild(snapshot);
       void autoCorrect(active, startedAt);
-      if (!includeCaret) maybeScheduleSettle();
+      if (!includeCaret) maybeScheduleSettle(snapshot);
       return;
     }
 
@@ -357,6 +485,10 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
       });
 
       if (session !== active) return; // focus moved on while we waited
+      if (!active.field.node.isConnected) {
+        detach();
+        return;
+      }
 
       if (!result.ok) {
         setBadge('error', result.error);
@@ -374,8 +506,10 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
             : (diffWords(original, corrected) ?? []);
         active.cache.set(sentenceKey(sentence.text), changes);
       });
+      capMap(active.cache, MAX_CACHE_ENTRIES);
 
-      rebuild();
+      const fresh = readField(active.field);
+      rebuild(fresh);
       await autoCorrect(active, startedAt);
     } finally {
       if (session === active) {
@@ -391,15 +525,22 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
   }
 
   /** Rebuilds suggestions from the cache against the field's current text. */
-  function rebuild(): void {
+  function rebuild(precomputed?: { text: string; flat?: FlatText }): void {
     if (!session) return;
     const active = session;
-    const text = fieldText(active.field);
+    if (!active.field.node.isConnected) {
+      detach();
+      return;
+    }
+    const { text, flat } = precomputed ?? readField(active.field);
     const sentences = segment(text);
     const suggestions: Suggestion[] = [];
+    const keyCounts = new Map<string, number>();
 
     for (const sentence of sentences) {
       const key = sentenceKey(sentence.text);
+      const occ = keyCounts.get(key) ?? 0;
+      keyCounts.set(key, occ + 1);
       const changes = active.cache.get(key);
       if (!changes || changes.length === 0) continue;
 
@@ -408,8 +549,8 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
       const source = sentence.text.trim();
 
       changes.forEach((change, index) => {
-        const id = `${key}#${index}`;
-        if (active.dismissed.has(id)) return;
+        const dismissId = `${key}#${index}`;
+        if (active.dismissed.has(dismissId)) return;
 
         const original = source.slice(change.start, change.end);
         if (original.trim() && dictionary.has(original.trim().toLowerCase())) return;
@@ -419,13 +560,17 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
         // Guard against the text having moved since the check.
         if (text.slice(start, end) !== original) return;
 
+        // Tag by occurrence count (not character offset) so repeated identical
+        // sentences get distinct highlight ids while an open card on a later
+        // sentence keeps its id when an earlier sentence changes length.
+        const id = occ === 0 ? dismissId : `${dismissId}@${occ}`;
         const { category, severity } = classifyChange(change, source);
         suggestions.push({ id, start, end, original, replacement: change.replacement, category, severity });
       });
     }
 
     active.suggestions = suggestions.sort((a, b) => a.start - b.start);
-    active.highlighter.render(active.suggestions);
+    active.highlighter.render(active.suggestions, flat);
 
     // An open card outlives nothing it describes. The user can paste, undo, or
     // type one more character while it is up, and the offsets it carries were
@@ -514,29 +659,39 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     //
     // Offsets here are relative to the trimmed sentence, and `delta` is a pure
     // length difference, so the same number shifts both coordinate systems.
-    const hash = suggestion.id.lastIndexOf('#');
-    const previousKey = suggestion.id.slice(0, hash);
-    const appliedIndex = Number(suggestion.id.slice(hash + 1));
+    const { key: previousKey, index: appliedIndex } = parseSuggestionId(suggestion.id);
     const previous = active.cache.get(previousKey) ?? [];
     const appliedChange = previous[appliedIndex];
     const delta = suggestion.replacement.length - (suggestion.end - suggestion.start);
 
-    const remaining = previous
-      .filter((_, index) => index !== appliedIndex)
-      .map((change) =>
-        appliedChange && change.start > appliedChange.start
-          ? { ...change, start: change.start + delta, end: change.end + delta }
-          : change,
-      );
-
-    const sentences = segment(fieldText(active.field));
-    const rewritten = sentences.find(
-      (sentence) => suggestion.start >= sentence.start && suggestion.start <= sentence.end,
-    );
+    const afterSnapshot = readField(active.field);
+    active.lastText = afterSnapshot.text;
+    const sentences = segment(afterSnapshot.text);
+    // Strict `< sentence.end` prevents a suggestion on the first word of
+    // sentence `i + 1` (where `suggestion.start === sentences[i].end`) from
+    // overwriting sentence `i`'s cache entry.
+    const rewritten =
+      sentences.find((sentence) => suggestion.start >= sentence.start && suggestion.start < sentence.end) ??
+      sentences.find((sentence) => suggestion.start >= sentence.start && suggestion.start <= sentence.end);
 
     if (rewritten) {
+      // If a pure deletion at the start of the sentence exposed leading
+      // whitespace, `.trimStart()` drops it too — fold that into the offset delta.
+      const trimmedLeadShift =
+        appliedChange && appliedChange.start === 0 && !suggestion.replacement.trim()
+          ? (rewritten.text.length - rewritten.text.trimStart().length)
+          : 0;
+      const shift = delta - trimmedLeadShift;
+      const remaining = previous
+        .filter((_, index) => index !== appliedIndex)
+        .map((change) =>
+          appliedChange && change.start > appliedChange.start
+            ? { ...change, start: Math.max(0, change.start + shift), end: Math.max(0, change.end + shift) }
+            : change,
+        );
       const key = sentenceKey(rewritten.text);
       active.cache.set(key, remaining);
+      capMap(active.cache, MAX_CACHE_ENTRIES);
       // Dismissals are keyed by position in the old array. Dropping one entry
       // renumbers everything after it, so they have to be re-indexed or a
       // suggestion the user dismissed reappears the moment they apply another.
@@ -545,9 +700,10 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
         if (!active.dismissed.has(`${previousKey}#${index}`)) return;
         active.dismissed.add(`${key}#${index < appliedIndex ? index : index - 1}`);
       });
+      capSet(active.dismissed, MAX_CACHE_ENTRIES);
     }
 
-    rebuild();
+    rebuild(afterSnapshot);
     return true;
   }
 
@@ -587,7 +743,8 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
 
         const next = nextAutoFix(active);
         if (!next) break;
-        active.autoTouched.add(next.id.slice(0, next.id.lastIndexOf('#')));
+        active.autoTouched.add(parseSuggestionId(next.id).key);
+        capSet(active.autoTouched, MAX_CACHE_ENTRIES);
 
         const caret = caretOffset(active.field);
         if (!(await applySuggestion(next, true))) break;
@@ -608,7 +765,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     for (const suggestion of active.suggestions) {
       if (!autoFixable(suggestion.original, suggestion.replacement, suggestion.category, englishPinned)) continue;
       if (active.rejected.has(fixPair(suggestion.original, suggestion.replacement))) continue;
-      if (active.autoTouched.has(suggestion.id.slice(0, suggestion.id.lastIndexOf('#')))) continue;
+      if (active.autoTouched.has(parseSuggestionId(suggestion.id).key)) continue;
       // Last first, so writing one never moves the offsets of the ones before it.
       if (!best || suggestion.start > best.start) best = suggestion;
     }
@@ -621,9 +778,12 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
    * check, because Ctrl+Z and a keystroke can both land inside one debounce,
    * and by the time a check looks the restored sentence is already gone.
    */
-  function noteTakenBack(active: Session, text: string): void {
+  function noteTakenBack(active: Session, text: string, caret = -1): void {
     if (active.autoTouched.size === 0 || active.autoRunning) return;
-    for (const sentence of segment(text)) {
+    const sentences = segment(text);
+    const caretIdx = caret >= 0 ? sentenceAt(sentences, caret) : -1;
+    const inspect = caretIdx >= 0 ? [sentences[caretIdx]!] : sentences;
+    for (const sentence of inspect) {
       const key = sentenceKey(sentence.text);
       if (!active.autoTouched.has(key)) continue;
       const source = sentence.text.trim();
@@ -631,6 +791,7 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
         const original = source.slice(change.start, change.end);
         if (autoFixable(original, change.replacement, classifyChange(change, source).category, englishPinned)) {
           active.rejected.add(fixPair(original, change.replacement));
+          capSet(active.rejected, MAX_CACHE_ENTRIES);
         }
       }
     }
@@ -641,9 +802,12 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
   }
 
   function userIsIdleIn(field: FieldRef): boolean {
-    const focused = document.activeElement;
+    if (session?.composing) return false;
+    const focused = deepActiveElement();
     if (!focused || !(focused === field.node || field.node.contains(focused))) return false;
-    if (field.kind === 'input') return field.node.selectionStart === field.node.selectionEnd;
+    if (field.kind === 'input') {
+      return field.node.selectionStart !== null && field.node.selectionStart === field.node.selectionEnd;
+    }
     const selection = window.getSelection();
     return !!selection && selection.isCollapsed;
   }
@@ -722,23 +886,37 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
     kind: 'checking' | 'clean' | 'issues' | 'error' | 'waiting',
     title = '',
   ): void {
-    if (!session || !enabled) {
+    if (!session || !enabled || !session.field.node.isConnected) {
       badge.hidden = true;
       return;
     }
+    session.badgeKind = kind;
+    session.badgeTitle = title;
+
     const rect = session.field.node.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) {
+    const outOfView =
+      rect.width === 0 ||
+      rect.height === 0 ||
+      rect.bottom < 0 ||
+      rect.top > window.innerHeight ||
+      rect.right < 0 ||
+      rect.left > window.innerWidth;
+    if (outOfView) {
       badge.hidden = true;
       return;
     }
 
+    const rtl = getComputedStyle(session.field.node).direction === 'rtl';
+    const left = rtl ? Math.max(4, rect.left + 6) : Math.min(window.innerWidth - 26, rect.right - 26);
+    const top = Math.max(4, Math.min(window.innerHeight - 26, rect.bottom - 26));
+
     badge.hidden = false;
     badge.className = `pk-badge pk-badge--${kind}`;
-    badge.style.left = `${rect.right - 26}px`;
-    badge.style.top = `${rect.bottom - 26}px`;
+    badge.style.left = `${left}px`;
+    badge.style.top = `${top}px`;
     badge.textContent =
       kind === 'issues' ? String(session.suggestions.length) : kind === 'clean' ? '✓' : '';
-    badge.title =
+    const label =
       title ||
       {
         checking: 'ProofKey is checking…',
@@ -747,6 +925,8 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
         waiting: 'Not checked yet — pause for a moment',
         issues: `${session.suggestions.length} suggestion(s)`,
       }[kind];
+    badge.title = label;
+    badge.setAttribute('aria-label', label);
   }
 
   badge.addEventListener('click', () => {
@@ -760,15 +940,17 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
 
   /**
    * Underlines are painted by the highlight engine or by a pointer-transparent
-   * overlay, so neither can be clicked directly. Hit-testing against the rects
-   * we already track works for both and keeps the field itself interactive.
+   * overlay, so neither can be clicked directly. Hit-testing against each
+   * line-box rect works for both, handles multi-line wraps accurately, and
+   * keeps the field itself interactive.
    */
-  function suggestionAtPoint(x: number, y: number): Suggestion | null {
+  function suggestionAtPoint(x: number, y: number): { suggestion: Suggestion; rect: DOMRect } | null {
     if (!session) return null;
     for (const suggestion of session.suggestions) {
-      const rect = session.highlighter.rectFor(suggestion.id);
-      if (rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-        return suggestion;
+      for (const rect of session.highlighter.rectsFor(suggestion.id)) {
+        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+          return { suggestion, rect };
+        }
       }
     }
     return null;
@@ -776,11 +958,14 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
 
   const onClick = (event: MouseEvent) => {
     if (!enabled || !session) return;
+    // Clicks inside ProofKey's own shadow UI (card buttons like Explain/Apply,
+    // badge, toast) are handled by those controls; never close the card in
+    // capture phase before their own click handlers run.
+    if (event.composedPath().includes(shadow.host)) return;
     const hit = suggestionAtPoint(event.clientX, event.clientY);
     if (hit) {
-      const rect = session.highlighter.rectFor(hit.id);
-      if (rect) card.show(hit, rect);
-    } else if (card.isOpen() && !event.composedPath().includes(badge)) {
+      card.show(hit.suggestion, hit.rect);
+    } else if (card.isOpen()) {
       card.hide();
     }
   };
@@ -804,8 +989,38 @@ export function createLive(shadow: ShadowRoot, state: ContentState): LiveControl
         return;
       }
       void askWorker({ type: 'proofkey:warm' }).catch(() => undefined);
-      const field = eligible(document.activeElement);
+      const field = eligible(deepActiveElement());
       if (field) attach(field);
+    },
+    updateState(next) {
+      const prevSignature = state.checkSignature;
+      const prevDict = state.dictionary.join('\u0000');
+      state = { ...next };
+      autoCorrectOn = next.autoCorrect === true;
+      englishPinned = next.englishVarietyPinned === true;
+      dictionary = new Set(next.dictionary.map((word) => word.toLowerCase()));
+
+      if (next.liveEnabled !== enabled) {
+        enabled = next.liveEnabled;
+        if (!enabled) {
+          detach();
+          return;
+        }
+        void askWorker({ type: 'proofkey:warm' }).catch(() => undefined);
+        const field = eligible(deepActiveElement());
+        if (field) attach(field);
+        return;
+      }
+
+      if (session) {
+        if (prevSignature && next.checkSignature && prevSignature !== next.checkSignature) {
+          session.cache.clear();
+          session.autoTouched.clear();
+          schedule();
+        } else if (prevDict !== next.dictionary.join('\u0000')) {
+          rebuild();
+        }
+      }
     },
     destroy() {
       document.removeEventListener('focusin', onFocusIn, true);

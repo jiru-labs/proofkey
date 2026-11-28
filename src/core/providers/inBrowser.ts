@@ -28,6 +28,13 @@ const OFFSCREEN_PATH = 'offscreen/index.html';
 let creating: Promise<void> | null = null;
 
 async function ensureOffscreen(): Promise<void> {
+  // Wait for any creation already in flight before checking `getContexts`:
+  // Chrome registers the context before `offscreen.ts` finishes loading and
+  // registering its message listener.
+  if (creating) {
+    await creating;
+    return;
+  }
   const url = chrome.runtime.getURL(OFFSCREEN_PATH);
   const open = await chrome.runtime.getContexts({
     contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
@@ -66,7 +73,9 @@ export async function complete(
   connection: Connection,
   request: CompletionRequest,
 ): Promise<CompletionResult> {
-  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  if (request.signal?.aborted) {
+    throw request.signal.reason ?? new DOMException('Request cancelled.', 'AbortError');
+  }
   const asked = askOffscreen<string>({
     target: 'proofkey-offscreen',
     op: 'complete',
@@ -75,15 +84,23 @@ export async function complete(
     maxTokens: connection.maxOutputTokens,
     liveCheck: request.liveCheck,
   });
+  // Prevent an unhandled rejection if `stop` wins the race and `asked` rejects later.
+  asked.catch(() => undefined);
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
   // The same ceiling every other transport has, so a stalled GPU cannot hold
   // the fallback chain forever. The document is not told to stop: WebLLM
   // finishes the reply, and the next request queues behind it.
   const stop = new Promise<never>((_, reject) => {
-    const fail = (why: string) => reject(new ProviderError(why, connection.label));
-    timeout.addEventListener('abort', () =>
-      fail(`The in-browser model did not answer within ${REQUEST_TIMEOUT_MS / 1000}s.`),
+    timer = setTimeout(
+      () => reject(new ProviderError(`The in-browser model did not answer within ${REQUEST_TIMEOUT_MS / 1000}s.`, connection.label)),
+      REQUEST_TIMEOUT_MS,
     );
-    request.signal?.addEventListener('abort', () => reject(request.signal!.reason));
+    if (request.signal) {
+      onAbort = () => reject(request.signal!.reason ?? new DOMException('Request cancelled.', 'AbortError'));
+      request.signal.addEventListener('abort', onAbort, { once: true });
+    }
   });
   try {
     const text = await Promise.race([asked, stop]);
@@ -91,6 +108,9 @@ export async function complete(
   } catch (error) {
     if (error instanceof ProviderError || request.signal?.aborted) throw error;
     throw new ProviderError(error instanceof Error ? error.message : String(error), connection.label);
+  } finally {
+    clearTimeout(timer);
+    if (onAbort) request.signal?.removeEventListener('abort', onAbort);
   }
 }
 

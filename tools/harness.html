@@ -135,6 +135,12 @@ The plan for the next quarter is in the shared folder, with the budget and the p
     <h2>contenteditable — paragraphs (selection must not leak past them)</h2>
     <div id="blocks" class="rich" contenteditable="true"><p>Their is a problem on the first line.</p><p>The projet needs alot of attention.</p><p>Their is one more line after it.</p></div>
 
+    <h2>sensitive input — must never be live-checked</h2>
+    <input id="sensitive" type="text" autocomplete="one-time-code" value="The meating is thursday. Please dont be late." />
+
+    <h2>read-only text — invoke copies corrected text to clipboard</h2>
+    <p id="readonly">Their is alot of things to do.</p>
+
     <script>
       // Stand-in for the service worker. Returns canned corrections so the whole
       // content pipeline — segmentation, diff, offsets, rendering — runs for real

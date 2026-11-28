@@ -67,7 +67,11 @@ function loadWebLLM(): Promise<WebLLM> {
     const exists = await fetch(stand, { method: 'HEAD' }).then((r) => r.ok, () => false);
     if (exists) return (await import(/* @vite-ignore */ stand)) as WebLLM;
     return (await import('@mlc-ai/web-llm')) as unknown as WebLLM;
-  })();
+  })().catch((err) => {
+    // Do not permanently cache a failed dynamic import.
+    webllm = null;
+    throw err;
+  });
   return webllm;
 }
 
@@ -94,6 +98,8 @@ let progress: { fraction: number; text: string } | null = null;
 let lastError: string | null = null;
 /** Set while the user's "Download model" is running, as against a load from the cache. */
 let downloading = false;
+/** Cached once a WebGPU adapter succeeds, avoiding repeated GPU IPC calls during 1s download polls. */
+let gpuAvailable = false;
 let idle: ReturnType<typeof setTimeout> | undefined;
 /**
  * Live checks run as one continuing conversation: the system prompt, every
@@ -128,7 +134,9 @@ let primeTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** One request at a time, so a check arriving mid-prime extends the conversation instead of resetting it. */
 let queue: Promise<unknown> = Promise.resolve();
+let queueSeq = 0;
 function serial<T>(task: () => Promise<T>): Promise<T> {
+  queueSeq++;
   clearTimeout(primeTimer);
   const run = queue.then(task, task);
   queue = run.catch(() => undefined);
@@ -138,7 +146,7 @@ function serial<T>(task: () => Promise<T>): Promise<T> {
 function needsPrime(): boolean {
   if (!engine || !liveSystem) return false;
   const length = chain?.turns.reduce((sum, turn) => sum + turn.content.length, 0) ?? 0;
-  return !chain || chain.system !== liveSystem || length > CHAIN_MAX_CHARS;
+  return !chain || chain.system !== liveSystem || length + liveSystem.length > CHAIN_MAX_CHARS;
 }
 
 function prime(): Promise<unknown> {
@@ -146,7 +154,8 @@ function prime(): Promise<unknown> {
   return complete({ target: 'proofkey-offscreen', op: 'complete', systemPrompt: liveSystem!, userText: PRIMER, maxTokens: 64, liveCheck: true });
 }
 
-function primeAfter(delay: number): void {
+function primeAfter(delay: number, seq: number): void {
+  if (seq !== queueSeq) return;
   clearTimeout(primeTimer);
   if (!needsPrime()) return;
   primeTimer = setTimeout(() => void serial(prime).catch(() => undefined), delay);
@@ -167,8 +176,9 @@ async function warm(systemPrompt: string): Promise<void> {
 function chainFor(request: Extract<OffscreenRequest, { op: 'complete' }>): typeof chain {
   if (!request.liveCheck) return null;
   liveSystem = request.systemPrompt;
-  const length = chain?.turns.reduce((sum, turn) => sum + turn.content.length, 0) ?? 0;
-  if (!chain || chain.system !== request.systemPrompt || length > CHAIN_MAX_CHARS) {
+  const turnsChars = chain?.turns.reduce((sum, turn) => sum + turn.content.length, 0) ?? 0;
+  const totalChars = turnsChars + request.systemPrompt.length + request.userText.length;
+  if (!chain || chain.system !== request.systemPrompt || totalChars > CHAIN_MAX_CHARS) {
     return { system: request.systemPrompt, turns: [] };
   }
   return chain;
@@ -212,17 +222,25 @@ function startEngine(): Promise<Engine> {
 }
 
 async function webgpuProblem(): Promise<string | null> {
+  if (gpuAvailable) return null;
   const gpu = (navigator as Navigator & { gpu?: { requestAdapter(o?: unknown): Promise<unknown> } }).gpu;
   if (!gpu) return 'WebGPU is not available in this browser.';
   const adapter = await gpu.requestAdapter({ powerPreference: 'high-performance' }).catch(() => null);
-  return adapter ? null : 'WebGPU found no usable GPU (it may be blocklisted or switched off).';
+  if (adapter) {
+    gpuAvailable = true;
+    return null;
+  }
+  return 'WebGPU found no usable GPU (it may be blocklisted or switched off).';
 }
 
 async function status(): Promise<InBrowserState> {
-  const problem = await webgpuProblem();
-  if (problem) return { kind: 'no-webgpu', reason: problem };
+  if (!engine && !loading) {
+    const problem = await webgpuProblem();
+    if (problem) return { kind: 'no-webgpu', reason: problem };
+  }
   if (engine) return { kind: 'ready' };
-  if (loading) return { kind: 'downloading', fraction: progress?.fraction ?? 0, text: progress?.text ?? '' };
+  if (downloading && loading) return { kind: 'downloading', fraction: progress?.fraction ?? 0, text: progress?.text ?? '' };
+  if (loading) return { kind: 'ready' };
   if (lastError) return { kind: 'error', message: lastError };
   const lib = await loadWebLLM();
   return (await lib.hasModelInCache(IN_BROWSER_MODEL, appConfig())) ? { kind: 'ready' } : { kind: 'not-downloaded' };
@@ -231,10 +249,16 @@ async function status(): Promise<InBrowserState> {
 function touch(): void {
   clearTimeout(idle);
   idle = setTimeout(() => {
-    const held = engine;
-    engine = null;
-    chain = null;
-    void held?.unload();
+    void serial(async () => {
+      if (loading || downloading) return;
+      const held = engine;
+      engine = null;
+      chain = null;
+      await held?.unload();
+      // Close the idle offscreen document so the renderer process and parsed
+      // 6 MB WebLLM bundle do not stay resident until browser exit.
+      if (!engine && !loading && !downloading) window.close();
+    }).catch(() => undefined);
   }, IN_BROWSER_IDLE_MS);
 }
 
@@ -302,26 +326,37 @@ async function handle(request: OffscreenRequest): Promise<unknown> {
       }
       return status();
     }
-    case 'delete': {
-      clearTimeout(idle);
-      const held = engine;
-      engine = null;
-      chain = null;
-      await held?.unload();
-      lastError = null;
-      const lib = await loadWebLLM();
-      await lib.deleteModelAllInfoInCache(IN_BROWSER_MODEL, appConfig());
-      return status();
+    case 'delete':
+      return serial(async () => {
+        clearTimeout(idle);
+        clearTimeout(primeTimer);
+        if (loading) await loading.catch(() => undefined);
+        const held = engine;
+        engine = null;
+        chain = null;
+        await held?.unload();
+        lastError = null;
+        const lib = await loadWebLLM();
+        await lib.deleteModelAllInfoInCache(IN_BROWSER_MODEL, appConfig());
+        return status();
+      });
+    case 'complete': {
+      const run = serial(() => complete(request));
+      const seq = queueSeq;
+      return run.then((text) => {
+        primeAfter(request.liveCheck ? PRIME_QUIET_MS : 0, seq);
+        return text;
+      });
     }
-    case 'complete':
-      return serial(() => complete(request)).finally(() => primeAfter(request.liveCheck ? PRIME_QUIET_MS : 0));
     case 'warm':
       return serial(() => warm(request.systemPrompt));
   }
 }
 
 chrome.runtime.onMessage.addListener((message: OffscreenRequest, sender, sendResponse) => {
-  if (message?.target !== 'proofkey-offscreen' || sender.id !== chrome.runtime.id) return false;
+  // Reject messages from content scripts (`sender.tab`): only the service worker
+  // (or extension pages) may control the offscreen model document.
+  if (message?.target !== 'proofkey-offscreen' || sender.id !== chrome.runtime.id || sender.tab) return false;
   handle(message).then(
     (value) => sendResponse({ ok: true, value }),
     (error: unknown) => sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }),

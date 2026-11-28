@@ -1,4 +1,5 @@
 import { askWorker, type FrameGrant, type FrameOffer } from '../core/messages';
+import { deepActiveElement } from './target';
 import { toast } from './toast';
 
 /**
@@ -52,13 +53,14 @@ export function createFrameWatcher(shadow: ShadowRoot): FrameWatcher {
     }
   }
 
-  async function offer(frame: HTMLIFrameElement): Promise<void> {
+  async function offer(frame: HTMLIFrameElement, force = false): Promise<void> {
     const origin = originOf(frame);
-    if (!origin || offered.has(origin)) return;
-    offered.add(origin);
+    if (!origin || (!force && offered.has(origin))) return;
 
     const answer = await askWorker<FrameOffer>({ type: 'proofkey:frame-offer', origin });
-    if (!answer.ok || !answer.value.needed) return;
+    if (!answer.ok) return;
+    offered.add(origin);
+    if (!answer.value.needed) return;
 
     const host = new URL(origin).host;
     toast(shadow, {
@@ -108,7 +110,7 @@ export function createFrameWatcher(shadow: ShadowRoot): FrameWatcher {
     if (!active) return;
     setTimeout(() => {
       if (!active) return;
-      const element = document.activeElement;
+      const element = deepActiveElement();
       if (element instanceof HTMLIFrameElement) void offer(element);
     }, 0);
   };
@@ -120,8 +122,9 @@ export function createFrameWatcher(shadow: ShadowRoot): FrameWatcher {
     setActive(next) {
       active = next;
     },
-    offerFor: offer,
+    offerFor: (frame) => offer(frame, true),
     destroy() {
+      active = false;
       window.removeEventListener('blur', onFocusLeft);
       document.removeEventListener('focusout', onFocusLeft, true);
     },

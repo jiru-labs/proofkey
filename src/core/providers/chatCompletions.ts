@@ -27,11 +27,12 @@ export async function complete(
       { role: 'user', content: request.userText },
     ],
     ...outputLimitBody(connection),
-    stream: false,
     // Before `extraBody`, so a field the user typed by hand still wins over the
     // preset's default.
     ...disableThinkingBody(connection),
     ...connection.extraBody,
+    // Always last: this adapter parses a single JSON body, never SSE streams.
+    stream: false,
   };
 
   // Only sent when the user set it, so endpoints that reject sampling
@@ -50,6 +51,9 @@ export async function complete(
 }
 
 function parseCompletion(connection: Connection, payload: unknown): CompletionResult {
+  if (typeof payload === 'string') {
+    throw new ProviderError('The endpoint did not return JSON.', connection.label);
+  }
   if (!payload || typeof payload !== 'object') {
     throw new ProviderError('The endpoint returned an empty response.', connection.label);
   }
@@ -60,18 +64,24 @@ function parseCompletion(connection: Connection, payload: unknown): CompletionRe
     throw new ProviderError('The endpoint returned no choices.', connection.label);
   }
 
-  const message = (choices[0] as Record<string, unknown>)['message'] as
-    | Record<string, unknown>
-    | undefined;
+  const choice = choices[0] as Record<string, unknown>;
+  const message = choice['message'] as Record<string, unknown> | undefined;
   const text = readContent(message?.['content']);
 
   if (!text.trim()) {
-    const reason = (choices[0] as Record<string, unknown>)['finish_reason'];
+    const refusal = message?.['refusal'];
+    if (typeof refusal === 'string' && refusal.trim()) {
+      throw new ProviderError(`The model declined this request: ${refusal.trim().slice(0, 300)}`, connection.label);
+    }
+    const reason = choice['finish_reason'];
     if (reason === 'length') {
       throw new ProviderError(
         'The reply hit the output token limit before producing any text. Raise "Max output tokens".',
         connection.label,
       );
+    }
+    if (reason === 'content_filter') {
+      throw new ProviderError('The provider filtered the reply. Try rephrasing the text.', connection.label);
     }
     throw new ProviderError('The model returned an empty reply.', connection.label);
   }

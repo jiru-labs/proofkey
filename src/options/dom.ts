@@ -1,6 +1,6 @@
 type Child = Node | string | null | undefined | false;
 
-interface ElementProps {
+export interface ElementProps {
   class?: string;
   text?: string;
   html?: never; // deliberately unavailable: nothing here needs innerHTML
@@ -8,6 +8,12 @@ interface ElementProps {
   attrs?: Record<string, string>;
   on?: Partial<{ [K in keyof HTMLElementEventMap]: (event: HTMLElementEventMap[K]) => void }>;
   [key: string]: unknown;
+}
+
+let fieldIdSeq = 0;
+export function nextFieldId(): string {
+  fieldIdSeq += 1;
+  return `pk-f-${fieldIdSeq}`;
 }
 
 /** Minimal element builder. Keeps the options page framework-free and CSP-safe. */
@@ -60,16 +66,31 @@ export function clear(node: Element): void {
   node.replaceChildren();
 }
 
-/** A labelled control with an optional hint underneath. */
-export function field(labelText: string, control: HTMLElement, hint?: string): HTMLElement {
-  const id = control.id || `f${Math.random().toString(36).slice(2, 9)}`;
+/** A labelled control with an optional hint underneath, wired via aria-describedby. */
+export function field(
+  labelText: string,
+  control: HTMLElement,
+  hint?: string | Node | null,
+): HTMLElement {
+  const id = control.id || nextFieldId();
   control.id = id;
+  let hintNode: HTMLElement | null = null;
+  if (typeof hint === 'string' && hint) {
+    hintNode = el('p', { class: 'field__hint', id: `${id}-hint`, text: hint });
+  } else if (hint instanceof HTMLElement) {
+    hint.id ||= `${id}-hint`;
+    hintNode = hint;
+  } else if (hint instanceof Node) {
+    hintNode = el('p', { class: 'field__hint', id: `${id}-hint` }, hint);
+  }
+  if (hintNode) control.setAttribute('aria-describedby', hintNode.id);
+
   return el(
     'div',
     { class: 'field' },
     el('label', { class: 'field__label', htmlFor: id, text: labelText }),
     control,
-    hint ? el('p', { class: 'field__hint', text: hint }) : null,
+    hintNode,
   );
 }
 
@@ -136,6 +157,16 @@ export function checkbox(label: string, checked: boolean, onChange: (value: bool
   return el('label', { class: 'checkbox' }, box, el('span', { text: label }));
 }
 
+export function section(title: string, subtitle: string, ...children: (Node | null)[]): HTMLElement {
+  return el(
+    'section',
+    { class: 'card' },
+    el('h2', { class: 'card__title', text: title }),
+    el('p', { class: 'card__subtitle', text: subtitle }),
+    ...children,
+  );
+}
+
 /** Parses a JSON object field, returning `null` when the text is not usable. */
 export function parseJsonObject(raw: string): Record<string, unknown> | null {
   const trimmed = raw.trim();
@@ -149,10 +180,24 @@ export function parseJsonObject(raw: string): Record<string, unknown> | null {
   }
 }
 
+/** Parses a JSON object whose values must all be strings (for HTTP headers and query params). */
+export function parseStringRecord(raw: string): Record<string, string> | null {
+  const obj = parseJsonObject(raw);
+  if (!obj) return null;
+  for (const value of Object.values(obj)) {
+    if (typeof value !== 'string') return null;
+  }
+  return obj as Record<string, string>;
+}
+
 /** Splits a textarea into trimmed, non-empty lines. */
 export function lines(raw: string): string[] {
   return raw
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+export function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
 }

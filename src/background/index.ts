@@ -65,11 +65,12 @@ const SHORTCUT_SCRIPT_ID = 'proofkey-shortcuts';
 // ---------------------------------------------------------------- lifecycle
 
 chrome.runtime.onInstalled.addListener((details) => {
-  void rebuildContextMenus();
-  void syncRegistration();
-  // An update is the moment every installed copy runs this release, so each
-  // computer moves its settings out of sync here, before anything is opened.
-  void migrateSettingsToLocal();
+  void (async () => {
+    // An update is the moment every installed copy runs this release, so each
+    // computer moves its settings out of sync here before menus/registrations read them.
+    await migrateSettingsToLocal();
+    await Promise.all([rebuildContextMenus(), syncRegistration()]);
+  })();
   // Nothing works until a provider exists, so send first-time users straight there.
   if (details.reason === 'install') void chrome.runtime.openOptionsPage();
   // Nothing that ships today is news to someone who has only just installed it.
@@ -77,8 +78,11 @@ chrome.runtime.onInstalled.addListener((details) => {
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  void syncRegistration();
-  void migrateSettingsToLocal();
+  void chrome.action.setBadgeText({ text: '' });
+  void (async () => {
+    await migrateSettingsToLocal();
+    await syncRegistration();
+  })();
 });
 
 // Menu labels come from the user's actions, so they have to follow edits.
@@ -94,7 +98,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
 chrome.permissions.onRemoved.addListener(() => void syncRegistration());
 chrome.permissions.onAdded.addListener(() => void syncRegistration());
 
-async function rebuildContextMenus(): Promise<void> {
+const rebuildContextMenus = coalesced(rebuildContextMenusPass);
+
+async function rebuildContextMenusPass(): Promise<void> {
   await chrome.contextMenus.removeAll();
   const settings = await loadSettings();
 
@@ -148,7 +154,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (!info.menuItemId.startsWith(MENU_ACTION_PREFIX)) return;
 
   const actionId = info.menuItemId.slice(MENU_ACTION_PREFIX.length);
-  void invokeInTab(tab, actionId);
+  void invokeInTab(tab, actionId, info.frameId);
 });
 
 chrome.commands.onCommand.addListener((command, tab) => {
@@ -161,12 +167,12 @@ chrome.commands.onCommand.addListener((command, tab) => {
 
 chrome.action.onClicked.addListener((tab) => {
   void (async () => {
-    const reached = await ensureContentScript(tab);
+    const reached = await ensureContentScript(tab, 0);
     if (!reached) {
       await chrome.runtime.openOptionsPage();
       return;
     }
-    await sendToTab(tab!.id!, { type: 'proofkey:toggle-live', injected: reached === 'injected' });
+    await sendToTab(tab!.id!, { type: 'proofkey:toggle-live', injected: reached === 'injected' }, 0);
   })();
 });
 
@@ -175,12 +181,16 @@ chrome.action.onClicked.addListener((tab) => {
  * here: `info.selectionText` collapses newlines and is empty when the caret is
  * simply inside a field, and only the page can write text back safely.
  */
-async function invokeInTab(tab: chrome.tabs.Tab | undefined, actionId: string): Promise<void> {
-  if (!(await ensureContentScript(tab))) {
-    await flashBadge('!', '#c2410c');
+async function invokeInTab(
+  tab: chrome.tabs.Tab | undefined,
+  actionId: string,
+  frameId?: number,
+): Promise<void> {
+  if (!(await ensureContentScript(tab, frameId))) {
+    await flashBadge('!', '#c2410c', tab?.id);
     return;
   }
-  await sendToTab(tab!.id!, { type: 'proofkey:invoke', actionId });
+  await sendToTab(tab!.id!, { type: 'proofkey:invoke', actionId }, frameId);
 }
 
 // ------------------------------------------------------- registered origins
@@ -266,23 +276,31 @@ function isPattern(value: string | null): value is string {
 
 // -------------------------------------------------------------- injection
 
-/** Whether the script was already in the tab, had to be injected, or cannot be. */
+/** Whether the script was already in the tab (or target frame), had to be injected, or cannot be. */
 async function ensureContentScript(
   tab: chrome.tabs.Tab | undefined,
+  frameId?: number,
 ): Promise<false | 'present' | 'injected'> {
   if (!tab?.id || !isInjectableUrl(tab.url)) return false;
 
   // Already there? Cheaper than injecting twice and losing in-page state.
   try {
-    const pong = await chrome.tabs.sendMessage(tab.id, {
-      type: 'proofkey:ping',
-    } satisfies WorkerRequest);
+    const pong =
+      frameId !== undefined
+        ? await chrome.tabs.sendMessage(tab.id, { type: 'proofkey:ping' } satisfies WorkerRequest, { frameId })
+        : await chrome.tabs.sendMessage(tab.id, { type: 'proofkey:ping' } satisfies WorkerRequest);
     if (pong) return 'present';
   } catch {
     // No receiver yet — expected on the first invocation for a tab.
   }
 
   try {
+    if (hasScriptingApi()) {
+      const injected = await injectIntoBareFrames(tab.id);
+      if (injected) return 'injected';
+      // All reachable frames may already have it (e.g. ping timed out on a specific frame).
+      return 'present';
+    }
     await injectFiles(tab.id, [CONTENT_SCRIPT]);
     return 'injected';
   } catch (error) {
@@ -291,13 +309,66 @@ async function ensureContentScript(
   }
 }
 
-async function sendToTab(tabId: number, message: WorkerRequest): Promise<void> {
+async function sendToTab(tabId: number, message: WorkerRequest, frameId?: number): Promise<void> {
   try {
-    await chrome.tabs.sendMessage(tabId, message);
+    if (frameId !== undefined) await chrome.tabs.sendMessage(tabId, message, { frameId });
+    else await chrome.tabs.sendMessage(tabId, message);
   } catch (error) {
     console.warn('[ProofKey] could not reach the content script', error);
   }
 }
+
+// ------------------------------------------------------ request cancellation
+
+/** Active requests per tab, aborted when the tab closes or navigates away. */
+const tabControllers = new Map<number, Set<AbortController>>();
+/** Latest in-flight live-check per (tab, frame), superseded by a newer check. */
+const liveControllers = new Map<string, AbortController>();
+
+function abortTabRequests(tabId: number): void {
+  const set = tabControllers.get(tabId);
+  if (!set) return;
+  for (const controller of set) controller.abort(new DOMException('Tab closed or navigated.', 'AbortError'));
+  tabControllers.delete(tabId);
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => abortTabRequests(tabId));
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === 'loading' || changeInfo.url) abortTabRequests(tabId);
+});
+
+function trackController(tabId: number | undefined, controller: AbortController): () => void {
+  if (tabId === undefined) return () => {};
+  let set = tabControllers.get(tabId);
+  if (!set) {
+    set = new Set();
+    tabControllers.set(tabId, set);
+  }
+  set.add(controller);
+  return () => {
+    set.delete(controller);
+    if (set.size === 0) tabControllers.delete(tabId);
+  };
+}
+
+/** Serialises worker-side settings mutations so concurrent writes cannot clobber each other. */
+let settingsQueue: Promise<unknown> = Promise.resolve();
+
+function updateSettings<T>(
+  mutate: (settings: Awaited<ReturnType<typeof loadSettings>>) => T | Promise<T>,
+  shouldSave: (result: T) => boolean = () => true,
+): Promise<T> {
+  const next = settingsQueue.then(async () => {
+    const settings = await loadSettings();
+    const result = await mutate(settings);
+    if (shouldSave(result)) await saveSettings(settings);
+    return result;
+  });
+  settingsQueue = next.catch(() => undefined);
+  return next;
+}
+
+const VALID_IN_BROWSER_OPS = new Set(['status', 'download', 'delete', 'test']);
 
 // ---------------------------------------------------------- message router
 
@@ -328,6 +399,9 @@ async function handle(
   message: ContentRequest,
   sender: chrome.runtime.MessageSender,
 ): Promise<Result<unknown>> {
+  if (!message || typeof message !== 'object' || typeof (message as { type?: unknown }).type !== 'string') {
+    return { ok: false, error: 'Invalid request.' };
+  }
   switch (message.type) {
     case 'proofkey:open-options':
       await chrome.runtime.openOptionsPage();
@@ -336,17 +410,44 @@ async function handle(
     case 'proofkey:get-state':
       return { ok: true, value: await buildContentState(sender) };
 
-    case 'proofkey:run':
-      return runAction(message.actionId, message.text);
+    case 'proofkey:run': {
+      const controller = new AbortController();
+      const untrack = trackController(sender.tab?.id, controller);
+      try {
+        return await runAction(message.actionId, message.text, controller.signal);
+      } finally {
+        untrack();
+      }
+    }
 
-    case 'proofkey:check':
-      return check(message.sentences);
+    case 'proofkey:check': {
+      const frameKey = sender.tab?.id !== undefined ? `${sender.tab.id}:${sender.frameId ?? 0}` : null;
+      if (frameKey) {
+        liveControllers.get(frameKey)?.abort(new DOMException('Superseded by newer check.', 'AbortError'));
+      }
+      const controller = new AbortController();
+      if (frameKey) liveControllers.set(frameKey, controller);
+      const untrack = trackController(sender.tab?.id, controller);
+      try {
+        return await check(message.sentences, controller.signal);
+      } finally {
+        untrack();
+        if (frameKey && liveControllers.get(frameKey) === controller) liveControllers.delete(frameKey);
+      }
+    }
 
     case 'proofkey:warm':
       return warm();
 
-    case 'proofkey:explain':
-      return explain(message.original, message.replacement);
+    case 'proofkey:explain': {
+      const controller = new AbortController();
+      const untrack = trackController(sender.tab?.id, controller);
+      try {
+        return await explain(message.original, message.replacement, controller.signal);
+      } finally {
+        untrack();
+      }
+    }
 
     case 'proofkey:applied':
       return { ok: true, value: await countApplied() };
@@ -381,7 +482,17 @@ async function handle(
     case 'proofkey:frame-grant':
       return frameGrant(sender, message.origin);
 
-    case 'proofkey:in-browser':
+    case 'proofkey:in-browser': {
+      // Only ProofKey's own extension pages (Options) may manage the in-browser
+      // model; content scripts in web tabs have a non-extension `sender.url`.
+      const extensionOrigin = chrome.runtime.getURL('');
+      const fromExtension =
+        sender.id === chrome.runtime.id &&
+        (!sender.tab || !!sender.url?.startsWith(extensionOrigin));
+      if (!fromExtension) {
+        return { ok: false, error: 'Only ProofKey settings can manage the in-browser model.' };
+      }
+      if (!VALID_IN_BROWSER_OPS.has(message.op)) return { ok: false, error: 'Unknown in-browser operation.' };
       if (message.op === 'test') {
         const text = await askOffscreen<string>({
           target: 'proofkey-offscreen',
@@ -393,6 +504,10 @@ async function handle(
         return { ok: true, value: { model: IN_BROWSER_MODEL, text } };
       }
       return { ok: true, value: await askOffscreen({ target: 'proofkey-offscreen', op: message.op }) };
+    }
+
+    default:
+      return { ok: false, error: 'Unknown message type.' };
   }
 }
 
@@ -451,9 +566,11 @@ async function newsAct(id: string): Promise<Result<string>> {
     await chrome.tabs.create({ url: link });
     return { ok: true, value: action.done };
   }
-  const settings = await loadSettings();
-  if (!applyNewsAction(settings, action.does)) return { ok: false, error: 'Nothing to do for that note.' };
-  await saveSettings(settings);
+  const applied = await updateSettings(
+    (settings) => applyNewsAction(settings, action.does),
+    (changed) => changed,
+  );
+  if (!applied) return { ok: false, error: 'Nothing to do for that note.' };
   return { ok: true, value: action.done };
 }
 
@@ -517,48 +634,41 @@ async function siteGrant(sender: chrome.runtime.MessageSender): Promise<Result<S
  */
 async function frameOffer(
   sender: chrome.runtime.MessageSender,
-  origin: string,
+  rawOrigin: string,
 ): Promise<Result<FrameOffer>> {
-  const pattern = originMatchPattern(origin);
+  const origin = originOf(rawOrigin);
+  const pattern = origin ? originMatchPattern(origin) : null;
   const parent = originOf(sender.url ?? sender.tab?.url);
-  if (!pattern || !parent || origin === parent) return { ok: true, value: { needed: false } };
+  if (!origin || !pattern || !parent || origin === parent) return { ok: true, value: { needed: false } };
 
   const settings = await loadSettings();
   const { enabledOrigins, blockedOrigins } = settings.liveCheck;
   if (blockedOrigins.includes(origin)) return { ok: true, value: { needed: false } };
 
   const granted = await chrome.permissions.contains({ origins: [pattern] });
-  const registered = settings.shortcutOrigins.includes(origin);
+  const parentShortcuts = settings.shortcutOrigins.includes(parent);
+  const frameShortcuts = settings.shortcutOrigins.includes(origin);
   const parentLive = enabledOrigins.includes(parent) && !blockedOrigins.includes(parent);
   const frameLive = enabledOrigins.includes(origin);
+  const registered = frameShortcuts || frameLive;
 
-  return { ok: true, value: { needed: !granted || !registered || (parentLive && !frameLive) } };
+  return {
+    ok: true,
+    value: {
+      needed: !granted || !registered || (parentShortcuts && !frameShortcuts) || (parentLive && !frameLive),
+    },
+  };
 }
 
-/**
- * Allows a frame origin from inside the page around it.
- *
- * The permission request is the first thing that happens, before anything is
- * awaited. The browser only shows its prompt from a user gesture, and the
- * gesture here is the click on Allow in the page, carried over by the message
- * that got this far — it does not survive being made to wait.
- *
- * Once granted, the origin is registered the same way a hand-typed one is:
- * added to the shortcut origins, which `syncRegistration` turns into a
- * registration on the next settings change, and switched on for live checking
- * if the page around it is. It is also remembered as belonging to this page,
- * so the toolbar toggle on the page carries it. Then the script is injected
- * into whichever frames of the tab do not have it yet, so the editor works
- * now rather than after a reload.
- */
 async function frameGrant(
   sender: chrome.runtime.MessageSender,
-  origin: string,
+  rawOrigin: string,
 ): Promise<Result<FrameGrant>> {
-  const pattern = originMatchPattern(origin);
+  const origin = originOf(rawOrigin);
+  const pattern = origin ? originMatchPattern(origin) : null;
   const parent = originOf(sender.url ?? sender.tab?.url);
-  if (!pattern || !parent) {
-    return { ok: false, error: `"${origin}" is not an address ProofKey can be allowed on.` };
+  if (!origin || !pattern || !parent) {
+    return { ok: false, error: `"${rawOrigin}" is not an address ProofKey can be allowed on.` };
   }
 
   let granted: boolean;
@@ -573,17 +683,21 @@ async function frameGrant(
   }
   if (!granted) return { ok: true, value: { granted: false, injected: false } };
 
-  const settings = await loadSettings();
-  const { enabledOrigins, blockedOrigins } = settings.liveCheck;
-  if (!settings.shortcutOrigins.includes(origin)) settings.shortcutOrigins.push(origin);
+  await updateSettings((settings) => {
+    const { enabledOrigins, blockedOrigins } = settings.liveCheck;
+    const parentShortcuts = settings.shortcutOrigins.includes(parent);
+    const parentLive = enabledOrigins.includes(parent) && !blockedOrigins.includes(parent);
 
-  const parentLive = enabledOrigins.includes(parent) && !blockedOrigins.includes(parent);
-  if (parentLive && !enabledOrigins.includes(origin)) enabledOrigins.push(origin);
+    // Mirror only the parent page's active capabilities so a live-only page
+    // never silently opts a frame into permanent shortcut keystroke listening.
+    if ((parentShortcuts || !parentLive) && !settings.shortcutOrigins.includes(origin)) {
+      settings.shortcutOrigins.push(origin);
+    }
+    if (parentLive && !enabledOrigins.includes(origin)) enabledOrigins.push(origin);
 
-  const siblings = settings.frameOrigins[parent] ?? [];
-  if (!siblings.includes(origin)) settings.frameOrigins[parent] = [...siblings, origin];
-
-  await saveSettings(settings);
+    const siblings = settings.frameOrigins[parent] ?? [];
+    if (!siblings.includes(origin)) settings.frameOrigins[parent] = [...siblings, origin];
+  });
 
   const injected = await injectIntoBareFrames(sender.tab?.id);
   return { ok: true, value: { granted: true, injected } };
@@ -621,12 +735,13 @@ async function addWord(word: string): Promise<Result<string[]>> {
   const trimmed = word.trim();
   if (!trimmed) return { ok: false, error: 'Nothing to add.' };
 
-  const settings = await loadSettings();
-  const dictionary = new Set(settings.liveCheck.dictionary);
-  dictionary.add(trimmed);
-  settings.liveCheck.dictionary = [...dictionary];
-  await saveSettings(settings);
-  return { ok: true, value: settings.liveCheck.dictionary };
+  const dictionary = await updateSettings((settings) => {
+    const next = new Set(settings.liveCheck.dictionary);
+    next.add(trimmed);
+    settings.liveCheck.dictionary = [...next];
+    return settings.liveCheck.dictionary;
+  });
+  return { ok: true, value: dictionary };
 }
 
 /**
@@ -635,7 +750,7 @@ async function addWord(word: string): Promise<Result<string[]>> {
  * correction to the wrong sentence would underline the wrong words, which is
  * worse than spending a few extra requests.
  */
-async function check(sentences: string[]): Promise<Result<CheckResult>> {
+async function check(sentences: string[], signal?: AbortSignal): Promise<Result<CheckResult>> {
   if (sentences.length === 0) return { ok: true, value: { corrections: [] } };
 
   const settings = await loadSettings();
@@ -646,6 +761,7 @@ async function check(sentences: string[]): Promise<Result<CheckResult>> {
       systemPrompt: composeCheckPrompt(settings.profile, sentences.length),
       userText: formatCheckPayload(sentences),
       liveCheck: true,
+      signal,
     });
     const notice = await keepMovedModel(result);
     chain = withServedConnection(chain, result);
@@ -661,21 +777,52 @@ async function check(sentences: string[]): Promise<Result<CheckResult>> {
       };
     }
 
-    const individually = await Promise.all(
-      sentences.map(async (sentence) => {
-        const single = await runCompletion(chain, {
-          systemPrompt: composeCheckPrompt(settings.profile, 1),
-          userText: formatCheckPayload([sentence]),
-          liveCheck: true,
-        });
-        const reply = parseCheckReply(single.text, 1)?.[0];
-        return reply === undefined ? sentence : dropAddedFullStops([sentence], [reply])[0]!;
-      }),
-    );
+    // Run per-sentence fallbacks sequentially for local models (which share one
+    // queue and 60s timeout) and with bounded concurrency for remote endpoints.
+    const transport = result.connection.transport;
+    const concurrency = transport === 'in_browser' || transport === 'chrome_builtin' ? 1 : 3;
+    const individually = await mapWithConcurrency(sentences, concurrency, async (sentence) => {
+      if (signal?.aborted) throw signal.reason ?? new DOMException('Request cancelled.', 'AbortError');
+      const single = await runCompletion(chain, {
+        systemPrompt: composeCheckPrompt(settings.profile, 1),
+        userText: formatCheckPayload([sentence]),
+        liveCheck: true,
+        signal,
+      });
+      const reply = parseCheckReply(single.text, 1)?.[0];
+      return reply === undefined ? sentence : dropAddedFullStops([sentence], [reply])[0]!;
+    });
     return { ok: true, value: { corrections: individually, notice } };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+async function mapWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  run: (item: T) => Promise<string>,
+): Promise<string[]> {
+  const results = new Array<string>(items.length);
+  let next = 0;
+  let successes = 0;
+  let firstError: unknown;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      try {
+        results[index] = await run(items[index]!);
+        successes++;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') throw error;
+        firstError ??= error;
+        results[index] = String(items[index]);
+      }
+    }
+  });
+  await Promise.all(workers);
+  if (successes === 0 && firstError !== undefined) throw firstError;
+  return results;
 }
 
 /**
@@ -687,30 +834,40 @@ async function check(sentences: string[]): Promise<Result<CheckResult>> {
 async function keepMovedModel(result: ChainResult): Promise<string | undefined> {
   const move = result.movedModel;
   if (!move) return undefined;
-  const settings = await loadSettings();
-  const stored = settings.connections.find((connection) => connection.id === move.connectionId);
-  if (stored && stored.model.trim() === move.from) {
-    stored.model = move.to;
-    await saveSettings(settings);
-  }
+  await updateSettings(
+    (settings) => {
+      const stored = settings.connections.find((connection) => connection.id === move.connectionId);
+      if (stored && stored.model.trim() === move.from) {
+        stored.model = move.to;
+        return true;
+      }
+      return false;
+    },
+    (changed) => changed,
+  );
   return `${result.connection.label} no longer serves ${move.from}, so ProofKey switched this connection to ${move.to}, its default. Pick another model in settings if you prefer.`;
 }
 
-/** The chain with the connection that served `result` in place of its stored copy, so a moved model is not refused twice. */
+/**
+ * Starts follow-up retries from the connection that served `result`, dropping
+ * earlier connections in the chain that already failed so a retry never wastes
+ * another timeout or 401 on a dead primary.
+ */
 function withServedConnection(chain: Connection[], result: ChainResult): Connection[] {
-  return chain.map((connection) => (connection.id === result.connection.id ? result.connection : connection));
+  const index = chain.findIndex((connection) => connection.id === result.connection.id);
+  if (index < 0) return [result.connection];
+  return [result.connection, ...chain.slice(index + 1)];
 }
 
 function stripNumbering(text: string): string {
   return text.trim().replace(/^\s*\d+\s*[.)]\s?/, '');
 }
 
-/** Live checking may be pinned to a cheaper connection than the actions use. */
 /**
- * Only for the in-browser model, and only when it is first in line for live
- * checks: loading it and reading the check prompt stall the page's painting for
- * seconds (measured in Brave on an RX 6600, 2026-10-08), so that happens when a
- * field takes focus rather than on the first sentence typed into it.
+ * Only for the in-browser model, and only when it is the live-check connection:
+ * loading it and reading the check prompt stall the page's painting for seconds
+ * (measured in Brave on an RX 6600, 2026-10-08), so that happens when a field
+ * takes focus rather than on the first sentence typed into it.
  */
 async function warm(): Promise<Result<null>> {
   const settings = await loadSettings();
@@ -723,11 +880,17 @@ async function warm(): Promise<Result<null>> {
   return { ok: true, value: null };
 }
 
-function liveChain(settings: Awaited<ReturnType<typeof loadSettings>>) {
+/**
+ * Live checking is pinned to a single connection (either the explicit live-check
+ * provider or the active provider) and never falls through to backup providers,
+ * matching README/MODELS/Options so automatic pauses never spend a backup key.
+ */
+function liveChain(settings: Awaited<ReturnType<typeof loadSettings>>): Connection[] {
   const pinned = settings.liveCheck.connectionId
     ? settings.connections.find((c) => c.id === settings.liveCheck.connectionId)
     : undefined;
-  return pinned ? [pinned] : connectionChain(settings);
+  const target = pinned ?? activeConnection(settings);
+  return target ? [target] : [];
 }
 
 async function setLive(
@@ -737,18 +900,17 @@ async function setLive(
   const origin = originOf(sender.url ?? sender.tab?.url);
   if (!origin) return { ok: false, error: 'This page has no origin ProofKey can remember.' };
 
-  const settings = await loadSettings();
-  const enabledOrigins = new Set(settings.liveCheck.enabledOrigins);
-  // A frame origin allowed from this page follows the page. Live checking
-  // spends the key, and a frame left running after the page was switched off
-  // would be doing exactly what the user just asked it not to.
-  for (const each of [origin, ...(settings.frameOrigins[origin] ?? [])]) {
-    if (enabled) enabledOrigins.add(each);
-    else enabledOrigins.delete(each);
-  }
-
-  settings.liveCheck.enabledOrigins = [...enabledOrigins];
-  await saveSettings(settings);
+  await updateSettings((settings) => {
+    const enabledOrigins = new Set(settings.liveCheck.enabledOrigins);
+    // A frame origin allowed from this page follows the page. Live checking
+    // spends the key, and a frame left running after the page was switched off
+    // would be doing exactly what the user just asked it not to.
+    for (const each of [origin, ...(settings.frameOrigins[origin] ?? [])]) {
+      if (enabled) enabledOrigins.add(each);
+      else enabledOrigins.delete(each);
+    }
+    settings.liveCheck.enabledOrigins = [...enabledOrigins];
+  });
   return { ok: true, value: enabled };
 }
 
@@ -778,7 +940,7 @@ async function findBorrowedWords(text: string): Promise<string[]> {
   }
 }
 
-async function runAction(actionId: string, text: string): Promise<Result<RunResult>> {
+async function runAction(actionId: string, text: string, signal?: AbortSignal): Promise<Result<RunResult>> {
   if (!text.trim()) return { ok: false, error: 'Nothing to work on.' };
 
   const settings = await loadSettings();
@@ -814,8 +976,9 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
 
   try {
     let chain = connectionChain(settings);
-    let result = await runCompletion(chain, { systemPrompt, userText: text });
-    const notice = await keepMovedModel(result);
+    let result = await runCompletion(chain, { systemPrompt, userText: text, signal });
+    const fallbackErrors = [...result.fallbackErrors];
+    let notice = await keepMovedModel(result);
     chain = withServedConnection(chain, result);
 
     // Fix grammar keeps the author's words. A reply that shares almost none of
@@ -827,7 +990,10 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
       result = await runCompletion(chain, {
         systemPrompt: `${systemPrompt}\n\n${SAME_LANGUAGE_RETRY_NOTE}`,
         userText: text,
+        signal,
       });
+      fallbackErrors.push(...result.fallbackErrors);
+      notice = (await keepMovedModel(result)) ?? notice;
       if (changedLanguage(text, result.text)) {
         return {
           ok: false,
@@ -844,8 +1010,19 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
     if (parts.length > 0 && result.connection.temperature !== 0 && lostMixture(text, result.text)) {
       // The first reply is still a rewrite the user can read and refuse, so a
       // failed second request does not cost them it.
-      const again = await runCompletion(chain, { systemPrompt: askAgainForMixture(systemPrompt), userText: text }).catch(() => undefined);
-      if (again && !lostMixture(text, again.text)) result = again;
+      const again = await runCompletion(chain, {
+        systemPrompt: askAgainForMixture(systemPrompt),
+        userText: text,
+        signal,
+      }).catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === 'AbortError') throw err;
+        return undefined;
+      });
+      if (again && !lostMixture(text, again.text)) {
+        result = again;
+        fallbackErrors.push(...again.fallbackErrors);
+        notice = (await keepMovedModel(again)) ?? notice;
+      }
     }
 
     return {
@@ -853,7 +1030,7 @@ async function runAction(actionId: string, text: string): Promise<Result<RunResu
       value: {
         text: keepOuterWhitespace(text, dropAddedTrailingSpaces(text, result.text.trim())),
         servedBy: result.connection.label,
-        fallbackErrors: result.fallbackErrors,
+        fallbackErrors,
         notice,
       },
     };
@@ -868,17 +1045,27 @@ function keepsAuthorsWords(action: WritingAction): boolean {
   return action.id === 'fix-grammar' && action.systemPrompt === fixGrammar?.systemPrompt;
 }
 
-async function explain(original: string, replacement: string): Promise<Result<RunResult>> {
+async function explain(
+  original: string,
+  replacement: string,
+  signal?: AbortSignal,
+): Promise<Result<RunResult>> {
   const settings = await loadSettings();
   try {
     const result = await runCompletion(connectionChain(settings), {
       systemPrompt: composeExplainPrompt(settings.profile),
       userText: `Written: ${original}\nSuggested: ${replacement}`,
+      signal,
     });
     const notice = await keepMovedModel(result);
     return {
       ok: true,
-      value: { text: result.text.trim(), servedBy: result.connection.label, fallbackErrors: [], notice },
+      value: {
+        text: result.text.trim(),
+        servedBy: result.connection.label,
+        fallbackErrors: result.fallbackErrors,
+        notice,
+      },
     };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -888,6 +1075,7 @@ async function explain(original: string, replacement: string): Promise<Result<Ru
 async function buildContentState(sender: chrome.runtime.MessageSender): Promise<ContentState> {
   const settings = await loadSettings();
   const origin = originOf(sender.url ?? sender.tab?.url);
+  const liveTarget = liveChain(settings)[0];
 
   return {
     actions: offeredActions(settings).map((action) => ({ id: action.id, label: action.label })),
@@ -906,22 +1094,38 @@ async function buildContentState(sender: chrome.runtime.MessageSender): Promise<
     dictionary: settings.liveCheck.dictionary,
     autoCorrect: settings.liveCheck.autoCorrect === true,
     englishVarietyPinned: !!settings.profile.varieties?.['en'],
-    configured: connectionChain(settings).some((c) => validateConnection(c) === null),
+    configured: [...connectionChain(settings), ...liveChain(settings)].some((c) => validateConnection(c) === null),
+    checkSignature: JSON.stringify({
+      conn: liveTarget ? [liveTarget.id, liveTarget.model, liveTarget.baseUrl, liveTarget.transport] : null,
+      profile: {
+        styleGuide: settings.profile.styleGuide,
+        neverFlag: settings.profile.neverFlag,
+        nativeLanguage: settings.profile.nativeLanguage,
+        varieties: settings.profile.varieties,
+      },
+    }),
   };
 }
 
 function originOf(url: string | undefined): string | null {
   if (!url) return null;
   try {
-    return new URL(url).origin;
+    const parsed = new URL(url);
+    // Reject opaque origins (file://, about:blank, data:) whose `.origin` is the truthy string "null".
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return parsed.origin;
   } catch {
     return null;
   }
 }
 
+let badgeTimer: ReturnType<typeof setTimeout> | undefined;
+
 /** The only feedback channel available when no content script could be injected. */
-async function flashBadge(text: string, color: string): Promise<void> {
-  await chrome.action.setBadgeBackgroundColor({ color });
-  await chrome.action.setBadgeText({ text });
-  setTimeout(() => void chrome.action.setBadgeText({ text: '' }), 4000);
+async function flashBadge(text: string, color: string, tabId?: number): Promise<void> {
+  clearTimeout(badgeTimer);
+  const target = tabId !== undefined ? { tabId } : {};
+  await chrome.action.setBadgeBackgroundColor({ ...target, color });
+  await chrome.action.setBadgeText({ ...target, text });
+  badgeTimer = setTimeout(() => void chrome.action.setBadgeText({ ...target, text: '' }), 4000);
 }

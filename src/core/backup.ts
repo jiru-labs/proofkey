@@ -44,7 +44,7 @@ export function exportBackup(settings: Settings, options: BackupOptions): Backup
     const keep = <T>(values: Record<string, T>, presetValues: Record<string, T> | undefined) => {
       const kept: Record<string, T> = {};
       for (const [name, value] of Object.entries(values ?? {})) {
-        if (presetValues && name in presetValues && JSON.stringify(presetValues[name]) === JSON.stringify(value)) {
+        if (presetValues && Object.hasOwn(presetValues, name) && JSON.stringify(presetValues[name]) === JSON.stringify(value)) {
           kept[name] = value;
         } else {
           leftOut.fields++;
@@ -88,6 +88,23 @@ export type ParsedBackup =
  * alike. Fields are checked against `defaults` one level down, which is as
  * deep as the load-time merge goes; unknown top-level fields are dropped.
  */
+const VALID_TRANSPORTS = new Set([
+  'chat_completions',
+  'openai_responses',
+  'anthropic_messages',
+  'chrome_builtin',
+  'in_browser',
+]);
+const VALID_AUTH_STYLES = new Set(['bearer', 'x-api-key', 'header', 'query', 'none']);
+
+const STRING_ARRAY_FIELDS = new Set(['shortcutOrigins', 'fallbackConnectionIds']);
+const NESTED_STRING_ARRAY_FIELDS = new Set([
+  'liveCheck.enabledOrigins',
+  'liveCheck.blockedOrigins',
+  'liveCheck.dictionary',
+  'profile.neverFlag',
+]);
+
 export function parseBackup(text: string, defaults: Settings): ParsedBackup {
   let file: unknown;
   try {
@@ -98,28 +115,94 @@ export function parseBackup(text: string, defaults: Settings): ParsedBackup {
   if (!isObject(file) || file.proofkey !== MARKER || !isObject(file.settings)) {
     return { error: 'This file is not a ProofKey settings file.' };
   }
-  if (typeof file.formatVersion !== 'number' || file.formatVersion > BACKUP_FORMAT_VERSION) {
+  if (typeof file.formatVersion !== 'number' || !Number.isInteger(file.formatVersion) || file.formatVersion < 1) {
+    return { error: 'The file is damaged: formatVersion is not valid.' };
+  }
+  if (file.formatVersion > BACKUP_FORMAT_VERSION) {
     return { error: 'This file was written by a newer ProofKey. Update ProofKey, then import it again.' };
   }
   const raw = file.settings;
-  if (typeof raw.schemaVersion === 'number' && raw.schemaVersion > defaults.schemaVersion) {
-    return { error: 'These settings come from a newer ProofKey. Update ProofKey, then import them again.' };
+  if (raw.schemaVersion !== undefined) {
+    if (typeof raw.schemaVersion !== 'number' || !Number.isInteger(raw.schemaVersion) || raw.schemaVersion < 1) {
+      return { error: 'The file is damaged: schemaVersion is not valid.' };
+    }
+    if (raw.schemaVersion > defaults.schemaVersion) {
+      return { error: 'These settings come from a newer ProofKey. Update ProofKey, then import them again.' };
+    }
   }
 
-  const settings: Record<string, unknown> = {};
+  const settings: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   for (const [name, value] of Object.entries(raw)) {
-    if (!(name in defaults)) continue;
+    if (!Object.hasOwn(defaults, name)) continue;
     const expected = (defaults as unknown as Record<string, unknown>)[name];
     const problem = shapeProblem(value, expected, name);
     if (problem) return { error: `The file is damaged: ${problem}.` };
+    if (STRING_ARRAY_FIELDS.has(name) && !isStringArray(value)) {
+      return { error: `The file is damaged: ${name} should hold text entries.` };
+    }
     if (isObject(value) && isObject(expected) && Object.keys(expected).length > 0) {
+      const cleanNested: Record<string, unknown> = {};
       for (const [inner, innerValue] of Object.entries(value)) {
-        if (!(inner in expected)) continue;
-        const innerProblem = shapeProblem(innerValue, expected[inner], `${name}.${inner}`);
+        if (!Object.hasOwn(expected, inner)) continue;
+        const path = `${name}.${inner}`;
+        const innerProblem = shapeProblem(innerValue, expected[inner], path);
         if (innerProblem) return { error: `The file is damaged: ${innerProblem}.` };
+        if (NESTED_STRING_ARRAY_FIELDS.has(path) && !isStringArray(innerValue)) {
+          return { error: `The file is damaged: ${path} should hold text entries.` };
+        }
+        if (path === 'profile.varieties' && isObject(innerValue)) {
+          if (!Object.values(innerValue).every((entry) => entry === undefined || typeof entry === 'string')) {
+            return { error: 'The file is damaged: profile.varieties should hold text values.' };
+          }
+        }
+        cleanNested[inner] = innerValue;
       }
+      settings[name] = cleanNested;
+      continue;
     }
     settings[name] = value;
+  }
+
+  if (settings.frameOrigins !== undefined) {
+    const frames = settings.frameOrigins as Record<string, unknown>;
+    for (const [origin, list] of Object.entries(frames)) {
+      if (origin === '__proto__' || !isStringArray(list)) {
+        return { error: 'The file is damaged: frameOrigins should map origins to lists of origins.' };
+      }
+    }
+  }
+
+  if (settings.builtInOverrides !== undefined) {
+    const overrides = settings.builtInOverrides as Record<string, unknown>;
+    for (const [id, entry] of Object.entries(overrides)) {
+      if (id === '__proto__' || !isObject(entry)) {
+        return { error: 'The file is damaged: builtInOverrides has an invalid entry.' };
+      }
+      if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') {
+        return { error: 'The file is damaged: builtInOverrides.enabled should be a boolean.' };
+      }
+      for (const k of ['label', 'systemPrompt', 'shortcut']) {
+        if (entry[k] !== undefined && typeof entry[k] !== 'string') {
+          return { error: `The file is damaged: builtInOverrides.${k} should be a string.` };
+        }
+      }
+    }
+  }
+
+  if (settings.customActions !== undefined) {
+    const actions = settings.customActions as unknown[];
+    for (const action of actions) {
+      if (
+        !isObject(action) ||
+        typeof action.id !== 'string' ||
+        typeof action.label !== 'string' ||
+        typeof action.systemPrompt !== 'string' ||
+        typeof action.enabled !== 'boolean' ||
+        (action.shortcut !== undefined && typeof action.shortcut !== 'string')
+      ) {
+        return { error: 'The file is damaged: a custom action is missing required fields.' };
+      }
+    }
   }
 
   const connections = settings.connections as unknown[] | undefined;
@@ -129,21 +212,51 @@ export function parseBackup(text: string, defaults: Settings): ParsedBackup {
       if (!isObject(connection) || !['id', 'presetId', 'transport', 'baseUrl', 'model'].every((k) => typeof connection[k] === 'string')) {
         return { error: 'The file is damaged: a provider is missing its id, address or model.' };
       }
+      if (!VALID_TRANSPORTS.has(connection.transport as string)) {
+        return { error: `The file is damaged: a provider has an unknown transport "${connection.transport}".` };
+      }
+      if (connection.authStyle !== undefined && (typeof connection.authStyle !== 'string' || !VALID_AUTH_STYLES.has(connection.authStyle))) {
+        return { error: 'The file is damaged: a provider has an unknown authStyle.' };
+      }
+      if (connection.apiKey !== undefined && typeof connection.apiKey !== 'string') {
+        return { error: 'The file is damaged: a provider apiKey should be a string.' };
+      }
+      if (connection.label !== undefined && typeof connection.label !== 'string') {
+        return { error: 'The file is damaged: a provider label should be a string.' };
+      }
+      if (
+        connection.maxOutputTokens !== undefined &&
+        (typeof connection.maxOutputTokens !== 'number' || !Number.isFinite(connection.maxOutputTokens) || connection.maxOutputTokens <= 0)
+      ) {
+        return { error: 'The file is damaged: a provider maxOutputTokens should be a positive number.' };
+      }
+      if (connection.thinking !== undefined && connection.thinking !== 'off' && connection.thinking !== 'default') {
+        return { error: 'The file is damaged: a provider thinking setting is invalid.' };
+      }
       if (ids.has(connection.id as string)) return { error: 'The file is damaged: two providers share one id.' };
       ids.add(connection.id as string);
-      for (const k of ['extraHeaders', 'extraQuery', 'extraBody']) {
-        if (connection[k] !== undefined && !isObject(connection[k])) {
-          return { error: `The file is damaged: a provider's ${k} is not a set of fields.` };
+      for (const k of ['extraHeaders', 'extraQuery']) {
+        if (connection[k] !== undefined) {
+          if (!isObject(connection[k]) || !Object.values(connection[k] as Record<string, unknown>).every((v) => typeof v === 'string')) {
+            return { error: `The file is damaged: a provider's ${k} should hold text values.` };
+          }
         }
+      }
+      if (connection.extraBody !== undefined && !isObject(connection.extraBody)) {
+        return { error: "The file is damaged: a provider's extraBody is not a set of fields." };
       }
     }
   }
 
   return {
-    settings: settings as Partial<Settings>,
+    settings: { ...settings } as Partial<Settings>,
     secretsIncluded: file.secretsIncluded === true,
     extensionVersion: typeof file.extensionVersion === 'string' ? file.extensionVersion : '',
   };
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
