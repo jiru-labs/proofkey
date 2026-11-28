@@ -970,11 +970,19 @@ export function createLive(shadow: ShadowRoot, initialState: ContentState): Live
     }
   };
 
+  function activateFocused(): void {
+    // A page with live checking on is likely to be typed into: have the model
+    // loaded while the page is still being read, not on the first sentence.
+    void askWorker({ type: 'proofkey:warm' }).catch(() => undefined);
+    // An editor auto-focused on load (or clicked before get-state returned)
+    // never emits another focusin, so attach to it explicitly.
+    const field = eligible(deepActiveElement());
+    if (field) attach(field);
+  }
+
   document.addEventListener('focusin', onFocusIn, true);
   document.addEventListener('click', onClick, true);
-  // A page with live checking on is likely to be typed into: have the model
-  // loaded while the page is still being read, not on the first sentence.
-  if (enabled) void askWorker({ type: 'proofkey:warm' }).catch(() => undefined);
+  if (enabled) activateFocused();
 
   return {
     isEnabled: () => enabled,
@@ -988,9 +996,7 @@ export function createLive(shadow: ShadowRoot, initialState: ContentState): Live
         detach();
         return;
       }
-      void askWorker({ type: 'proofkey:warm' }).catch(() => undefined);
-      const field = eligible(deepActiveElement());
-      if (field) attach(field);
+      activateFocused();
     },
     updateState(next) {
       const prevSignature = state.checkSignature;
@@ -1006,9 +1012,7 @@ export function createLive(shadow: ShadowRoot, initialState: ContentState): Live
           detach();
           return;
         }
-        void askWorker({ type: 'proofkey:warm' }).catch(() => undefined);
-        const field = eligible(deepActiveElement());
-        if (field) attach(field);
+        activateFocused();
         return;
       }
 

@@ -256,8 +256,11 @@ The plan for the next quarter is in the shared folder, with the budget and the p
                     fallbackErrors: [],
                   },
                 };
-              case 'proofkey:get-state':
+              case 'proofkey:get-state': {
+                const delay = Number(new URLSearchParams(location.search).get('delayState') || 0);
+                if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
                 return { ok: true, value: window.__pkState };
+              }
               case 'proofkey:check':
                 // A slow provider, for cases about what happens while a check is out.
                 if (window.__pkCheckDelayMs) await new Promise((resolve) => setTimeout(resolve, window.__pkCheckDelayMs));
