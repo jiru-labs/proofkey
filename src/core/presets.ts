@@ -446,11 +446,12 @@ export function replacementModel(connection: Connection, available: readonly str
 
 /**
  * Normalises whatever the user pasted into a base URL we can append paths to:
- * trims surrounding whitespace and trailing slashes and strips a trailing
+ * strips whitespace, trims trailing slashes and strips a trailing
  * endpoint path, so pasting a full `https://host/v1/chat/completions` URL works.
  */
 export function normalizeBaseUrl(raw: string): string {
-  let url = raw.trim();
+  // Whitespace never belongs in a URL; a paste that wrapped a line must still work.
+  let url = raw.replace(/\s+/g, '');
   if (!url) return '';
   url = url.replace(/\/+$/, '');
   url = url.replace(/\/(chat\/completions|completions|messages|responses)$/i, '');

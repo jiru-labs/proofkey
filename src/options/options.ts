@@ -46,6 +46,9 @@ async function init(): Promise<void> {
     if (store.saving || store.cancelRecording || isDirty()) return;
     void loadSettings().then((fresh) => {
       if (store.saving || store.cancelRecording || isDirty()) return;
+      // The echo of this page's own Save: nothing new to show, and a redraw
+      // would wipe the "Saved." line.
+      if (JSON.stringify(fresh) === store.savedSnapshot) return;
       store.settings = fresh;
       store.savedSnapshot = JSON.stringify(fresh);
       if (!fresh.connections.some((c) => c.id === store.expandedConnectionId)) {

@@ -254,6 +254,8 @@ if (switchPreset) {
   check(`every switch from defaults fills the new preset's fields (${starts.length}×${PRESETS.length})`, bad.length === 0, bad.slice(0, 5).join(' | '));
 }
 
+check('normalizeBaseUrl strips surrounding and pasted inner whitespace', presets.normalizeBaseUrl('  https://api.example.com/v1/chat/completions \n') === 'https://api.example.com/v1' && presets.normalizeBaseUrl('https://api.exa\nmple.com/v1 ') === 'https://api.example.com/v1', presets.normalizeBaseUrl('https://api.exa\nmple.com/v1 '));
+
 if (failures) {
   console.log(`\n${failures} check(s) FAILED`);
   process.exit(1);
