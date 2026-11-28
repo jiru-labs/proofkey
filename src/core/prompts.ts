@@ -564,11 +564,14 @@ export function keptPassages(text: string, borrowed: readonly string[] = []): st
  *
  * Sentences are batched into one request because the instructions are far
  * longer than the text being checked — sending them once per sentence would
- * multiply the cost of every keystroke pause. The numbered-line contract is
- * strict so the reply can be mapped back; when a model breaks it, the caller
- * retries those sentences one at a time rather than guessing.
+ * multiply the cost of every keystroke pause. The prompt deliberately avoids
+ * interpolating the batch size so WebLLM's pre-warmed KV-cache (`offscreen.ts`)
+ * and remote prompt-prefix caches stay valid across 1-to-N sentence batches.
+ * The numbered-line contract is strict so the reply can be mapped back; when a
+ * model breaks it, the caller retries those sentences one at a time rather than
+ * guessing.
  */
-export function composeCheckPrompt(profile: WritingProfile, count: number): string {
+export function composeCheckPrompt(profile: WritingProfile, _count?: number): string {
   const base: WritingAction = {
     id: 'live-check',
     label: 'Live check',
@@ -577,7 +580,7 @@ export function composeCheckPrompt(profile: WritingProfile, count: number): stri
     systemPrompt: [
       'You are a meticulous multilingual proofreader checking text as it is written.',
       '',
-      `You will receive ${count} numbered line(s). Each is an independent sentence and`,
+      'You will receive one or more numbered lines. Each is an independent sentence and',
       'may be in a different language from the others.',
       '',
       'Correct only real errors: spelling, grammar, agreement, verb form, diacritics',

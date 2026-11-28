@@ -229,7 +229,7 @@ export async function CreateMLCEngine(model, { initProgressCallback } = {}) {
       const content = user === '__params__'
         ? JSON.stringify({ model, temperature: request.temperature, thinking: request.extra_body?.enable_thinking, max: request.max_tokens, stream: request.stream })
         : user.includes('__turns__')
-          ? request.messages.map((m) => m.role).join(',')
+          ? user.split('\\n').map((_, i) => (user.includes('\\n') ? (i + 1) + '. ' : '') + request.messages.map((m) => m.role).join(',')).join('\\n')
           : user.replace('todavia', 'todavía');
       // Streamed in two pieces, as WebLLM sends a reply a few tokens at a time.
       const text = '<think>\\n\\n</think>\\n\\n' + content;
@@ -861,10 +861,10 @@ async function run() {
       // Run `proofkey:warm` FIRST — before any check has run — so it genuinely
       // proves priming from a cold state rather than inheriting an earlier check.
       const turns = await page.evaluate(async () => {
-        const ask = (sentence) => chrome.runtime.sendMessage({ type: 'proofkey:check', sentences: [sentence] });
+        const ask = (...sentences) => chrome.runtime.sendMessage({ type: 'proofkey:check', sentences });
         await chrome.runtime.sendMessage({ type: 'proofkey:warm' });
         const warmed = await ask('__turns__ first.');
-        const chained = await ask('__turns__ second.');
+        const chained = await ask('__turns__ second.', '__turns__ two.');
         await chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: 'Todo esta bien.' });
         await new Promise((resolve) => setTimeout(resolve, 300));
         const afterAction = await ask('__turns__ third.');
@@ -882,7 +882,7 @@ async function run() {
         JSON.stringify(turns),
       );
       check(
-        'a live check carries the earlier check and its reply',
+        'a multi-sentence live check carries the earlier check and its reply (cache-invariant prompt)',
         turns.chained === 'system,user,assistant,user,assistant,user',
         JSON.stringify(turns),
       );
