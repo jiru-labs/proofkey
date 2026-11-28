@@ -58,6 +58,12 @@ interface Chunk {
 export interface FlatText {
   text: string;
   chunks: Chunk[];
+  /**
+   * Non-editable islands (mention chips, embeds) as [start, end) spans of
+   * `text`. Their text is kept — the model must see "I talked to @Ana" — but
+   * no chunk covers it, so no range endpoint can land inside one.
+   */
+  islands: { start: number; end: number }[];
 }
 
 /**
@@ -70,19 +76,23 @@ const SKIPPED_TAGS = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'NOSCRIPT']);
 
 export function flatten(root: HTMLElement): FlatText {
   const chunks: Chunk[] = [];
+  const islands: { start: number; end: number }[] = [];
   let text = '';
+  // The outermost non-editable island being walked through, if any. Its text
+  // stays in `text` but gets no chunk, so no surgical range can start or end
+  // inside the chip. Nested `contenteditable="false"` elements belong to the
+  // outermost one.
+  let island: Element | null = null;
+  let islandStart = 0;
 
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       if (node.nodeType === Node.ELEMENT_NODE) {
         const el = node as Element;
-        // Skip non-editable islands (mentions, chips, embedded toolbars) and
-        // non-content / Slate sentinel nodes so their text is never rewritten.
-        if (
-          SKIPPED_TAGS.has(el.tagName) ||
-          el.getAttribute('contenteditable') === 'false' ||
-          el.hasAttribute('data-slate-zero-width')
-        ) {
+        // Skip non-content / Slate sentinel nodes outright: their text is
+        // never part of the field. A `contenteditable="false"` island is
+        // handled in the loop below, which keeps its text but no chunks.
+        if (SKIPPED_TAGS.has(el.tagName) || el.hasAttribute('data-slate-zero-width')) {
           return NodeFilter.FILTER_REJECT;
         }
       }
@@ -91,34 +101,46 @@ export function flatten(root: HTMLElement): FlatText {
   });
   let node: Node | null;
   while ((node = walker.nextNode()) !== null) {
+    // The walker yields the island and then its subtree in order, so the
+    // first node it yields outside it ends the island.
+    if (island && !island.contains(node)) {
+      islands.push({ start: islandStart, end: text.length });
+      island = null;
+    }
     if (node.nodeType === Node.TEXT_NODE) {
       const value = (node as Text).data;
       if (!value) continue;
-      chunks.push({ node: node as Text, start: text.length, end: text.length + value.length });
+      if (!island) chunks.push({ node: node as Text, start: text.length, end: text.length + value.length });
       text += value;
       continue;
     }
 
     const element = node as Element;
+    if (!island && element.getAttribute('contenteditable') === 'false') {
+      island = element;
+      islandStart = text.length;
+    }
     if (element.tagName === 'BR') {
-      // Lexical and ProseMirror insert placeholder <br> elements so empty lines
-      // have height; counting them puts phantom newlines into flat text.
-      if (
-        element.hasAttribute('data-lexical-managed-linebreak') ||
-        element.classList.contains('ProseMirror-trailingBreak')
-      ) {
-        continue;
-      }
-      if (element.nextSibling === null && element.parentElement && BLOCK_TAGS.has(element.parentElement.tagName) && text.endsWith('\n')) {
-        continue;
-      }
+      // Lexical manages its own line breaks; counting the placeholder it draws
+      // puts phantom newlines into flat text.
+      if (element.hasAttribute('data-lexical-managed-linebreak')) continue;
+      // A trailing placeholder <br> only pads a block that already has text:
+      // `<div>text<br></div>` is one line, not two. When the block is
+      // otherwise empty the break IS the line — Gmail's `<div><br></div>`
+      // between two paragraphs is a blank line the model has to see too.
+      const block = element.parentElement;
+      const trailing =
+        element.classList.contains('ProseMirror-trailingBreak') ||
+        (element.nextSibling === null && block !== null && BLOCK_TAGS.has(block.tagName));
+      if (trailing && (block?.textContent ?? '').trim() !== '') continue;
       text += '\n';
     } else if (BLOCK_TAGS.has(element.tagName) && text.length > 0 && !text.endsWith('\n')) {
       text += '\n';
     }
   }
+  if (island) islands.push({ start: islandStart, end: text.length });
 
-  return { text, chunks };
+  return { text, chunks, islands };
 }
 
 function locate(flat: FlatText, offset: number, affinity: 'start' | 'end' = 'start'): { node: Text; offset: number } | null {
@@ -418,12 +440,14 @@ async function applyToContentEditable(
     const flat = flatten(node);
 
     if (span && spanIsFlat(flat, start + span.start, start + span.end)) {
-      if (await applyOneEdit(node, selection, start, original, span, expected)) return true;
+      const outcome = await applyOneEdit(node, selection, start, original, span, expected);
+      if (outcome !== 'fallback') return outcome === 'applied';
     } else if (changes.length <= MAX_SURGICAL_EDITS) {
       // Each surgical edit is a chance for an editor to place text somewhere we
       // did not ask for. A handful is worth the formatting it preserves; fifteen
       // is not, and a rewrite that large has usually restructured the text anyway.
-      if (await applyChanges(node, selection, start, original, changes, expected)) return true;
+      const outcome = await applyChanges(node, selection, start, original, changes, expected);
+      if (outcome !== 'fallback') return outcome === 'applied';
     }
   }
 
@@ -478,6 +502,24 @@ function changedSpan(changes: Change[], original: string, replacement: string): 
 }
 
 /**
+ * How a surgical attempt ended.
+ *
+ * `abort` means the field no longer matches what we read — a re-check of the
+ * span failed, or the change would reach into an island — and nothing more may
+ * be written: the whole-field fallback was computed from the earlier read, and
+ * writing it would destroy whatever the user did in the meantime. `fallback`
+ * means the attempt is ours to recover from — `execCommand` was refused, or
+ * our own edits produced a field we did not expect — and the atomic
+ * replacement may run.
+ */
+type SurgicalOutcome = 'applied' | 'fallback' | 'abort';
+
+/** Whether [from, to) reaches into any non-editable island of the field. */
+function crossesIsland(flat: FlatText, from: number, to: number): boolean {
+  return flat.islands.some((island) => from < island.end && to > island.start);
+}
+
+/**
  * Whether replacing [from, to) with a flat string would cost any markup.
  *
  * True when every text node the span touches shares one parent, so there is no
@@ -487,6 +529,11 @@ function changedSpan(changes: Change[], original: string, replacement: string): 
  * other way only costs a second press of Ctrl+Z.
  */
 function spanIsFlat(flat: FlatText, from: number, to: number): boolean {
+  // A span reaching into an island has no chunks to write through, and an
+  // insertText across one flattens the chip into plain text. The multi-edit
+  // path refuses the change instead.
+  if (crossesIsland(flat, from, to)) return false;
+
   const covered = flat.chunks.filter((chunk) => chunk.end > from && chunk.start < to);
   if (covered.length === 0) return false;
 
@@ -494,7 +541,7 @@ function spanIsFlat(flat: FlatText, from: number, to: number): boolean {
   return parent !== null && covered.every((chunk) => chunk.node.parentElement === parent);
 }
 
-/** Returns false the moment the document stops matching what we expect. */
+/** Returns `abort` the moment the document stops matching what we expect. */
 async function applyOneEdit(
   node: HTMLElement,
   selection: Selection,
@@ -502,15 +549,17 @@ async function applyOneEdit(
   original: string,
   span: EditSpan,
   expected: string,
-): Promise<boolean> {
+): Promise<SurgicalOutcome> {
   const flat = flatten(node);
   const from = start + span.start;
   const to = start + span.end;
 
-  if (!sameText(flat.text.slice(from, to), original.slice(span.start, span.end))) return false;
+  if (!sameText(flat.text.slice(from, to), original.slice(span.start, span.end))) return 'abort';
 
   const range = rangeFor(flat, from, to);
-  if (!range) return false;
+  // No range even though the text matches — the field has moved in a way
+  // offsets cannot follow, so nothing may be written at them.
+  if (!range) return 'abort';
 
   selection.removeAllRanges();
   selection.addRange(range);
@@ -522,20 +571,20 @@ async function applyOneEdit(
   await settle();
   // Re-verify after waiting: user typing during the two-frame settle must not
   // be overwritten.
-  if (!sameText(flatten(node).text.slice(from, to), original.slice(span.start, span.end))) return false;
+  if (!sameText(flatten(node).text.slice(from, to), original.slice(span.start, span.end))) return 'abort';
 
   const applied = span.text
     ? document.execCommand('insertText', false, span.text)
     : document.execCommand('delete');
-  if (!applied) return false;
+  if (!applied) return 'fallback';
 
   // Without this the check below reads pre-edit DOM and passes vacuously.
   await settle();
 
-  return sameText(flatten(node).text, expected);
+  return sameText(flatten(node).text, expected) ? 'applied' : 'fallback';
 }
 
-/** Returns false the moment the document stops matching what we expect. */
+/** Returns `abort` the moment the document stops matching what we expect. */
 async function applyChanges(
   node: HTMLElement,
   selection: Selection,
@@ -543,7 +592,33 @@ async function applyChanges(
   original: string,
   changes: Change[],
   expected: string,
-): Promise<boolean> {
+): Promise<SurgicalOutcome> {
+  // Checked up front, before any edit goes in: a change reaching into an
+  // island would flatten the chip, and applying the changes before it would
+  // leave the field half-rewritten.
+  const initial = flatten(node);
+  if (changes.some((change) => crossesIsland(initial, start + change.start, start + change.end))) {
+    return 'abort';
+  }
+
+  // A change that touches no text of its own — a paragraph break between two
+  // blocks — or whose replacement carries a line break cannot be written by
+  // one `insertText`: the command drops line breaks, and the range it needs
+  // spans the blocks themselves. Attempting it wrecks the very structure it is
+  // rewriting, so hand the whole run to the atomic path, which can express
+  // line breaks.
+  // An insertion is zero-width: it overlaps no chunk, but it is writable when
+  // it sits in or at the edge of one ("done" → "done now" at the field's end).
+  const writable = (change: Change): boolean => {
+    if (change.replacement.includes('\n')) return false;
+    const from = start + change.start;
+    const to = start + change.end;
+    return initial.chunks.some((chunk) =>
+      from === to ? chunk.start <= from && from <= chunk.end : chunk.end > from && chunk.start < to,
+    );
+  };
+  if (!changes.every(writable)) return 'fallback';
+
   let delta = 0;
 
   for (const change of changes) {
@@ -553,21 +628,21 @@ async function applyChanges(
     const from = start + change.start + delta;
     const to = start + change.end + delta;
 
-    if (!sameText(flat.text.slice(from, to), original.slice(change.start, change.end))) return false;
+    if (!sameText(flat.text.slice(from, to), original.slice(change.start, change.end))) return 'abort';
 
     const range = rangeFor(flat, from, to);
-    if (!range) return false;
+    if (!range) return 'abort';
 
     selection.removeAllRanges();
     selection.addRange(range);
     // Let framework editors sync their internal selection before execCommand.
     await settle();
-    if (!sameText(flatten(node).text.slice(from, to), original.slice(change.start, change.end))) return false;
+    if (!sameText(flatten(node).text.slice(from, to), original.slice(change.start, change.end))) return 'abort';
 
     const applied = change.replacement
       ? document.execCommand('insertText', false, change.replacement)
       : document.execCommand('delete');
-    if (!applied) return false;
+    if (!applied) return 'fallback';
 
     // Without this the next check reads pre-edit DOM and passes vacuously.
     await settle();
@@ -579,7 +654,7 @@ async function applyChanges(
   // ending on Shift+Enter, the second of two edits also wrote the first one's
   // text onto the empty last line. Every span read back correctly, so the old
   // check — the span alone — passed with a stray word at the end.
-  return sameText(flatten(node).text, expected);
+  return sameText(flatten(node).text, expected) ? 'applied' : 'fallback';
 }
 
 /**
@@ -594,7 +669,13 @@ async function replaceEverything(
   text: string,
 ): Promise<boolean> {
   node.focus();
-  const before = flatten(node).text;
+  const flat = flatten(node);
+
+  // A flat write turns every island in the field — the mention chip, the date
+  // embed — into plain text. Refuse the whole-field write while one is there
+  // and let the caller say so.
+  if (flat.islands.length > 0) return false;
+  const before = flat.text;
 
   if (!document.execCommand('selectAll')) {
     const range = document.createRange();

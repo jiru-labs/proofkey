@@ -135,6 +135,57 @@ The plan for the next quarter is in the shared folder, with the budget and the p
     <h2>contenteditable — paragraphs (selection must not leak past them)</h2>
     <div id="blocks" class="rich" contenteditable="true"><p>Their is a problem on the first line.</p><p>The projet needs alot of attention.</p><p>Their is one more line after it.</p></div>
 
+    <!--
+      A mention chip: Slack, Notion and Lexical render a mention as a
+      `contenteditable="false"` island inside the editable host. The model has
+      to see its text, but no write may land inside it or across it.
+    -->
+    <h2>contenteditable — mention chip</h2>
+    <div id="chip" class="rich" contenteditable="true">I mentioned the projet to <span contenteditable="false">@Ana</span> yesterday</div>
+
+    <!--
+      The same chip with a stub correction that would rewrite ACROSS it
+      ("talked to @Ana about" → "spoke with Ana about"): the apply must refuse
+      instead of flattening the chip into plain text.
+    -->
+    <h2>contenteditable — a correction that would cross the chip</h2>
+    <div id="chipcross" class="rich" contenteditable="true">I talked to <span contenteditable="false">@Ana</span> about the projet .</div>
+
+    <!--
+      Five independent typos: more than the surgical path will attempt, so the
+      rewrite lands on the whole-field path. On a field holding a chip that
+      path must refuse — a flat write would turn the chip into plain text.
+    -->
+    <h2>contenteditable — whole-field rewrite on a field holding a chip</h2>
+    <div id="chips" class="rich" contenteditable="true">Their is alot to say about the meating on thursday and the projet . I talked to <span contenteditable="false">@Ana</span> about it</div>
+
+    <!--
+      Blank lines between blocks. An empty block's only <br> IS the line the
+      reader sees — Gmail's `<div><br></div>`, ProseMirror's trailing break in
+      an empty paragraph. A trailing <br> after real text is only padding and
+      adds nothing.
+    -->
+    <!--
+      Two corrections in different parents, one of them a pure insertion (a
+      zero-width change at the end of a text node: "is done" → "is done now"). The multi-edit path must write
+      the insertion where it lands instead of handing the whole field to the
+      atomic rewrite, which would take the bold with it.
+    -->
+    <h2>contenteditable — an insertion beside bold</h2>
+    <div id="insertbold" class="rich" contenteditable="true">Teh <strong>report</strong> is done</div>
+
+    <h2>contenteditable — blank lines between blocks</h2>
+    <div id="blanklines" class="rich" contenteditable="true"><div>a</div><div><br></div><div>b</div></div>
+    <div id="pmblank" class="rich" contenteditable="true"><p>a</p><p><br class="ProseMirror-trailingBreak"></p><p>b</p></div>
+    <div id="trailingbr" class="rich" contenteditable="true">text<br></div>
+
+    <!--
+      One plain run of text, for the apply path's settle window: typing that
+      lands while the apply is waiting out its frames must survive it.
+    -->
+    <h2>contenteditable — plain run of text (settle window)</h2>
+    <div id="settle" class="rich" contenteditable="true">Their is alot to do today.</div>
+
     <h2>sensitive input — must never be live-checked</h2>
     <input id="sensitive" type="text" autocomplete="one-time-code" value="The meating is thursday. Please dont be late." />
 
@@ -176,10 +227,29 @@ The plan for the next quarter is in the shared folder, with the budget and the p
         [/\bbolcillo\b/g, 'bolsillo'],
         [/\bpantalon\b/g, 'pantalón'],
         [/\bpaso un viejito\b/g, 'pasó un viejito'],
+        // A typo plus a zero-width insertion at the end of the last text node, for #insertbold.
+        [/\bTeh report is done\b/g, 'The report is done now'],
+        // A rewrite that goes ACROSS a mention chip instead of around it: a
+        // model that restates "talked to @Ana about" as its own words. Only
+        // the chip fields below ever match this.
+        [/\btalked to @Ana about\b/g, 'spoke with Ana about'],
       ];
 
       const correct = (sentence) =>
         FIXES.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), sentence);
+
+      // `?field=framebody` stands in for a webmail compose frame nobody ever
+      // clicked into: the document's own body is the editor, prefilled with a
+      // quoted reply, and nothing in it was focused by anyone. It is editable
+      // before content.js loads, the way a real compose frame already is when
+      // the script arrives. Programmatic focus() would give the frame exactly
+      // the focus whose absence this fixture is about, so nothing is focused.
+      if (new URLSearchParams(location.search).get('field') === 'framebody') {
+        document.body.contentEditable = 'true';
+        const quoted = document.createElement('div');
+        quoted.textContent = 'The meating is at noon. Then we eat lunch together.';
+        document.body.append(quoted);
+      }
 
       window.__pkCorrect = correct;
       const workerListeners = [];
@@ -202,6 +272,8 @@ The plan for the next quarter is in the shared folder, with the budget and the p
       };
       // Every message the stub worker was sent, for tests that assert one went out.
       window.__pkSent = [];
+      // The text each `proofkey:run` carried, in order.
+      window.__pkTexts = [];
       // `?news` gives the stub worker one note to hand out, once, as the real one does.
       window.__pkNews = new URLSearchParams(location.search).has('news')
         ? { id: 'auto-correct', text: 'New in ProofKey: it can fix typos and accents for you when you pause, with Undo one click away.', actionLabel: 'Turn on' }
@@ -234,6 +306,10 @@ The plan for the next quarter is in the shared folder, with the budget and the p
         runtime: {
           sendMessage: async (message) => {
             window.__pkSent.push(message.type);
+            // What the invoke path flattened and showed the model, so a test
+            // can assert the model saw what a reader sees (a mention chip's
+            // text, blank lines between blocks).
+            if (message.type === 'proofkey:run') window.__pkTexts.push(message.text);
             switch (message.type) {
               case 'proofkey:run':
                 // A provider answering with nothing is a real shape: an empty
@@ -326,24 +402,29 @@ The plan for the next quarter is in the shared folder, with the budget and the p
 
     <script>
       const node = document.getElementById(window.__pkTarget);
-      node.focus();
 
-      // Put the caret at the end, where someone who just finished typing would
-      // leave it. Without this it sits at offset 0 and the first sentence — the
-      // one carrying the errors — is skipped by design.
-      if ('setSelectionRange' in node) {
-        node.setSelectionRange(node.value.length, node.value.length);
-      } else {
-        const range = document.createRange();
-        range.selectNodeContents(node);
-        range.collapse(false);
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
+      // `?field=framebody` has no field of that id: the editable body was set
+      // up before content.js loaded, and nothing here is focused.
+      if (node) {
+        node.focus();
+
+        // Put the caret at the end, where someone who just finished typing would
+        // leave it. Without this it sits at offset 0 and the first sentence — the
+        // one carrying the errors — is skipped by design.
+        if ('setSelectionRange' in node) {
+          node.setSelectionRange(node.value.length, node.value.length);
+        } else {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          range.collapse(false);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+
+        node.dispatchEvent(new Event('focusin', { bubbles: true }));
+        node.dispatchEvent(new Event('input', { bubbles: true }));
       }
-
-      node.dispatchEvent(new Event('focusin', { bubbles: true }));
-      node.dispatchEvent(new Event('input', { bubbles: true }));
 
       // Signal for the screenshot driver once underlines have been painted.
       const marker = document.createElement('div');

@@ -1436,14 +1436,31 @@ async function run() {
         );
       }
 
-      // Pressing Ctrl+Enter while the card is open applies the suggestion and
-      // does not leak the Enter keypress to page listeners.
+      // Meta+Enter is Gmail/Slack's send: the card must not consume it. The
+      // event reaches the page untouched, the card stays open, the text is
+      // untouched.
       await page.evaluate(() => {
         window.__pkLeakedEnter = false;
         window.addEventListener('keydown', (event) => {
           if (event.key === 'Enter') window.__pkLeakedEnter = true;
         });
       });
+      await page.keyboard.press('Meta+Enter');
+      await page.waitForTimeout(250);
+      const afterMetaEnter = await page.evaluate(() => ({
+        leaked: !!window.__pkLeakedEnter,
+        cardOpen: !document.getElementById('proofkey-root')?.shadowRoot?.querySelector('.pk-card')?.hidden,
+        value: document.getElementById('plain').value,
+      }));
+      check(
+        'Meta+Enter is not consumed: it reaches the page and the card stays open',
+        afterMetaEnter.leaked && afterMetaEnter.cardOpen && !afterMetaEnter.value.includes('There is'),
+        JSON.stringify(afterMetaEnter),
+      );
+
+      // Pressing Ctrl+Enter while the card is open applies the suggestion. As
+      // in v0.1.27 only the default action is prevented — the event itself
+      // still reaches the page's own listeners.
       await page.keyboard.press('Control+Enter');
       await page.waitForTimeout(250);
       const afterCtrlEnter = await page.evaluate(() => ({
@@ -1456,7 +1473,7 @@ async function run() {
         !afterCtrlEnter.cardOpen && afterCtrlEnter.value.includes('There is'),
         JSON.stringify(afterCtrlEnter),
       );
-      check('Ctrl+Enter does not leak to page keydown listeners', !afterCtrlEnter.leaked);
+      check('Ctrl+Enter reaches page keydown listeners too', afterCtrlEnter.leaked);
     }
   }
 
@@ -1520,6 +1537,184 @@ async function run() {
       checkCount > 0 && state.highlightCounts > 0 && Number(state.badge?.text) > 0,
       JSON.stringify({ checkCount, highlights: state.highlightCounts, badge: state.badge?.text ?? null }),
     );
+  }
+
+  // A mention chip — a `contenteditable="false"` island, as Slack, Notion and
+  // Lexical render one. Its text must reach the model (a flatten that drops it
+  // makes the model fill the gap, and a fix spanning the gap deletes the chip),
+  // but no write may land inside it or across it, and a whole-field rewrite on
+  // a field holding one must refuse: a flat write would turn the chip into
+  // plain text.
+  {
+    const chipState = (id) => page.evaluate((i) => {
+      const el = document.querySelector(`#${i} [contenteditable="false"]`);
+      return { present: !!el, text: el?.textContent ?? '', field: document.getElementById(i).textContent };
+    }, id);
+    const selectAllAndRun = async (id) => {
+      await page.goto(`${BASE}?field=${id}`, { waitUntil: 'load' });
+      await page.waitForTimeout(400);
+      await page.evaluate((i) => {
+        const field = document.getElementById(i);
+        field.focus();
+        const range = document.createRange();
+        range.selectNodeContents(field);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        window.__pkInvoke('fix-grammar');
+      }, id);
+      await page.waitForTimeout(900);
+    };
+
+    console.log('\ncontenteditable — mention chip:');
+    await selectAllAndRun('chip');
+    const seen = await page.evaluate(() => window.__pkTexts.at(-1));
+    check('what the model saw includes the chip text', typeof seen === 'string' && seen.includes('@Ana'), JSON.stringify(seen));
+    const chip = await chipState('chip');
+    check('a correction beside the chip keeps the chip element', chip.present && chip.text === '@Ana', JSON.stringify(chip));
+    check('and the word beside it is corrected', chip.field.includes('the project to @Ana'), JSON.stringify(chip.field));
+
+    console.log('contenteditable — a correction that would cross the chip:');
+    await selectAllAndRun('chipcross');
+    const crossed = await chipState('chipcross');
+    check('a rewrite crossing the chip writes nothing',
+      crossed.field === 'I talked to @Ana about the projet .', JSON.stringify(crossed.field));
+    check('and the chip element is still there', crossed.present && crossed.text === '@Ana', JSON.stringify(crossed));
+    check('and the apply is not reported as done',
+      !(await page.evaluate(() => window.__pkSent.includes('proofkey:applied'))));
+
+    console.log('contenteditable — whole-field rewrite on a field holding a chip:');
+    await selectAllAndRun('chips');
+    const whole = await chipState('chips');
+    check('the whole-field rewrite refuses on a field with a chip',
+      whole.present && whole.text === '@Ana' && whole.field.includes('alot'), JSON.stringify(whole));
+  }
+
+  // An insertion is a zero-width change: it touches no text node of its own,
+  // but it lands inside one. Treating it as unwritable sent every multi-edit
+  // fix with a missing word to the whole-field rewrite, which drops the bold.
+  {
+    console.log('\ncontenteditable — an insertion beside bold:');
+    await page.goto(`${BASE}?field=insertbold`, { waitUntil: 'load' });
+    await page.waitForTimeout(400);
+    await page.evaluate(() => {
+      const field = document.getElementById('insertbold');
+      field.focus();
+      const range = document.createRange();
+      range.selectNodeContents(field);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      window.__pkInvoke('fix-grammar');
+    });
+    await page.waitForTimeout(900);
+    const result = await page.evaluate(() => {
+      const field = document.getElementById('insertbold');
+      return { text: field.textContent, bold: field.querySelector('strong')?.textContent ?? null };
+    });
+    check('both corrections land, the insertion included',
+      result.text === 'The report is done now', JSON.stringify(result));
+    check('and the bold survives them', result.bold === 'report', JSON.stringify(result));
+  }
+
+  // Blank lines between blocks: an empty block's only <br> IS the line the
+  // reader sees (Gmail's `<div><br></div>`, ProseMirror's break in an empty
+  // paragraph). A trailing <br> after real text is only padding and adds
+  // nothing. What the model receives is what the invoke path flattens, so
+  // that — not innerText — is what is asserted here.
+  {
+    const flattenViaInvoke = async (id) => {
+      await page.goto(`${BASE}?field=${id}`, { waitUntil: 'load' });
+      await page.waitForTimeout(400);
+      await page.evaluate((i) => {
+        const field = document.getElementById(i);
+        field.focus();
+        const range = document.createRange();
+        range.selectNodeContents(field);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        window.__pkInvoke('fix-grammar');
+      }, id);
+      await page.waitForTimeout(700);
+      return page.evaluate(() => window.__pkTexts.at(-1));
+    };
+
+    console.log('\ncontenteditable — blank lines between blocks:');
+    const blank = await flattenViaInvoke('blanklines');
+    check('an empty <div> between two lines reads as a blank line', blank === 'a\n\nb', JSON.stringify(blank));
+    const pmBlank = await flattenViaInvoke('pmblank');
+    check('an empty ProseMirror paragraph reads as a blank line', pmBlank === 'a\n\nb', JSON.stringify(pmBlank));
+    const trailing = await flattenViaInvoke('trailingbr');
+    check('a trailing <br> after text adds no phantom newline', trailing === 'text', JSON.stringify(trailing));
+  }
+
+  // Typing during the apply's settle window: the re-check after the frames
+  // must notice the field moved and give up WITHOUT the whole-field rewrite,
+  // which was computed from the text read before the wait and would wipe the
+  // keystrokes.
+  {
+    console.log('\ncontenteditable — typing during the settle window:');
+    await page.goto(`${BASE}?field=settle`, { waitUntil: 'load' });
+    await page.waitForTimeout(400);
+    await page.evaluate(() => {
+      const field = document.getElementById('settle');
+      field.focus();
+      const range = document.createRange();
+      range.selectNodeContents(field);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      // The user's keystrokes land while the apply is waiting out its two
+      // settle frames — and they land in the selection the apply set, which
+      // is the span it is about to write.
+      requestAnimationFrame(() => {
+        document.execCommand('insertText', false, 'the writer typed over it');
+      });
+      window.__pkInvoke('fix-grammar');
+    });
+    await page.waitForTimeout(1200);
+
+    const after = await page.evaluate(() => ({
+      text: document.getElementById('settle').textContent,
+      applied: window.__pkSent.includes('proofkey:applied'),
+    }));
+    check('the text typed during the apply survives',
+      after.text === 'the writer typed over it to do today.', JSON.stringify(after.text));
+    check('no rewrite computed before the wait lands over it',
+      !after.text.includes('There is'), JSON.stringify(after.text));
+    check('the apply is not reported as done', !after.applied);
+  }
+
+  // A compose frame nobody ever clicked into: its editable body is the frame's
+  // activeElement from the start, so attaching on startup would send the whole
+  // prefilled text — the quoted reply — with no keystroke of ours in it. The
+  // frame is only worth attaching to once the document actually holds focus.
+  {
+    console.log('\ncompose frame never focused:');
+    await page.goto(`${BASE}?field=plain`, { waitUntil: 'load' });
+    await page.waitForSelector('#pk-harness-ready', { timeout: 5000 }).catch(() => {});
+    await page.evaluate((src) => {
+      const frame = document.createElement('iframe');
+      frame.src = src;
+      document.body.append(frame);
+    }, `${BASE}?field=framebody`);
+    await page.waitForTimeout(2500);
+
+    const frameChecks = () => page.evaluate(() => {
+      const sent = document.querySelector('iframe')?.contentWindow?.__pkSent ?? [];
+      return sent.filter((type) => type === 'proofkey:check').length;
+    });
+    check('an unfocused frame sends no check request', (await frameChecks()) === 0, `${await frameChecks()} check(s)`);
+
+    // The fixture can attach: focus arriving inside the frame (a click, in
+    // real use) still starts live checking there.
+    await page.evaluate(() => {
+      const frame = document.querySelector('iframe');
+      frame.contentDocument.body.dispatchEvent(new Event('focusin', { bubbles: true }));
+    });
+    await page.waitForTimeout(1800);
+    check('and focus inside the frame attaches as usual', (await frameChecks()) > 0, `${await frameChecks()} check(s)`);
   }
 
   check('no uncaught page exceptions', pageErrors.length === 0, pageErrors.join('; ') || 'clean');

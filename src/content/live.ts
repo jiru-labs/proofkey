@@ -971,6 +971,11 @@ export function createLive(shadow: ShadowRoot, initialState: ContentState): Live
   };
 
   function activateFocused(): void {
+    // Only a document that holds the focus may be read: in a compose frame the
+    // user never entered, activeElement has been the frame's editable body all
+    // along, and attaching would send its whole prefilled text — the quoted
+    // reply — with no keystroke of ours in it.
+    if (!document.hasFocus()) return;
     // A page with live checking on is likely to be typed into: have the model
     // loaded while the page is still being read, not on the first sentence.
     void askWorker({ type: 'proofkey:warm' }).catch(() => undefined);

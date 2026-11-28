@@ -154,11 +154,12 @@ export function createCard(shadow: ShadowRoot, handlers: CardHandlers): Suggesti
       hide();
       event.preventDefault();
       event.stopImmediatePropagation();
-    } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+    } else if (event.key === 'Enter' && event.ctrlKey) {
+      // Ctrl only: Cmd+Enter is Gmail/Slack's own send and must reach them.
+      // Only the default action is prevented; the event still propagates.
       handlers.apply(open);
       hide();
       event.preventDefault();
-      event.stopImmediatePropagation();
     }
   };
   window.addEventListener('keydown', onKeydown, true);
