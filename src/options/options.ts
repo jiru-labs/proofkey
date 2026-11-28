@@ -1,212 +1,85 @@
 import { normalizeOrigin, originMatchPattern } from '../core/browser';
-import { getPreset, normalizeBaseUrl, PRESETS, switchPreset, thinkingNote } from '../core/presets';
-import {
-  describeProbe,
-  findLocalServers,
-  localServerOrigins,
-  LOCAL_SERVERS,
-  type LocalServerProbe,
-} from '../core/localServers';
-import { BUILT_IN_ACTIONS, VARIETIES } from '../core/prompts';
-import { reportFormUrl } from '../core/news';
-import { exportBackup, parseBackup } from '../core/backup';
-import {
-  describeInBrowserState,
-  IN_BROWSER_DOWNLOAD_BYTES,
-  IN_BROWSER_DOWNLOAD_HOST,
-  type InBrowserState,
-} from '../core/providers/inBrowserModel';
-import { listModels, originPattern, runCompletion, validateConnection } from '../core/providers';
-import {
-  builtinAvailability,
-  BUILTIN_MODEL,
-  builtinProblem,
-  downloadBuiltinModel,
-  type BuiltinAvailability,
-} from '../core/providers/chromeBuiltin';
-import {
-  chordFromEvent,
-  chordProblem,
-  chordWarning,
-  describeShortcut,
-  formatChord,
-  isModifierCode,
-  parseChord,
-  parseCommandShortcut,
-  serializeChord,
-  suggestChord,
-  suggestChords,
-  suggestionLetter,
-} from '../core/shortcuts';
+import { normalizeBaseUrl } from '../core/presets';
+import { originPattern, validateConnection } from '../core/providers';
+import { builtinAvailability } from '../core/providers/chromeBuiltin';
+import { parseCommandShortcut } from '../core/shortcuts';
 import {
   connectionChain,
-  connectionFromPreset,
-  defaultSettings,
   loadSettings,
-  newConnectionId,
-  normalizeSettings,
-  resolveActions,
   mergeOnSave,
   saveSettings,
-  setActionShortcut,
-  shortcutConflicts,
+  SETTINGS_STORAGE_KEY,
 } from '../core/storage';
-import type {
-  AuthStyle,
-  Connection,
-  PresetId,
-  Settings,
-  WritingAction,
-  WritingProfile,
-} from '../core/types';
-import {
-  button,
-  checkbox,
-  clear,
-  el,
-  field,
-  input,
-  lines,
-  parseJsonObject,
-  select,
-  textarea,
-} from './dom';
-
-let settings: Settings;
-/**
- * `settings` as last stored. Every handler on this page edits `settings` in
- * place, so "has anything changed" is answered by comparing against this copy
- * rather than by asking each handler to say so.
- */
-let savedSnapshot = '';
-/** The footer's status line, and whether the text in it is the unsaved-changes notice. */
-let footerStatus: HTMLElement | null = null;
-let unsavedNoticeShown = false;
-const BASE_TITLE = document.title;
-const UNSAVED_NOTICE = 'Unsaved changes — click Save to keep them.';
-let expandedConnectionId: string | null = null;
-
-/**
- * Chrome's built-in model as last read, and a download in flight. Both live
- * here rather than in the card's DOM because every edit on this page rebuilds
- * the DOM: progress bound to the nodes of the click would freeze the moment the
- * user touched anything else while 4 GB came down.
- */
-let builtinState: BuiltinAvailability | null = null;
-/** Whether «Use your AI account» has been clicked, so its provider list shows. */
-let firstChoiceAccountOpen = false;
-let builtinDownload: { fraction: number; movedAt: number } | null = null;
-let builtinDownloadPoll: ReturnType<typeof setInterval> | undefined;
-
-/** How often a running download asks Chrome whether the model is there yet. */
-const BUILTIN_POLL_MS = 5_000;
-/** How long without progress before the card says the download looks stuck. */
-const BUILTIN_STALL_MS = 120_000;
-let builtinDownloadError: string | null = null;
-/**
- * What the last "Find a model on this computer" click turned up. Kept outside the
- * card because finding a server adds a connection and re-renders the page.
- */
-let localFinder: { searching: boolean; lines: string[]; kind: 'ok' | 'error' | 'info' } | null = null;
-
-/**
- * Which action panels are open, so a re-render does not close the one the user
- * is working in. `<details>` keeps its open state in the DOM, and every edit
- * here rebuilds the DOM.
- */
-const openActionIds = new Set<string>();
-/** Same for the live-check timing panel. */
-let liveTimingOpen = false;
-
-/** The backup card's box and its last result, both kept across re-renders. */
-let backupIncludeSecrets = false;
-let backupNotice: { text: string; kind: 'ok' | 'error' | 'warn' } | null = null;
-
-/** Survives the re-render that follows binding a key, so the result is readable. */
-let shortcutNotice: { actionId: string; text: string; kind: 'ok' | 'error' } | null = null;
-/** Action whose recorder should regain focus after that re-render. */
-let focusShortcutFor: string | null = null;
-
-/** Key legends as printed on this user's keyboard, when the browser will say. */
-let layoutMap: Map<string, string> | null = null;
-/** Chords the browser has given to ProofKey's own manifest commands. */
-let commandChords: { name: string; chord: string; label: string }[] = [];
-
-/** The manifest command that runs `defaultActionId`. Matches `background/index.ts`. */
-const DEFAULT_ACTION_COMMAND = 'run-default-action';
-
-const IS_MAC = /Mac|iPhone|iPad/i.test(navigator.userAgent);
+import type { Settings } from '../core/types';
+import { renderConnections } from './connections';
+import { button, clear, el } from './dom';
+import { renderActions, renderBackup, renderLiveCheck, renderProfile, renderReports } from './sections';
+import { BASE_TITLE, builtinCardProblem, isDirty, store, UNSAVED_NOTICE } from './state';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
+
+store.render = render;
+store.refreshUnsaved = refreshUnsaved;
 
 void init();
 
 async function init(): Promise<void> {
-  settings = await loadSettings();
-  savedSnapshot = JSON.stringify(settings);
-  expandedConnectionId = settings.activeConnectionId;
-  // Awaited before the first paint so shortcut labels never visibly change from
-  // the US legend to the real one a moment later — and so the built-in model's
-  // card and the Save button know its state from the first render.
+  store.settings = await loadSettings();
+  store.savedSnapshot = JSON.stringify(store.settings);
+  store.expandedConnectionId = store.settings.activeConnectionId;
+
   await Promise.all([
     loadLayoutMap(),
     loadCommandChords(),
-    builtinAvailability().then((state) => (builtinState = state)),
+    builtinAvailability().then((state) => (store.builtinState = state)),
   ]);
   render();
   watchUnsavedChanges();
-  // The browser's shortcut page is where a clash with ProofKey's own command is
-  // cleared, and nothing tells an extension it happened. Reading the bindings
-  // again on return makes the next recording see the key as free.
+
+  // Re-read browser shortcut bindings when returning from chrome://extensions/shortcuts.
   window.addEventListener('focus', () => void refreshCommandChords());
+
+  // Stay in sync with worker-side updates (toolbar live-check toggle, dictionary
+  // additions, retired-model moves) whenever the page has no unsaved edits.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !(SETTINGS_STORAGE_KEY in changes)) return;
+    if (store.saving || store.cancelRecording || isDirty()) return;
+    void loadSettings().then((fresh) => {
+      if (store.saving || store.cancelRecording || isDirty()) return;
+      store.settings = fresh;
+      store.savedSnapshot = JSON.stringify(fresh);
+      if (!fresh.connections.some((c) => c.id === store.expandedConnectionId)) {
+        store.expandedConnectionId = fresh.activeConnectionId;
+      }
+      render();
+    });
+  });
 }
 
 async function refreshCommandChords(): Promise<void> {
-  const before = JSON.stringify(commandChords);
+  const before = JSON.stringify(store.commandChords);
   await loadCommandChords();
-  // An armed recorder keeps its own DOM; repainting would orphan it.
-  if (JSON.stringify(commandChords) !== before && !cancelRecording) render();
+  if (JSON.stringify(store.commandChords) !== before && !store.cancelRecording) render();
 }
 
-/**
- * The browser's own shortcut page, the only place a browser shortcut can be
- * changed or cleared: Chrome gives extensions no way to rebind or remove their
- * commands (`chrome.commands` can only read them). `tabs.create` may open
- * chrome:// URLs and needs no permission; Edge and Brave rewrite the scheme.
- */
-function openShortcutSettings(): void {
-  void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
-}
-
-function isDirty(): boolean {
-  return JSON.stringify(settings) !== savedSnapshot;
-}
-
-/**
- * Says so, in the footer and the tab title, when the page holds changes that
- * are not stored yet. Saving is a separate click, and forgetting it leaves the
- * user believing a provider or a shortcut is set when it is not.
- */
 function refreshUnsaved(): void {
   const dirty = isDirty();
   document.title = dirty ? `● ${BASE_TITLE}` : BASE_TITLE;
-  const footer = footerStatus?.parentElement;
+  const footer = store.footerStatus?.parentElement;
   footer?.classList.toggle('footer--dirty', dirty);
-  if (!footerStatus) return;
+  if (!store.footerStatus) return;
   if (dirty) {
-    footerStatus.className = 'status status--warn';
-    footerStatus.textContent = UNSAVED_NOTICE;
-    unsavedNoticeShown = true;
-  } else if (!dirty && unsavedNoticeShown) {
-    footerStatus.className = 'status';
-    footerStatus.textContent = '';
-    unsavedNoticeShown = false;
+    store.footerStatus.className = 'status status--warn';
+    store.footerStatus.textContent = UNSAVED_NOTICE;
+    store.unsavedNoticeShown = true;
+  } else if (!dirty && store.unsavedNoticeShown) {
+    store.footerStatus.className = 'status';
+    store.footerStatus.textContent = '';
+    store.unsavedNoticeShown = false;
   }
 }
 
 function watchUnsavedChanges(): void {
-  // Bubbling, so these run after the handler on the control itself has edited
-  // `settings`; the timeout lets handlers that finish in a later task settle.
   for (const type of ['input', 'change', 'click']) {
     app.addEventListener(type, () => setTimeout(refreshUnsaved, 0));
   }
@@ -216,27 +89,21 @@ function watchUnsavedChanges(): void {
   refreshUnsaved();
 }
 
-/**
- * `navigator.keyboard` is Chromium-only and needs a focused document. Without
- * it, `keyLabel` falls back to the US legend, which is wrong on AZERTY but is
- * the only guess available.
- */
 async function loadLayoutMap(): Promise<void> {
   const keyboard = (
     navigator as Navigator & { keyboard?: { getLayoutMap?: () => Promise<Map<string, string>> } }
   ).keyboard;
-
   try {
-    layoutMap = (await keyboard?.getLayoutMap?.()) ?? null;
+    store.layoutMap = (await keyboard?.getLayoutMap?.()) ?? null;
   } catch {
-    layoutMap = null;
+    store.layoutMap = null;
   }
 }
 
 async function loadCommandChords(): Promise<void> {
   try {
     const commands = await chrome.commands.getAll();
-    commandChords = commands.flatMap((command) => {
+    store.commandChords = commands.flatMap((command) => {
       const chord = parseCommandShortcut(command.shortcut ?? '');
       if (!chord) return [];
       return [
@@ -248,16 +115,15 @@ async function loadCommandChords(): Promise<void> {
       ];
     });
   } catch {
-    commandChords = [];
+    store.commandChords = [];
   }
 }
 
-/** A stored chord as this user would read it. */
-function shortcutLabel(chord: string): string {
-  return describeShortcut(chord, { mac: IS_MAC, layout: layoutMap });
-}
-
 function render(): void {
+  // Never leave global capture-phase shortcut recorder listeners orphaned when
+  // an async poll or download triggers a re-render.
+  store.cancelRecording?.();
+
   clear(app);
   app.append(
     renderConnections(),
@@ -269,2016 +135,131 @@ function render(): void {
     renderFooter(),
   );
 
-  if (focusShortcutFor) {
-    app
-      .querySelector<HTMLButtonElement>(`[data-shortcut-for="${CSS.escape(focusShortcutFor)}"]`)
-      ?.focus();
-    focusShortcutFor = null;
+  if (store.pendingFocusSelector) {
+    const target = app.querySelector<HTMLElement>(store.pendingFocusSelector);
+    target?.focus();
+    store.pendingFocusSelector = null;
   }
-  if (savedSnapshot) refreshUnsaved();
+  if (store.savedSnapshot) refreshUnsaved();
 }
-
-function section(title: string, subtitle: string, ...children: (Node | null)[]): HTMLElement {
-  return el(
-    'section',
-    { class: 'card' },
-    el('h2', { class: 'card__title', text: title }),
-    el('p', { class: 'card__subtitle', text: subtitle }),
-    ...children,
-  );
-}
-
-// ------------------------------------------------------------- connections
-
-function renderConnections(): HTMLElement {
-  const list = el('div', { class: 'stack' });
-  for (const connection of settings.connections) {
-    list.append(renderConnectionCard(connection));
-  }
-
-  return section(
-    'Providers',
-    'The AI that reads your text. Your text and key go from this browser straight to the one you pick, and nowhere else. Add a second one and tick Backup on it: ProofKey tries it when the active one fails. Settings stay on this computer; to move them to another, use Back up your settings below.',
-    isFreshDefault() ? renderFirstChoice() : null,
-    list,
-    el(
-      'div',
-      { class: 'row row--end' },
-      button(
-        '+ Add provider',
-        () => {
-          const connection = connectionFromPreset('custom', 'New provider');
-          settings.connections.push(connection);
-          expandedConnectionId = connection.id;
-          render();
-        },
-        'ghost',
-      ),
-    ),
-  );
-}
-
-/** Providers offered by name under «Use your AI account»; the rest stay in the card's dropdown. */
-const ACCOUNT_PRESETS: readonly PresetId[] = ['openai', 'anthropic', 'gemini', 'openrouter', 'groq'];
-
-/** Whether the list still holds only the no-key connection a fresh install starts with. */
-function isFreshDefault(): boolean {
-  const [only] = settings.connections;
-  return settings.connections.length === 1 && only?.transport === 'chrome_builtin' && !only.apiKey;
-}
-
-/**
- * Two plain choices for someone who has never heard of a base URL. Only shown
- * while the setup is the untouched default, so nobody with a provider set sees it.
- * Each choice only edits the page; nothing is stored until Save.
- */
-function renderFirstChoice(): HTMLElement {
-  const accounts = el(
-    'div',
-    { class: 'row row--wrap' },
-    ...ACCOUNT_PRESETS.map((id) => {
-      const choose = button(getPreset(id).label, () => useAccountProvider(id));
-      choose.dataset.accountPreset = id;
-      return choose;
-    }),
-    button('Another one…', () => useAccountProvider('custom'), 'ghost'),
-  );
-  accounts.hidden = !firstChoiceAccountOpen;
-
-  return el(
-    'div',
-    { class: 'first-choice', dataset: { firstChoice: '' } },
-    el('p', { class: 'first-choice__lead', text: 'How do you want ProofKey to check your writing?' }),
-    el(
-      'div',
-      { class: 'row row--wrap' },
-      button('Free, on this computer', useFreeModel, firstChoiceAccountOpen ? 'secondary' : 'primary'),
-      button(
-        'Use your AI account',
-        () => {
-          firstChoiceAccountOpen = true;
-          render();
-        },
-        firstChoiceAccountOpen ? 'primary' : 'secondary',
-      ),
-    ),
-    el('p', {
-      class: 'field__hint',
-      text: firstChoiceAccountOpen
-        ? 'Pick the company you have an account with. You paste its API key below; it stays in this browser.'
-        : 'Free needs no account: the model runs on this computer, so your text stays here. An AI account (OpenAI, Anthropic, Google…) checks better and needs an API key from that company.',
-    }),
-    accounts,
-  );
-}
-
-/** Chrome's own model where the browser has one; otherwise the model ProofKey runs in the browser. */
-function useFreeModel(): void {
-  firstChoiceAccountOpen = false;
-  if (builtinState === 'no-api' || builtinState === 'unavailable') {
-    useInBrowserModel();
-    return;
-  }
-  const builtin = settings.connections.find((c) => c.transport === 'chrome_builtin');
-  if (!builtin) return;
-  settings.activeConnectionId = builtin.id;
-  expandedConnectionId = builtin.id;
-  render();
-}
-
-/** Adds a connection for the chosen company, makes it the one in use and opens it at the key field. */
-function useAccountProvider(id: PresetId): void {
-  const connection = connectionFromPreset(id);
-  settings.connections.push(connection);
-  settings.activeConnectionId = connection.id;
-  expandedConnectionId = connection.id;
-  firstChoiceAccountOpen = false;
-  render();
-}
-
-function renderConnectionCard(connection: Connection): HTMLElement {
-  const preset = getPreset(connection.presetId);
-  const isActive = connection.id === settings.activeConnectionId;
-  const isExpanded = connection.id === expandedConnectionId;
-  const problem = validateConnection(connection) ?? builtinCardProblem(connection);
-
-  const header = el(
-    'div',
-    { class: 'conn__header', on: { click: () => toggle(connection.id) } },
-    el(
-      'div',
-      { class: 'conn__identity' },
-      el('span', { class: 'conn__name', text: connection.label || preset.label }),
-      isActive ? el('span', { class: 'badge badge--active', text: 'Active' }) : null,
-      !isActive && settings.fallbackConnectionIds.includes(connection.id)
-        ? el('span', { class: 'badge', text: 'Backup' })
-        : null,
-      problem ? el('span', { class: 'badge badge--warn', text: 'Needs setup' }) : null,
-    ),
-    // Chrome's built-in model ignores the stored model and URL, and they are left
-    // untouched so a user who looks at it and switches back loses nothing. The
-    // header names what actually runs instead.
-    el('span', {
-      class: 'conn__model',
-      text: connection.transport === 'chrome_builtin' ? BUILTIN_MODEL : connection.model || 'no model set',
-    }),
-  );
-
-  const card = el('div', { class: `conn ${isExpanded ? 'conn--open' : ''}` }, header);
-  if (isExpanded) card.append(renderConnectionBody(connection, problem));
-  return card;
-}
-
-function toggle(id: string): void {
-  expandedConnectionId = expandedConnectionId === id ? null : id;
-  render();
-}
-
-function renderConnectionBody(connection: Connection, problem: string | null): HTMLElement {
-  const presetOptions = PRESETS.map((p) => ({
-    value: p.id,
-    label: p.label,
-    group: p.group === 'primary' ? 'Common' : 'More providers',
-  }));
-
-  if (connection.transport === 'chrome_builtin') {
-    return renderBuiltinBody(connection, presetOptions);
-  }
-  if (connection.transport === 'in_browser') {
-    return renderInBrowserBody(connection, presetOptions);
-  }
-
-  const modelInput = input(connection.model, {
-    placeholder: 'model name',
-    on: { input: (e) => (connection.model = (e.target as HTMLInputElement).value) },
-  });
-
-  const modelStatus = el('p', { class: 'field__hint' });
-  // Filled in by "Fetch models" with a browse list. Kept out of the row so a
-  // long model id does not squeeze the input.
-  const modelPicker = el('div', { class: 'field__picker' });
-  const modelRow = el(
-    'div',
-    { class: 'row' },
-    modelInput,
-    button('Fetch models', () =>
-      void fetchModels(connection, modelInput, modelPicker, modelStatus),
-    ),
-  );
-
-  const testStatus = el('p', { class: 'status' });
-
-  return el(
-    'div',
-    { class: 'conn__body' },
-    problem ? el('p', { class: 'notice notice--warn', text: problem }) : null,
-
-    field(
-      'Name',
-      input(connection.label, {
-        placeholder: 'Work key, Local Ollama…',
-        on: { input: (e) => (connection.label = (e.target as HTMLInputElement).value) },
-      }),
-    ),
-
-    field(
-      'Provider',
-      select(presetOptions, connection.presetId, {
-        on: { change: (e) => applyPreset(connection, (e.target as HTMLSelectElement).value as PresetId) },
-      }),
-      getPreset(connection.presetId).hint,
-    ),
-
-    field(
-      'Base URL',
-      input(connection.baseUrl, {
-        placeholder: 'https://api.example.com/v1',
-        on: {
-          input: (e) => (connection.baseUrl = (e.target as HTMLInputElement).value),
-          blur: (e) => {
-            const el_ = e.target as HTMLInputElement;
-            el_.value = normalizeBaseUrl(el_.value);
-            connection.baseUrl = el_.value;
-          },
-        },
-      }),
-      'Pasting a full /chat/completions URL is fine — the endpoint path is trimmed off.',
-    ),
-
-    field(
-      'API key',
-      input(connection.apiKey, {
-        type: 'password',
-        placeholder: getPreset(connection.presetId).requiresApiKey ? 'required' : 'not required',
-        on: { input: (e) => (connection.apiKey = (e.target as HTMLInputElement).value) },
-      }),
-      [
-        'Kept on this computer only.',
-        getPreset(connection.presetId).docsUrl ? `Get one at ${getPreset(connection.presetId).docsUrl}` : '',
-      ].join(' ').trim(),
-    ),
-
-    el(
-      'div',
-      { class: 'field' },
-      el('label', { class: 'field__label', text: 'Model' }),
-      modelRow,
-      modelPicker,
-      modelStatus,
-    ),
-
-    el(
-      'details',
-      { class: 'advanced' },
-      el('summary', { text: 'Advanced — auth style, extra headers and body' }),
-      field(
-        'Key is sent as',
-        select(
-          [
-            { value: 'bearer', label: 'Authorization: Bearer <key>' },
-            { value: 'x-api-key', label: 'x-api-key: <key>' },
-            { value: 'header', label: 'A custom header' },
-            { value: 'query', label: 'A URL query parameter' },
-            { value: 'none', label: 'Not sent (local server)' },
-          ],
-          connection.authStyle,
-          {
-            on: {
-              change: (e) => {
-                connection.authStyle = (e.target as HTMLSelectElement).value as AuthStyle;
-                render();
-              },
-            },
-          },
-        ),
-      ),
-      connection.authStyle === 'header'
-        ? field(
-            'Header name',
-            input(connection.authHeaderName ?? '', {
-              placeholder: 'api-key',
-              on: { input: (e) => (connection.authHeaderName = (e.target as HTMLInputElement).value) },
-            }),
-          )
-        : null,
-      connection.authStyle === 'query'
-        ? field(
-            'Query parameter name',
-            input(connection.authQueryParam ?? '', {
-              placeholder: 'key',
-              on: { input: (e) => (connection.authQueryParam = (e.target as HTMLInputElement).value) },
-            }),
-          )
-        : null,
-      field(
-        'Thinking',
-        select(
-          [
-            { value: 'off', label: 'Turn it off where the provider allows it' },
-            { value: 'default', label: "Leave the endpoint's own default" },
-          ],
-          connection.thinking,
-          {
-            on: {
-              change: (e) => {
-                connection.thinking = (e.target as HTMLSelectElement).value as Connection['thinking'];
-                render();
-              },
-            },
-          },
-        ),
-        thinkingNote(connection),
-      ),
-      field(
-        'Extra headers',
-        jsonEditor(connection.extraHeaders, (value) => {
-          connection.extraHeaders = value as Record<string, string>;
-        }),
-        'JSON object. Added to every request — useful for gateways that need attribution or routing headers.',
-      ),
-      field(
-        'Extra body fields',
-        jsonEditor(connection.extraBody, (value) => (connection.extraBody = value)),
-        'JSON object merged into the request body, e.g. provider routing preferences.',
-      ),
-      field(
-        'Extra query parameters',
-        jsonEditor(connection.extraQuery, (value) => {
-          connection.extraQuery = value as Record<string, string>;
-        }),
-        'JSON object appended to the URL, e.g. {"api-version": "2024-10-21"} for Azure.',
-      ),
-      field(
-        'Max output tokens',
-        input(String(connection.maxOutputTokens), {
-          type: 'number',
-          on: {
-            input: (e) => {
-              const parsed = Number((e.target as HTMLInputElement).value);
-              if (Number.isFinite(parsed) && parsed > 0) connection.maxOutputTokens = parsed;
-            },
-          },
-        }),
-      ),
-      field(
-        'Temperature',
-        input(connection.temperature === undefined ? '' : String(connection.temperature), {
-          placeholder: 'leave empty to omit',
-          on: {
-            input: (e) => {
-              const raw = (e.target as HTMLInputElement).value.trim();
-              const parsed = Number(raw);
-              connection.temperature = raw && Number.isFinite(parsed) ? parsed : undefined;
-            },
-          },
-        }),
-        'Best left empty. Current Anthropic models reject this parameter outright.',
-      ),
-    ),
-
-    testStatus,
-    connectionActions(connection, testStatus),
-  );
-}
-
-/**
- * A backup is tried, in the order the connections are listed, when the one in
- * use fails: a local server that is not running, a provider that is down, a key
- * out of credit.
- */
-function backupBox(connection: Connection): HTMLElement {
-  const box = checkbox(
-    'Backup: try this one when the active one fails',
-    settings.fallbackConnectionIds.includes(connection.id),
-    (on) => {
-      const backups = new Set(settings.fallbackConnectionIds);
-      if (on) backups.add(connection.id);
-      else backups.delete(connection.id);
-      settings.fallbackConnectionIds = settings.connections.map((c) => c.id).filter((id) => backups.has(id));
-      render();
-    },
-  );
-  box.querySelector('input')?.setAttribute('data-backup', '');
-  return el(
-    'div',
-    { class: 'conn__backup' },
-    box,
-    el('p', {
-      class: 'field__hint',
-      text: 'Useful when the active one is not always there: a server on this computer that is not running, a provider that is down, an account out of credit.',
-    }),
-  );
-}
-
-/** Test, Make active, Backup and Remove — the same for every kind of connection. */
-function connectionActions(connection: Connection, testStatus: HTMLElement): HTMLElement {
-  const isActive = connection.id === settings.activeConnectionId;
-  const row = el(
-    'div',
-    { class: 'row row--between' },
-    el(
-      'div',
-      { class: 'row' },
-      button('Test', () => void testConnection(connection, testStatus), 'secondary'),
-      isActive
-        ? null
-        : button(
-            'Make active',
-            () => {
-              settings.activeConnectionId = connection.id;
-              settings.fallbackConnectionIds = settings.fallbackConnectionIds.filter((id) => id !== connection.id);
-              render();
-            },
-            'primary',
-          ),
-    ),
-    settings.connections.length > 1
-      ? button(
-          'Remove',
-          () => {
-            settings.connections = settings.connections.filter((c) => c.id !== connection.id);
-            settings.fallbackConnectionIds = settings.fallbackConnectionIds.filter(
-              (id) => id !== connection.id,
-            );
-            if (settings.activeConnectionId === connection.id) {
-              settings.activeConnectionId = settings.connections[0]!.id;
-            }
-            render();
-          },
-          'danger',
-        )
-      : null,
-  );
-  return el('div', {}, isActive ? null : backupBox(connection), row);
-}
-
-/**
- * `validateConnection` cannot see the built-in model's state — it is only known
- * asynchronously — so the card badge and the Save button ask this as well.
- */
-function builtinCardProblem(connection: Connection): string | null {
-  if (connection.transport !== 'chrome_builtin' || !builtinState) return null;
-  return builtinProblem(builtinDownload ? 'downloading' : builtinState);
-}
-
-/** The in-browser model's last known state, and the poll that follows a download. */
-let inBrowserState: InBrowserState | null = null;
-let inBrowserPoll: ReturnType<typeof setTimeout> | undefined;
-
-async function askInBrowser(op: 'status' | 'download' | 'delete'): Promise<InBrowserState> {
-  const reply = (await chrome.runtime.sendMessage({ type: 'proofkey:in-browser', op })) as
-    | { ok: true; value: InBrowserState }
-    | { ok: false; error: string };
-  if (!reply?.ok) return { kind: 'error', message: reply?.error ?? 'The in-browser model did not answer.' };
-  return reply.value;
-}
-
-/**
- * The in-browser model has no URL, key or model list either. Its card is its
- * state, the one-time download — named with its size and host before the click
- * — and a way to remove what was downloaded.
- */
-function renderInBrowserBody(
-  connection: Connection,
-  presetOptions: { value: string; label: string; group: string }[],
-): HTMLElement {
-  const state = el('p', { class: 'field__hint', dataset: { inBrowserState: '' } });
-  const progress = el('progress', { class: 'field__progress', max: 1, value: 0, dataset: { inBrowserProgress: '' } });
-  const download = button(
-    `Download model (${(IN_BROWSER_DOWNLOAD_BYTES / 1e9).toFixed(1)} GB from ${IN_BROWSER_DOWNLOAD_HOST})`,
-    () => void act('download'),
-    'primary',
-  );
-  const remove = button('Remove the downloaded model', () => void act('delete'), 'danger');
-
-  const paint = (): void => {
-    const current = inBrowserState;
-    download.hidden = current?.kind !== 'not-downloaded' && current?.kind !== 'error';
-    remove.hidden = current?.kind !== 'ready';
-    progress.hidden = current?.kind !== 'downloading';
-    if (current?.kind === 'downloading') progress.value = current.fraction;
-    state.className =
-      current?.kind === 'no-webgpu' || current?.kind === 'error' ? 'field__hint field__hint--error' : 'field__hint';
-    state.textContent = current ? describeInBrowserState(current) : 'Checking this browser…';
-  };
-
-  // Re-read while a download runs; only the nodes of this card are touched, so
-  // typing elsewhere on the page keeps its caret. The poll ends once the card
-  // is replaced or the download is over.
-  const refresh = async (): Promise<void> => {
-    clearTimeout(inBrowserPoll);
-    if (!state.isConnected) return;
-    inBrowserState = await askInBrowser('status');
-    paint();
-    if (inBrowserState.kind === 'downloading') inBrowserPoll = setTimeout(() => void refresh(), 1000);
-  };
-  const act = async (op: 'download' | 'delete'): Promise<void> => {
-    download.disabled = remove.disabled = true;
-    inBrowserState = await askInBrowser(op);
-    download.disabled = remove.disabled = false;
-    paint();
-    void refresh();
-  };
-  paint();
-  queueMicrotask(() => void refresh());
-
-  const testStatus = el('p', { class: 'status' });
-  return el(
-    'div',
-    { class: 'conn__body' },
-    field(
-      'Name',
-      input(connection.label, {
-        on: { input: (e) => (connection.label = (e.target as HTMLInputElement).value) },
-      }),
-    ),
-    field(
-      'Provider',
-      select(presetOptions, connection.presetId, {
-        on: { change: (e) => applyPreset(connection, (e.target as HTMLSelectElement).value as PresetId) },
-      }),
-      getPreset(connection.presetId).hint,
-    ),
-    el(
-      'div',
-      { class: 'field' },
-      el('label', { class: 'field__label', text: 'Model' }),
-      el('div', { class: 'row' }, download, remove),
-      progress,
-      state,
-    ),
-    testStatus,
-    connectionActions(connection, testStatus),
-  );
-}
-
-/**
- * The no-key route where this browser has no built-in model: a model server on
- * this computer. Probes the three usual ports only when clicked — each probe is
- * a request, and ProofKey sends none the user did not ask for.
- */
-function renderLocalFinder(): HTMLElement {
-  const status = el('div', { dataset: { localFinderStatus: '' } });
-  if (localFinder) {
-    status.className =
-      localFinder.kind === 'error' ? 'field__hint field__hint--error' : 'field__hint';
-    for (const line of localFinder.lines) status.append(el('p', { text: line }));
-  }
-  const find = button('Find a model on this computer', findLocalModel, 'primary');
-  find.disabled = !!localFinder?.searching;
-  const inside = button('Run a model inside this browser', useInBrowserModel, 'secondary');
-  return el(
-    'div',
-    { class: 'field', dataset: { localFinder: '' } },
-    el('label', { class: 'field__label', text: 'No key: a model on this computer' }),
-    el('p', {
-      class: 'field__hint',
-      text:
-        'LM Studio, Ollama or llama.cpp running here work the same way, with nothing sent off this computer. ' +
-        `Or ProofKey can run one inside this browser on the GPU: a ${(IN_BROWSER_DOWNLOAD_BYTES / 1e9).toFixed(1)} GB download, once, then nothing leaves.`,
-    }),
-    el('div', { class: 'row' }, find, inside),
-    status,
-  );
-}
-
-/** Adds the in-browser model's connection — or reuses it — puts it first and opens it. Downloads nothing. */
-function useInBrowserModel(): void {
-  let connection = settings.connections.find((c) => c.transport === 'in_browser');
-  if (!connection) {
-    connection = connectionFromPreset('in-browser');
-    settings.connections.push(connection);
-  }
-  settings.activeConnectionId = connection.id;
-  expandedConnectionId = connection.id;
-  render();
-}
-
-function findLocalModel(): void {
-  // Requested before any await: the prompt needs the click that is still in scope.
-  const granted = chrome.permissions.request({ origins: localServerOrigins() });
-  localFinder = { searching: true, lines: ['Looking on this computer…'], kind: 'info' };
-  render();
-  granted
-    .catch(() => false)
-    .then(async (ok) => {
-      if (!ok) {
-        localFinder = {
-          searching: false,
-          lines: ['Access to this computer\'s model servers was not granted, so nothing was checked.'],
-          kind: 'error',
-        };
-        return;
-      }
-      localFinder = { searching: false, ...adoptLocalServer(await findLocalServers()) };
-    })
-    .catch((error: unknown) => {
-      localFinder = { searching: false, lines: [String(error)], kind: 'error' };
-    })
-    .finally(render);
-}
-
-/**
- * Adds the first server that has a model loaded — or reuses a connection already
- * pointing at it — and makes it the one ProofKey tries first. Nothing is saved
- * until the user clicks Save, like every other change on this page.
- */
-function adoptLocalServer(probes: LocalServerProbe[]): { lines: string[]; kind: 'ok' | 'error' | 'info' } {
-  const seen = probes.map(describeProbe).filter((line): line is string => !!line);
-  const usable = probes.find(
-    (p): p is Extract<LocalServerProbe, { status: 'found' }> => p.status === 'found' && p.models.length > 0,
-  );
-  if (!usable) {
-    return {
-      kind: seen.length > 0 ? 'error' : 'info',
-      lines: [
-        ...(seen.length > 0 ? seen : ['Nothing is running on the usual ports (LM Studio 1234, Ollama 11434, llama.cpp 8080).']),
-        'Start a model server here, load a model, then click again. On Ollama, gemma4:e4b scored 12.7 of 14 on ProofKey\'s live check with no false alarms, against 13.0 for Chrome\'s built-in model; on llama.cpp, Qwen3-4B-Instruct-2507 scored 11.0. LM Studio speaks the same protocol but has not been measured here.',
-      ],
-    };
-  }
-  const { server, models } = usable;
-  let connection = settings.connections.find(
-    (c) => c.transport !== 'chrome_builtin' && normalizeBaseUrl(c.baseUrl) === normalizeBaseUrl(server.baseUrl),
-  );
-  if (!connection) {
-    connection = connectionFromPreset(server.presetId, server.label);
-    connection.baseUrl = server.baseUrl;
-    settings.connections.push(connection);
-  }
-  if (!models.includes(connection.model)) connection.model = models[0]!;
-  settings.activeConnectionId = connection.id;
-  // The card clicked stays open: it is where the result is written, and moving
-  // the user to the new card took the message away before it could be read.
-  return {
-    kind: 'ok',
-    lines: [
-      ...seen,
-      `Added ${server.label} with the model ${connection.model}, and made it the provider ProofKey tries first. Click Save to keep it.`,
-    ],
-  };
-}
-
-function startBuiltinDownload(): void {
-  // Called before any await: Chrome only starts the download from a click.
-  const running = downloadBuiltinModel((fraction) => {
-    if (builtinDownload) {
-      if (fraction !== builtinDownload.fraction) builtinDownload.movedAt = Date.now();
-      builtinDownload.fraction = fraction;
-    }
-    paintBuiltinProgress();
-  });
-  builtinDownload = { fraction: 0, movedAt: Date.now() };
-  builtinDownloadError = null;
-  render();
-  // Chrome's progress events can stop while the download goes on (or after it
-  // has finished), so the card also asks Chrome directly.
-  clearInterval(builtinDownloadPoll);
-  builtinDownloadPoll = setInterval(() => {
-    void builtinAvailability().then((state) => {
-      if (!builtinDownload) return;
-      if (state === 'available') {
-        finishBuiltinDownload();
-        builtinState = state;
-        render();
-      } else {
-        paintBuiltinProgress();
-      }
-    });
-  }, BUILTIN_POLL_MS);
-  running.then(
-    async () => {
-      if (!builtinDownload) return;
-      finishBuiltinDownload();
-      builtinState = await builtinAvailability();
-      render();
-    },
-    (error: unknown) => {
-      if (!builtinDownload) return;
-      finishBuiltinDownload(error);
-      render();
-    },
-  );
-}
-
-/** Writes progress into whichever card is on the page now, not the one clicked. */
-function paintBuiltinProgress(): void {
-  if (!builtinDownload) return;
-  const bar = document.querySelector<HTMLProgressElement>('[data-builtin-progress]');
-  const text = document.querySelector<HTMLElement>('[data-builtin-state]');
-  if (bar) {
-    bar.hidden = false;
-    bar.value = builtinDownload.fraction;
-  }
-  if (!text) return;
-  const percent = `Downloading… ${Math.round(builtinDownload.fraction * 100)}%`;
-  // Seen in Chrome 154 on Windows, 2026-10-05: progress stopped at 3% and never
-  // moved; after Chrome was restarted the model was there.
-  text.textContent =
-    Date.now() - builtinDownload.movedAt > BUILTIN_STALL_MS
-      ? `${percent} — no progress for 2 minutes. If it stays like this, restart Chrome: the download carries on, and this card shows the model ready once it is.`
-      : percent;
-}
-
-/** Ends the download state, whichever way it ended. */
-function finishBuiltinDownload(error: unknown = null): void {
-  clearInterval(builtinDownloadPoll);
-  builtinDownload = null;
-  builtinDownloadError = error === null ? null : error instanceof Error ? error.message : String(error);
-}
-
-/**
- * Chrome's on-device model has no URL, key or model list, so its card is the
- * model's state and, while it is missing, the button that fetches it.
- */
-function renderBuiltinBody(
-  connection: Connection,
-  presetOptions: { value: string; label: string; group: string }[],
-): HTMLElement {
-  const state = el('p', { class: 'field__hint', dataset: { builtinState: '' } });
-  const progress = el('progress', {
-    class: 'field__progress',
-    max: 1,
-    value: builtinDownload?.fraction ?? 0,
-    dataset: { builtinProgress: '' },
-  });
-  const download = button('Download model', startBuiltinDownload, 'primary');
-  const finder = renderLocalFinder();
-
-  const paint = (): void => {
-    const current = builtinDownload ? 'downloading' : builtinState;
-    download.hidden = !!builtinDownload || current !== 'downloadable';
-    progress.hidden = !builtinDownload;
-    finder.hidden = !!builtinDownload || (current !== 'no-api' && current !== 'unavailable');
-    if (builtinDownload) {
-      state.className = 'field__hint';
-      paintBuiltinProgress();
-      return;
-    }
-    if (builtinDownloadError) {
-      state.className = 'field__hint field__hint--error';
-      state.textContent = builtinDownloadError;
-      return;
-    }
-    state.className =
-      current === 'no-api' || current === 'unavailable'
-        ? 'field__hint field__hint--error'
-        : 'field__hint';
-    state.textContent =
-      current === null
-        ? 'Checking this browser…'
-        : current === 'available'
-          ? 'Ready. The model is on this computer, and ProofKey sends nothing you check anywhere.'
-          : current === 'downloadable'
-            // builtinProblem's wording is for a page elsewhere; this is the settings page.
-            ? 'Not downloaded yet. Click "Download model" — Chrome fetches it once, then it runs on this computer.'
-            : (builtinProblem(current) ?? '');
-  };
-  paint();
-
-  // Re-read in the background: Chrome may have finished, or started, a download
-  // this page did not start. Only a change re-renders — a re-render rebuilds
-  // every input on the page and takes the caret with it — so while Chrome
-  // reports a download nobody here is tracking, poll quietly until it ends.
-  // The poll belongs to this card's nodes and stops once they are replaced.
-  const poll = async (): Promise<void> => {
-    if (!state.isConnected || builtinDownload) return;
-    const latest = await builtinAvailability();
-    if (latest !== builtinState) {
-      builtinState = latest;
-      render();
-    } else if (latest === 'downloading') {
-      setTimeout(() => void poll(), 5000);
-    }
-  };
-  queueMicrotask(() => void poll());
-
-  const testStatus = el('p', { class: 'status' });
-
-  return el(
-    'div',
-    { class: 'conn__body' },
-    field(
-      'Name',
-      input(connection.label, {
-        on: { input: (e) => (connection.label = (e.target as HTMLInputElement).value) },
-      }),
-    ),
-    field(
-      'Provider',
-      select(presetOptions, connection.presetId, {
-        on: { change: (e) => applyPreset(connection, (e.target as HTMLSelectElement).value as PresetId) },
-      }),
-      getPreset(connection.presetId).hint,
-    ),
-    el(
-      'div',
-      { class: 'field' },
-      el('label', { class: 'field__label', text: 'Model' }),
-      el('div', { class: 'row' }, download),
-      progress,
-      state,
-    ),
-    finder,
-    testStatus,
-    connectionActions(connection, testStatus),
-  );
-}
-
-function jsonEditor(
-  value: Record<string, unknown>,
-  onValid: (value: Record<string, unknown>) => void,
-): HTMLElement {
-  const area = textarea(Object.keys(value).length ? JSON.stringify(value, null, 2) : '', {
-    rows: 3,
-    placeholder: '{}',
-    on: {
-      input: (e) => {
-        const node = e.target as HTMLTextAreaElement;
-        const parsed = parseJsonObject(node.value);
-        node.classList.toggle('input--invalid', parsed === null);
-        if (parsed) onValid(parsed);
-      },
-    },
-  });
-  return area;
-}
-
-function applyPreset(connection: Connection, presetId: PresetId): void {
-  switchPreset(connection, presetId, LOCAL_SERVERS);
-  render();
-}
-
-async function fetchModels(
-  connection: Connection,
-  target: HTMLInputElement,
-  picker: HTMLElement,
-  status: HTMLElement,
-): Promise<void> {
-  status.textContent = 'Fetching…';
-  status.className = 'field__hint';
-
-  if (!(await ensureOriginPermission(connection))) {
-    status.textContent = 'Access to that endpoint was not granted.';
-    status.className = 'field__hint field__hint--error';
-    return;
-  }
-
-  try {
-    const preset = getPreset(connection.presetId);
-    const models = (await listModels(connection)).map((id) =>
-      preset.stripIdPrefix && id.startsWith(preset.stripIdPrefix)
-        ? id.slice(preset.stripIdPrefix.length)
-        : id,
-    );
-    clear(picker);
-    if (models.length === 0) {
-      status.textContent = 'The endpoint returned no models. Type the name manually.';
-      return;
-    }
-
-    // The datalist filters against whatever the input holds, so once the field
-    // contains a full model id it narrows to that single line. That is correct
-    // autocomplete behaviour and it reads as "the endpoint only has one model",
-    // which is why the browse list below exists: it always shows all of them.
-    const list = el('datalist', { id: `models-${connection.id}` });
-    for (const model of models) list.append(el('option', { value: model }));
-    document.getElementById(list.id)?.remove();
-    document.body.append(list);
-    target.setAttribute('list', list.id);
-
-    const BROWSE = '';
-    picker.append(
-      select(
-        [
-          { value: BROWSE, label: `Browse all ${models.length}…` },
-          ...models.map((model) => ({ value: model, label: model })),
-        ],
-        BROWSE,
-        {
-          on: {
-            change: (event) => {
-              const chosen = (event.target as HTMLSelectElement).value;
-              if (!chosen) return;
-              connection.model = chosen;
-              target.value = chosen;
-            },
-          },
-        },
-      ),
-    );
-
-    // Never adopt models[0]. The list is sorted alphabetically, so the winner is
-    // whatever sorts first rather than whatever is usable — on Gemini that is
-    // `antigravity-preview-05-2026`, ahead of every gemini-* entry. Take the
-    // preset's own default when the endpoint offers it, else leave the field
-    // empty so the browse list opens unfiltered.
-    if (!connection.model && preset.defaultModel && models.includes(preset.defaultModel)) {
-      connection.model = preset.defaultModel;
-      target.value = preset.defaultModel;
-    }
-
-    const count = models.length === 1 ? '1 model' : `${models.length} models`;
-    status.textContent = connection.model
-      ? `${count}. Type in the field to filter, or use the list to browse all of them.`
-      : `${count}. Pick one from the list, or type a name.`;
-  } catch (error) {
-    status.textContent = error instanceof Error ? error.message : String(error);
-    status.className = 'field__hint field__hint--error';
-  }
-}
-
-async function testConnection(connection: Connection, status: HTMLElement): Promise<void> {
-  status.textContent = 'Testing…';
-  status.className = 'status';
-
-  if (!(await ensureOriginPermission(connection))) {
-    status.textContent = 'Access to that endpoint was not granted.';
-    status.className = 'status status--error';
-    return;
-  }
-
-  // The in-browser model lives in the worker's offscreen document; asking it
-  // from this page would reach the worker's own listener too.
-  if (connection.transport === 'in_browser') {
-    const reply = (await chrome.runtime.sendMessage({ type: 'proofkey:in-browser', op: 'test' })) as
-      | { ok: true; value: { model: string; text: string } }
-      | { ok: false; error: string }
-      | undefined;
-    if (reply?.ok) {
-      status.textContent = `Working — ${reply.value.model} replied "${reply.value.text.trim().slice(0, 40)}".`;
-      status.className = 'status status--ok';
-    } else {
-      status.textContent = reply?.error ?? 'The in-browser model did not answer.';
-      status.className = 'status status--error';
-    }
-    return;
-  }
-
-  try {
-    const result = await runCompletion([connection], {
-      systemPrompt: 'Reply with exactly: ok',
-      userText: 'ping',
-    });
-    // A test of the model in the form must not pass on the strength of the
-    // default the request moved to: the user is choosing this model here.
-    if (result.movedModel) {
-      status.textContent = `${connection.label} does not serve ${result.movedModel.from}; it is not in its model list. ${result.movedModel.to} answered instead — pick it or another listed model.`;
-      status.className = 'status status--error';
-      return;
-    }
-    status.textContent = `Working — ${result.model} replied "${result.text.trim().slice(0, 40)}".`;
-    status.className = 'status status--ok';
-  } catch (error) {
-    status.textContent = error instanceof Error ? error.message : String(error);
-    status.className = 'status status--error';
-  }
-}
-
-/**
- * Host access is requested here, from a click, rather than declared in the
- * manifest — so the extension only ever holds permission for endpoints the user
- * actually configured.
- *
- * `request` is called directly rather than after a `contains` check: awaiting
- * anything first discards the user gesture the prompt requires. Already-granted
- * origins resolve to true without showing a dialog, so the check bought nothing.
- */
-async function ensureOriginPermission(connection: Connection): Promise<boolean> {
-  // Neither on-device model has an endpoint to be granted.
-  if (connection.transport === 'chrome_builtin' || connection.transport === 'in_browser') return true;
-  const pattern = originPattern(connection);
-  if (!pattern) return false;
-  return chrome.permissions.request({ origins: [pattern] });
-}
-
-// ----------------------------------------------------------- writing rules
-
-function renderProfile(): HTMLElement {
-  const { profile } = settings;
-
-  return section(
-    'Your writing rules',
-    'House terminology, banned phrases and words to leave alone. These are sent with every request, so the model follows your rules instead of generic ones.',
-
-    field(
-      'Style guide',
-      textarea(profile.styleGuide, {
-        rows: 6,
-        placeholder:
-          'We write "e-mail", not "email".\nNever say "utilise" — use "use".\nAvoid superlatives and empty phrases in product copy.\nKeep sentences under 25 words where possible.',
-        on: { input: (e) => (profile.styleGuide = (e.target as HTMLTextAreaElement).value) },
-      }),
-      'Plain language, one rule per line.',
-    ),
-
-    field(
-      'Never change these',
-      textarea(profile.neverFlag.join('\n'), {
-        rows: 4,
-        placeholder: 'Jiru Labs\nProofKey\nkubectl\nblend fabric',
-        on: { input: (e) => (profile.neverFlag = lines((e.target as HTMLTextAreaElement).value)) },
-      }),
-      'One per line. Multi-word phrases are fine — brand names, jargon, product names.',
-    ),
-
-    ...Object.entries(VARIETIES).map(([key, { language, options }]) =>
-      field(
-        `${language} variety`,
-        select(
-          [
-            { value: '', label: "Keep the writer's own (default)" },
-            ...options.map((option) => ({ value: option.code, label: `${option.label} — ${option.code}` })),
-          ],
-          profile.varieties?.[key] ?? '',
-          {
-            on: {
-              change: (e) => {
-                const value = (e.target as HTMLSelectElement).value;
-                const varieties = { ...profile.varieties };
-                if (value) varieties[key] = value;
-                else delete varieties[key];
-                profile.varieties = varieties;
-              },
-            },
-          },
-        ),
-        `Spelling and wording in ${language} follow this variety, and the other one is corrected to it. Left on the default, ProofKey keeps whichever variety you write in.`,
-      ),
-    ),
-
-    field(
-      'Your first language',
-      input(profile.nativeLanguage, {
-        placeholder: 'Portuguese, Japanese, Arabic…',
-        on: { input: (e) => (profile.nativeLanguage = (e.target as HTMLInputElement).value) },
-      }),
-      'Optional. When set, ProofKey watches for the mistakes speakers of that language characteristically make when writing in another one.',
-    ),
-
-    field(
-      'Explain corrections in',
-      input(profile.explainLanguage, {
-        placeholder: 'leave empty to use the language of the text',
-        on: { input: (e) => (profile.explainLanguage = (e.target as HTMLInputElement).value) },
-      }),
-      'Useful when you are writing in a language you are still learning.',
-    ),
-
-    field(
-      'Translate into',
-      input(profile.translateLanguage, {
-        placeholder: translatePlaceholder(profile),
-        on: { input: (e) => (profile.translateLanguage = (e.target as HTMLInputElement).value) },
-      }),
-      translateHint(profile),
-    ),
-  );
-}
-
-/**
- * The placeholder does the explaining here rather than the hint, because the
- * useful thing to say is which language Translate would use *right now* — and
- * on a profile that already names one, the answer is "you do not need to fill
- * this in".
- */
-function translatePlaceholder(profile: WritingProfile): string {
-  const inherited = profile.explainLanguage.trim() || profile.nativeLanguage.trim();
-  return inherited ? `${inherited} — inherited from above` : 'Spanish, German, Japanese…';
-}
-
-function translateHint(profile: WritingProfile): string {
-  const explain = profile.explainLanguage.trim();
-  const native = profile.nativeLanguage.trim();
-  if (profile.translateLanguage.trim()) {
-    return 'The Translate action translates into this language.';
-  }
-  if (explain || native) {
-    return `Falling back to the ${explain ? 'explanation' : 'first'} language above. Set one here only if you want Translate to use a different one.`;
-  }
-  return 'Translate needs a language before it will run. Nothing else here depends on it.';
-}
-
-// ----------------------------------------------------------------- actions
-
-function renderActions(): HTMLElement {
-  const list = el('div', { class: 'stack' });
-  const conflicts = shortcutConflicts(settings);
-  const actions = resolveActions(settings);
-  // Undefined when the user has cleared it at chrome://extensions/shortcuts, in
-  // which case naming a key here would be a lie.
-  const globalCommand = commandChords.find((c) => c.name === DEFAULT_ACTION_COMMAND);
-
-  for (const action of actions) {
-    const isBuiltIn = action.builtIn;
-    const overridden = isBuiltIn && !!settings.builtInOverrides[action.id]?.systemPrompt;
-    const conflicted = !!action.shortcut && conflicts.has(action.shortcut);
-
-    list.append(
-      el(
-        'details',
-        {
-          class: 'action',
-          open: openActionIds.has(action.id),
-          on: {
-            toggle: (event) => {
-              const open = (event.target as HTMLDetailsElement).open;
-              if (open) openActionIds.add(action.id);
-              else openActionIds.delete(action.id);
-            },
-          },
-        },
-        el(
-          'summary',
-          { class: 'action__summary' },
-          // Without this the checkbox click bubbles to <summary> and collapses
-          // the very panel the user is trying to work in.
-          el(
-            'span',
-            { on: { click: (event) => event.stopPropagation() } },
-            checkbox(action.label, action.enabled, (enabled) =>
-              setActionEnabled(action.id, isBuiltIn, enabled),
-            ),
-          ),
-          overridden ? el('span', { class: 'badge', text: 'edited' }) : null,
-          action.shortcut
-            ? el('span', {
-                class: `badge badge--key ${conflicted ? 'badge--warn' : ''}`,
-                text: shortcutLabel(action.shortcut),
-              })
-            : null,
-          settings.defaultActionId === action.id
-            ? el('span', {
-                class: 'badge badge--active',
-                text: globalCommand ? `${shortcutLabel(globalCommand.chord)} · default` : 'default',
-              })
-            : null,
-        ),
-        textarea(action.systemPrompt, {
-          rows: 8,
-          on: {
-            input: (e) => setActionPrompt(action.id, isBuiltIn, (e.target as HTMLTextAreaElement).value),
-          },
-        }),
-        renderShortcutRow(action, conflicts),
-        el(
-          'div',
-          { class: 'row row--end' },
-          settings.defaultActionId === action.id
-            ? null
-            : button(
-                globalCommand ? `Run this on ${shortcutLabel(globalCommand.chord)}` : 'Make default',
-                () => {
-                  settings.defaultActionId = action.id;
-                  render();
-                },
-                'ghost',
-              ),
-          overridden
-            ? button(
-                'Reset to default',
-                () => {
-                  delete settings.builtInOverrides[action.id]?.systemPrompt;
-                  render();
-                },
-                'ghost',
-              )
-            : null,
-          isBuiltIn
-            ? null
-            : button(
-                'Delete',
-                () => {
-                  settings.customActions = settings.customActions.filter((a) => a.id !== action.id);
-                  openActionIds.delete(action.id);
-                  render();
-                },
-                'danger',
-              ),
-        ),
-      ),
-    );
-  }
-
-  const activeTransport = settings.connections.find((c) => c.id === settings.activeConnectionId)?.transport;
-  const onBuiltinModel = activeTransport === 'chrome_builtin';
-  const onInBrowserModel = activeTransport === 'in_browser';
-
-  return section(
-    'Actions',
-    'Every action is just a prompt. Edit any of them, or add your own — they appear in the right-click menu, and each one can have its own key.',
-    onBuiltinModel
-      ? el(
-          'div',
-          { class: 'notice' },
-          el('p', {
-            class: 'notice__text',
-            text:
-              "Chrome's built-in model is active, so the menu offers Fix grammar and your own actions only. " +
-              'Measured on it, the other built-in rewrites translated words borrowed from another language ("kickoff meeting" became "reunión de inicio"). ' +
-              'They come back as soon as a provider with an API key is the active one.',
-          }),
-        )
-      : onInBrowserModel
-        ? el(
-            'div',
-            { class: 'notice' },
-            el('p', {
-              class: 'notice__text',
-              text:
-                'The in-browser model is active, so the menu offers Fix grammar, Convert to bullet points, Translate and your own actions. ' +
-                'Measured on it, the other built-in rewrites translated words borrowed from another language ("Hola team" became "Hola equipo"). ' +
-                'They come back as soon as a provider with an API key is the active one.',
-            }),
-          )
-        : null,
-    // Chrome hands out `suggested_key` first-come-first-served: if another
-    // extension already held the combination when ProofKey was installed, this
-    // command is left unbound with no error anywhere. The key then reaches the
-    // page instead, where a site is free to act on it — on WhatsApp Web
-    // Ctrl+Shift+K inserts an empty monospace block, which reads as ProofKey
-    // mangling the text rather than as ProofKey never having run.
-    globalCommand
-      ? null
-      : el(
-          'div',
-          { class: 'notice notice--warn' },
-          el('p', {
-            class: 'notice__text',
-            text:
-              'No browser shortcut is assigned, so the default action can only be run from the right-click menu. ' +
-              'Chrome leaves this unset when another extension already claimed the combination, and does not let ' +
-              `an extension set it back — only you can, on the page below. ${IS_MAC ? '⌘⇧K' : 'Ctrl+Shift+K'} is the intended default.`,
-          }),
-          // Naming one that is free turns "pick something" into a thing to type.
-          // Another extension's shortcuts cannot be read from here, so this is
-          // free among ProofKey's own and outside the chords Chrome documents
-          // for itself — the same pool the per-action suggestion draws from.
-          (() => {
-            const free = suggestChord(takenChords(''), '', { mac: IS_MAC });
-            return free
-              ? el('p', {
-                  class: 'notice__text',
-                  dataset: { defaultShortcutSuggestion: '' },
-                  text: `Suggested: ${shortcutLabel(free)}. On that page, click the pencil next to "Run the default action" and press it.`,
-                })
-              : null;
-          })(),
-          // The most an extension is permitted to do about its own command:
-          // open the page.
-          button('Open browser shortcut settings', openShortcutSettings),
-        ),
-    list,
-    el(
-      'div',
-      { class: 'row row--end' },
-      button('Browser shortcut settings', openShortcutSettings, 'ghost'),
-      button(
-        '+ Add action',
-        () => {
-          const id = `custom-${newConnectionId().slice(0, 8)}`;
-          settings.customActions.push({
-            id,
-            label: 'My action',
-            systemPrompt: 'Rewrite the text so that…',
-            enabled: true,
-          });
-          openActionIds.add(id);
-          render();
-        },
-        'ghost',
-      ),
-    ),
-    renderShortcutOrigins(),
-  );
-}
-
-/** The per-action recorder: current key, a way to change it, a way to remove it. */
-function renderShortcutRow(
-  action: WritingAction,
-  conflicts: Map<string, string[]>,
-): HTMLElement {
-  const trigger = el('button', {
-    class: `btn shortcut__key ${action.shortcut ? '' : 'shortcut__key--empty'}`,
-    type: 'button',
-    text: action.shortcut ? shortcutLabel(action.shortcut) : 'Set a key…',
-    dataset: { shortcutFor: action.id },
-    on: { click: () => startRecording(action, trigger, hint) },
-  });
-
-  const hint = el('p', { class: 'field__hint' });
-
-  if (shortcutNotice?.actionId === action.id) {
-    hint.textContent = shortcutNotice.text;
-    hint.className = `field__hint ${shortcutNotice.kind === 'error' ? 'field__hint--error' : ''}`;
-    shortcutNotice = null;
-  } else if (action.shortcut && conflicts.has(action.shortcut)) {
-    const others = (conflicts.get(action.shortcut) ?? [])
-      .filter((id) => id !== action.id)
-      .map((id) => labelOf(id));
-    hint.textContent = `Also bound to ${others.join(', ')} — only the first one in this list will run.`;
-    hint.className = 'field__hint field__hint--error';
-  } else if (action.shortcut && warningFor(action.shortcut)) {
-    hint.textContent = warningFor(action.shortcut)!;
-    hint.className = 'field__hint field__hint--error';
-  } else if (!action.shortcut) {
-    hint.textContent = 'Optional. Runs only on the sites listed at the bottom of this section.';
-  }
-
-  // Kept separate from `hint`, and not an `else` branch, because it has to
-  // survive the "Set to Ctrl+Shift+H" confirmation. A key bound with no site
-  // listed cannot fire anywhere, and the confirmation used to be the last thing
-  // said on the subject — which reads as "done" when nothing is done.
-  // Always built while a key is held and hidden once a site is listed, rather
-  // than built only when none is: the origins box edits the list without a
-  // render, and a warning that exists only at render time outlives the fix.
-  const stranded = action.shortcut
-    ? el('p', {
-        class: 'field__hint field__hint--error',
-        text: 'No sites are listed under "Shortcuts run on" below, so this key cannot run anywhere yet.',
-        attrs: { 'data-stranded-warning': '' },
-      })
-    : null;
-  if (stranded) stranded.hidden = settings.shortcutOrigins.length > 0;
-
-  // While a key is held, "Suggest another" sits next to "Remove": without it,
-  // disliking the suggestion meant removing the key and asking again — and
-  // getting the same one back, since nothing else had become free in between.
-  const rowButtons = action.shortcut
-    ? [
-        button('Suggest another', () => applySuggestion(action, action.shortcut!), 'ghost'),
-        button(
-          'Remove',
-          () => {
-            setActionShortcut(settings, action.id, null);
-            shortcutNotice = { actionId: action.id, text: 'Key removed.', kind: 'ok' };
-            focusShortcutFor = action.id;
-            render();
-          },
-          'ghost',
-        ),
-      ]
-    : // Offered exactly where the user gets stuck. Recording alone could say
-      // a chord was taken but never name one that was free, which turned
-      // setting a key into guesswork against Chrome, the OS and the site.
-      [button('Suggest one', () => applySuggestion(action), 'ghost')];
-
-  return el(
-    'div',
-    { class: 'shortcut' },
-    el('div', { class: 'row' }, trigger, ...rowButtons),
-    hint,
-    stranded,
-  );
-}
-
-function labelOf(actionId: string): string {
-  return resolveActions(settings).find((a) => a.id === actionId)?.label ?? actionId;
-}
-
-/** The caution for a stored chord, if it has one. */
-function warningFor(stored: string): string | null {
-  const chord = parseChord(stored);
-  return chord ? chordWarning(chord, { mac: IS_MAC }) : null;
-}
-
-/**
- * Every chord already spoken for — other actions, and the browser command the
- * manifest owns. Passed to `suggestChord` so it never offers a key that would
- * immediately have to be taken back off something else.
- */
-function takenChords(exceptActionId: string): string[] {
-  const bound = resolveActions(settings)
-    .filter((other) => other.id !== exceptActionId && other.shortcut)
-    .map((other) => other.shortcut!);
-  return [...bound, ...commandChords.map((command) => command.chord)];
-}
-
-function applySuggestion(action: WritingAction, after?: string): void {
-  const free = suggestChords(takenChords(action.id), action.label, { mac: IS_MAC });
-  // "Suggest another" passes the key it is leaving: takenChords already
-  // excludes this action's own chord, so that key is still in `free`, and the
-  // pick is the entry after it, wrapping round to the first. A key recorded by
-  // hand is not in the pool, so its -1 lands on the first entry — the same
-  // fallback "Suggest one" uses.
-  const at = after === undefined ? -1 : free.indexOf(after);
-  const chord = at >= 0 ? free[(at + 1) % free.length] : free[0] ?? null;
-
-  if (after !== undefined && (!chord || chord === after)) {
-    // Cycling would land back on the key being left: it is the only one free.
-    // Keeping it and saying so beats re-setting the same key as if it were new.
-    shortcutNotice = {
-      actionId: action.id,
-      text: 'No other key ProofKey can vouch for is free. Record one yourself.',
-      kind: 'error',
-    };
-    focusShortcutFor = action.id;
-    render();
-    return;
-  }
-
-  shortcutNotice = chord
-    ? {
-        actionId: action.id,
-        text: `Set to ${shortcutLabel(chord)}${
-          suggestionLetter(chord, action.label) ? ` (${suggestionLetter(chord, action.label)} from "${action.label}")` : ''
-        }. Nothing else claims it — remember to save.`,
-        kind: 'ok',
-      }
-    : {
-        // Only reachable once every pooled chord is bound, which needs more
-        // actions than the built-in set has. Still said rather than silent.
-        actionId: action.id,
-        text: 'Every key ProofKey can vouch for is already in use. Record one yourself.',
-        kind: 'error',
-      };
-
-  if (chord) setActionShortcut(settings, action.id, chord);
-  focusShortcutFor = action.id;
-  render();
-}
-
-/**
- * Listens for one chord and stores it.
- *
- * Modifier-only keydowns are shown as a live preview rather than rejected, so
- * holding Ctrl+Alt before choosing the letter looks like it is working. The
- * check that matters happens on the first non-modifier key.
- */
-function startRecording(
-  action: WritingAction,
-  trigger: HTMLButtonElement,
-  hint: HTMLParagraphElement,
-): void {
-  cancelRecording?.();
-
-  const restore = trigger.textContent ?? '';
-  trigger.classList.add('shortcut__key--recording');
-  trigger.textContent = PROMPT;
-  hint.className = 'field__hint';
-  hint.textContent = 'Press the combination you want. Esc cancels.';
-
-  const stop = (): void => {
-    window.removeEventListener('keydown', onKey, true);
-    window.removeEventListener('keyup', onModifierRelease, true);
-    window.removeEventListener('pointerdown', onPointerDown, true);
-    trigger.classList.remove('shortcut__key--recording');
-    cancelRecording = null;
-  };
-
-  const abandon = (message: string): void => {
-    stop();
-    trigger.textContent = restore;
-    hint.className = 'field__hint';
-    hint.textContent = message;
-  };
-
-  // Repaints the preview when a modifier is released without a key being chosen.
-  const onModifierRelease = (event: KeyboardEvent): void => {
-    if (isModifierCode(event.code)) trigger.textContent = modifierPreview(event);
-  };
-
-  // Clicking anywhere else means the user moved on; leaving the recorder armed
-  // would swallow the next key they pressed for some other purpose.
-  const onPointerDown = (event: PointerEvent): void => {
-    const target = event.target as Element | null;
-    if (target === trigger || target?.closest?.('[data-keep-recording]')) return;
-    abandon('Left unchanged.');
-  };
-
-  const onKey = (event: KeyboardEvent): void => {
-    // Everything, including Tab and Space: while recording, no key means what it
-    // usually means, and Space would otherwise re-activate the focused button.
-    event.preventDefault();
-    event.stopImmediatePropagation();
-
-    if (event.code === 'Escape' && !event.ctrlKey && !event.altKey && !event.metaKey) {
-      abandon('Left unchanged.');
-      return;
-    }
-
-    if (isModifierCode(event.code)) {
-      trigger.textContent = modifierPreview(event);
-      return;
-    }
-
-    const chord = chordFromEvent(event);
-    const problem = chordProblem(chord);
-    if (problem) {
-      trigger.textContent = PROMPT;
-      hint.className = 'field__hint field__hint--error';
-      // Naming a free key here is the difference between a dead end and a next
-      // step: the recorder is still armed, so the user can press what it names.
-      const free = suggestChord(takenChords(action.id), action.label, { mac: IS_MAC });
-      hint.textContent = free ? `${problem} ${shortcutLabel(free)} is free.` : problem;
-      return;
-    }
-
-    const serialized = serializeChord(chord);
-    const taken = commandChords.find((command) => command.chord === serialized);
-    if (taken) {
-      trigger.textContent = PROMPT;
-      hint.className = 'field__hint field__hint--error';
-      hint.textContent = `${shortcutLabel(serialized)} is ProofKey's own browser shortcut (${taken.label}), so the page never sees it. Clear or change it in the browser, then press it here again. `;
-      const go = button('Open browser shortcut settings', openShortcutSettings, 'ghost');
-      go.dataset.keepRecording = '';
-      hint.append(go);
-      return;
-    }
-
-    stop();
-
-    // Reassign rather than refuse. A duplicate would leave the later action
-    // looking bound while only the first could ever fire.
-    const previous = resolveActions(settings).find(
-      (other) => other.id !== action.id && other.shortcut === serialized,
-    );
-    if (previous) setActionShortcut(settings, previous.id, null);
-
-    setActionShortcut(settings, action.id, serialized);
-    const caution = chordWarning(chord, { mac: IS_MAC });
-    shortcutNotice = {
-      actionId: action.id,
-      text: previous
-        ? `Set to ${shortcutLabel(serialized)}, taken from "${previous.label}".`
-        : `Set to ${shortcutLabel(serialized)}. Remember to save.`,
-      kind: 'ok',
-    };
-    // The caution replaces the confirmation rather than following it: a chord
-    // Chrome also uses is worth reading about, and "Set to Ctrl+S." on its own
-    // reads as nothing more to know.
-    if (caution) shortcutNotice = { actionId: action.id, text: caution, kind: 'error' };
-    focusShortcutFor = action.id;
-    render();
-  };
-
-  window.addEventListener('keydown', onKey, true);
-  window.addEventListener('keyup', onModifierRelease, true);
-  window.addEventListener('pointerdown', onPointerDown, true);
-  cancelRecording = () => abandon('Left unchanged.');
-}
-
-/** What the button reads while it is waiting for a key. */
-const PROMPT = 'Press a key…';
-
-/** Only one recorder can be armed at a time. */
-let cancelRecording: (() => void) | null = null;
-
-/** The modifiers currently held, so holding Ctrl+Alt looks like progress. */
-function modifierPreview(event: KeyboardEvent): string {
-  const held = formatChord(
-    { ctrl: event.ctrlKey, alt: event.altKey, shift: event.shiftKey, meta: event.metaKey, code: '' },
-    { mac: IS_MAC, layout: layoutMap },
-  );
-  return held || PROMPT;
-}
-
-/**
- * The origins where the in-page listener is registered.
- *
- * This list is the whole reason shortcuts need a permission at all. ProofKey
- * ships no static content script, so a key pressed on a page it was never
- * loaded into cannot reach it — these are the sites where it is loaded up front.
- */
-function renderShortcutOrigins(): HTMLElement {
-  const problems = el('p', { class: 'field__hint field__hint--error' });
-
-  /** Names the lines that would be dropped, rather than dropping them quietly. */
-  const validate = (raw: string): void => {
-    const unusable = lines(raw).filter((line) => normalizeOrigin(line) === null);
-    problems.textContent = unusable.length
-      ? `Not a site address, so ${unusable.length === 1 ? 'it' : 'they'} will be ignored: ${unusable.join(', ')}`
-      : '';
-  };
-
-  const box = textarea(settings.shortcutOrigins.join('\n'), {
-    rows: 3,
-    placeholder: 'mail.google.com\ngithub.com\nhttps://www.notion.so',
-    on: {
-      input: (e) => {
-        const raw = (e.target as HTMLTextAreaElement).value;
-        settings.shortcutOrigins = lines(raw);
-        validate(raw);
-        syncStrandedWarnings();
-      },
-      // Rewritten on the way out rather than as you type, which would fight the
-      // cursor. `github.com` and a pasted page URL both become the origin.
-      blur: (e) => {
-        const node = e.target as HTMLTextAreaElement;
-        const cleaned = [
-          ...new Set(lines(node.value).map(normalizeOrigin).filter((o): o is string => !!o)),
-        ];
-        const unusable = lines(node.value).filter((line) => normalizeOrigin(line) === null);
-        node.value = [...cleaned, ...unusable].join('\n');
-        settings.shortcutOrigins = cleaned;
-        validate(node.value);
-        syncStrandedWarnings();
-      },
-    },
-  });
-
-  validate(box.value);
-
-  const bound = resolveActions(settings).filter((action) => action.enabled && action.shortcut);
-  // The count is fixed at render; only whether it shows follows the box.
-  const stranded =
-    bound.length > 0
-      ? el('p', {
-          class: 'notice notice--warn',
-          text: `${bound.length === 1 ? 'A key is' : `${bound.length} keys are`} bound above, but no site is listed here — so ${bound.length === 1 ? 'it' : 'they'} cannot run anywhere. Add the site you want to use ${bound.length === 1 ? 'it' : 'them'} on, then Save.`,
-          attrs: { 'data-stranded-warning': '' },
-        })
-      : null;
-  if (stranded) stranded.hidden = settings.shortcutOrigins.length > 0;
-
-  return el(
-    'div',
-    { class: 'shortcut-origins' },
-    stranded,
-    field(
-      'Shortcuts run on',
-      box,
-      'One site per line. Your browser asks you to allow each one when you save; reload any tab that was already open. The right-click menu works on every site without this. When ProofKey offers to reach an editor inside a page and you accept, that address is added here too.',
-    ),
-    problems,
-  );
-}
-
-/** Shows the "no sites listed" warnings only while the list is empty. A full
- * render from the origins box would steal its focus, so they toggle in place. */
-function syncStrandedWarnings(): void {
-  const none = settings.shortcutOrigins.length === 0;
-  document.querySelectorAll<HTMLElement>('[data-stranded-warning]').forEach((node) => {
-    node.hidden = !none;
-  });
-}
-
-function setActionEnabled(id: string, isBuiltIn: boolean, enabled: boolean): void {
-  if (isBuiltIn) {
-    settings.builtInOverrides[id] = { ...settings.builtInOverrides[id], enabled };
-  } else {
-    const action = settings.customActions.find((a) => a.id === id);
-    if (action) action.enabled = enabled;
-  }
-}
-
-function setActionPrompt(id: string, isBuiltIn: boolean, systemPrompt: string): void {
-  if (isBuiltIn) {
-    const original = BUILT_IN_ACTIONS.find((a) => a.id === id);
-    if (original && original.systemPrompt === systemPrompt) {
-      delete settings.builtInOverrides[id]?.systemPrompt;
-      return;
-    }
-    settings.builtInOverrides[id] = { ...settings.builtInOverrides[id], systemPrompt };
-  } else {
-    const action = settings.customActions.find((a) => a.id === id);
-    if (action) action.systemPrompt = systemPrompt;
-  }
-}
-
-// ------------------------------------------------------------- live checks
-
-function renderLiveCheck(): HTMLElement {
-  const { liveCheck } = settings;
-
-  return section(
-    'Live checking',
-    'Underlines as you type, on the sites you choose. Each check spends your key, so this stays off until you switch it on for a site.',
-
-    field(
-      'Enabled on',
-      textarea(liveCheck.enabledOrigins.join('\n'), {
-        rows: 3,
-        placeholder: 'https://mail.google.com\nhttps://github.com',
-        on: {
-          input: (e) => (liveCheck.enabledOrigins = lines((e.target as HTMLTextAreaElement).value)),
-        },
-      }),
-      'One site address per line. Or click the ProofKey button in the toolbar on any site to switch it on or off there.',
-    ),
-
-    field(
-      'Never run on',
-      textarea(liveCheck.blockedOrigins.join('\n'), {
-        rows: 2,
-        placeholder: 'https://bank.example.com',
-        on: {
-          input: (e) => (liveCheck.blockedOrigins = lines((e.target as HTMLTextAreaElement).value)),
-        },
-      }),
-      'ProofKey stays off on these sites, even if they are in the list above.',
-    ),
-
-    field(
-      'Model for live checking',
-      select(
-        [
-          { value: '', label: 'Same as the active provider' },
-          ...settings.connections.map((connection) => ({
-            value: connection.id,
-            label: connection.model ? `${connection.label} — ${connection.model}` : connection.label,
-          })),
-        ],
-        liveCheck.connectionId ?? '',
-        {
-          on: {
-            change: (e) => {
-              const value = (e.target as HTMLSelectElement).value;
-              if (value) liveCheck.connectionId = value;
-              else delete liveCheck.connectionId;
-            },
-          },
-        },
-      ),
-      'Live checking asks far more often than the right-click actions, so a cheaper, faster model is a good choice here. It does not try the backup providers: if this one fails, that check is just skipped.',
-    ),
-
-    el(
-      'div',
-      { class: 'field' },
-      checkbox('Correct spelling automatically', liveCheck.autoCorrect === true, (value) => {
-        liveCheck.autoCorrect = value;
-      }),
-      el('p', {
-        class: 'field__hint',
-        text: 'When you pause, typos, missing accents and capitals are fixed in place, with Undo on the notice. With an English or Spanish variety chosen under Your writing rules, its spelling is applied too. Grammar and wording stay underlined for you to decide, and a fix you undo is not made again.',
-      }),
-    ),
-
-    el(
-      'details',
-      {
-        class: 'advanced',
-        ...(liveTimingOpen ? { attrs: { open: '' } } : {}),
-        on: { toggle: (e: Event) => (liveTimingOpen = (e.target as HTMLDetailsElement).open) },
-      },
-      el('summary', { text: 'Timing — when a check starts' }),
-      el(
-        'div',
-        { class: 'row' },
-        field(
-          'Wait after typing (milliseconds)',
-          input(String(liveCheck.debounceMs), {
-            type: 'number',
-            on: {
-              input: (e) => {
-                const value = Number((e.target as HTMLInputElement).value);
-                if (Number.isFinite(value) && value >= 200) liveCheck.debounceMs = value;
-              },
-            },
-          }),
-        ),
-        field(
-          'Skip text shorter than (characters)',
-          input(String(liveCheck.minChars), {
-            type: 'number',
-            on: {
-              input: (e) => {
-                const value = Number((e.target as HTMLInputElement).value);
-                if (Number.isFinite(value) && value >= 0) liveCheck.minChars = value;
-              },
-            },
-          }),
-        ),
-      ),
-    ),
-  );
-}
-
-// ----------------------------------------------------------------- reports
-
-/**
- * Links to the GitHub issue forms, the only way a store user can tell us how it
- * went. A plain link: nothing is sent unless the user submits the form there,
- * and the only thing filled in for them is the installed version.
- */
-// ------------------------------------------------------------------ backup
-
-function plural(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`;
-}
-
-function renderBackup(): HTMLElement {
-  const fileInput = el('input', {
-    type: 'file',
-    hidden: true,
-    attrs: { accept: '.json,application/json', 'aria-label': 'Settings file to import' },
-    dataset: { settingsFile: 'input' },
-    on: {
-      change: (event) => {
-        const file = (event.target as HTMLInputElement).files?.[0];
-        if (file) void importSettingsFile(file);
-      },
-    },
-  });
-  const secrets = checkbox('Include API keys and the extra fields you added', backupIncludeSecrets, (value) => {
-    backupIncludeSecrets = value;
-    render();
-  });
-  secrets.dataset.settingsFile = 'secrets';
-  return section(
-    'Back up your settings',
-    'Save everything on this page to a file on your computer, to keep it safe or to move it to another computer. ' +
-      'Open the file here later to bring it all back. The file stays on your computer; ProofKey sends it nowhere.',
-    secrets,
-    backupIncludeSecrets
-      ? el('p', {
-          class: 'field__hint status--warn',
-          text: 'Anyone who gets this file can use your API keys. Keep it private, and do not attach it to a bug report.',
-        })
-      : el('p', {
-          class: 'field__hint',
-          text: 'Left unticked, the file holds no API keys and no header, query or body fields you added yourself (they can hold a token). You type those in again after importing.',
-        }),
-    el(
-      'div',
-      { class: 'row row--wrap settings-file' },
-      button('Export to a file', exportSettingsFile),
-      button('Import from a file…', () => fileInput.click()),
-      fileInput,
-    ),
-    backupNotice
-      ? el('p', { class: `status status--${backupNotice.kind}`, text: backupNotice.text, dataset: { settingsFile: 'notice' } })
-      : null,
-  );
-}
-
-function exportSettingsFile(): void {
-  const file = exportBackup(settings, {
-    includeSecrets: backupIncludeSecrets,
-    presetDefaults: (id) => getPreset(id as PresetId),
-    extensionVersion: chrome.runtime.getManifest().version,
-    now: new Date(),
-  });
-  const url = URL.createObjectURL(new Blob([file.text], { type: 'application/json' }));
-  const link = el('a', { attrs: { href: url, download: file.fileName } });
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-
-  const parts = [
-    file.leftOut.apiKeys ? plural(file.leftOut.apiKeys, 'API key', 'API keys') : '',
-    file.leftOut.fields ? plural(file.leftOut.fields, 'extra field', 'extra fields') : '',
-  ].filter(Boolean);
-  const unsaved = isDirty() ? ' It holds this page as it is now, including changes not saved yet.' : '';
-  backupNotice = {
-    kind: 'ok',
-    text: `Exported ${file.fileName}.${parts.length ? ` Left out: ${parts.join(' and ')}.` : ''}${unsaved}`,
-  };
-  render();
-}
-
-async function importSettingsFile(file: File): Promise<void> {
-  const parsed = parseBackup(await file.text(), defaultSettings());
-  if ('error' in parsed) {
-    backupNotice = { kind: 'error', text: `Nothing was imported. ${parsed.error}` };
-    render();
-    return;
-  }
-  // A key typed on this computer for the same provider comes back with it: the
-  // file usually holds none, and the user should not have to find them again.
-  const keys: Record<string, string> = {};
-  for (const connection of settings.connections) {
-    if (connection.apiKey) keys[connection.id] = connection.apiKey;
-  }
-  const imported = normalizeSettings(parsed.settings, keys);
-  const ids = new Set(imported.connections.map((c) => c.id));
-  if (!ids.has(imported.activeConnectionId)) imported.activeConnectionId = imported.connections[0]!.id;
-  imported.fallbackConnectionIds = imported.fallbackConnectionIds.filter((id) => ids.has(id));
-
-  settings = imported;
-  expandedConnectionId = settings.activeConnectionId;
-  const missing = settings.connections.filter((c) => !c.apiKey && getPreset(c.presetId).requiresApiKey).length;
-  backupNotice = {
-    kind: 'warn',
-    text:
-      `Loaded ${file.name}. Check it, then click Save to keep it.` +
-      (missing ? ` ${plural(missing, 'provider needs its', 'providers need their')} API key typed in again.` : ''),
-  };
-  render();
-}
-
-function renderReports(): HTMLElement {
-  const version = chrome.runtime.getManifest().version;
-  const link = (kind: 'site' | 'provider', label: string, hint: string) =>
-    el(
-      'li',
-      {},
-      el('a', { text: label, dataset: { report: kind }, attrs: { href: reportFormUrl(kind, version), target: '_blank', rel: 'noopener noreferrer' } }),
-      ` — ${hint}`,
-    );
-  return section(
-    'Tell us how it went',
-    'Working or broken, both help: a report is the only thing that moves a site or provider out of "untested". ' +
-      'Each link opens a form on GitHub (a free account is needed to submit); nothing is sent unless you submit it there.',
-    el(
-      'ul',
-      { class: 'reports' },
-      link('site', 'Report a site', 'it works on Slack, or it scrambled your text'),
-      link('provider', 'Report a provider', 'your provider and model worked with your key, or did not'),
-    ),
-  );
-}
-
-// ------------------------------------------------------------------ footer
 
 function renderFooter(): HTMLElement {
-  const status = el('span', { class: 'status' });
-  footerStatus = status;
-  unsavedNoticeShown = false;
+  const status = el('span', {
+    class: 'status',
+    attrs: { role: 'status', 'aria-live': 'polite' },
+  });
+  store.footerStatus = status;
+  store.unsavedNoticeShown = false;
 
-  return el(
-    'div',
-    { class: 'footer' },
-    status,
-    button('Save', () => void save(status), 'primary'),
-  );
+  const saveBtn = button('Save', () => void save(saveBtn), 'primary');
+
+  return el('footer', { class: 'footer' }, status, saveBtn);
 }
 
-async function save(status: HTMLElement): Promise<void> {
-  status.className = 'status';
-  status.textContent = 'Saving…';
+async function save(saveBtn: HTMLButtonElement): Promise<void> {
+  if (store.saving) return;
 
-  for (const connection of settings.connections) {
-    connection.baseUrl = normalizeBaseUrl(connection.baseUrl);
-  }
-
-  // Normalised here as well as on blur: Save can be reached by keyboard without
-  // the box ever losing focus, and an origin that survives to storage unparsed
-  // is one the worker will silently skip.
-  settings.shortcutOrigins = [
-    ...new Set(settings.shortcutOrigins.map(normalizeOrigin).filter((o): o is string => !!o)),
-  ];
-  // Live checking compares these with the page's origin exactly, so a trailing
-  // slash or a missing scheme typed here would never match a page.
-  const { liveCheck } = settings;
-  liveCheck.enabledOrigins = [
-    ...new Set(liveCheck.enabledOrigins.map(normalizeOrigin).filter((o): o is string => !!o)),
-  ];
-  liveCheck.blockedOrigins = [
-    ...new Set(liveCheck.blockedOrigins.map(normalizeOrigin).filter((o): o is string => !!o)),
-  ];
-  const liveOrigins = liveCheck.enabledOrigins.filter((o) => !liveCheck.blockedOrigins.includes(o));
-
-  // Requested before any await, while the click that authorises the prompt is
-  // still in scope. Origins already granted resolve without a dialog.
-  const patterns = [
-    ...new Set([
-      ...settings.connections.map(originPattern),
-      ...settings.shortcutOrigins.map(originMatchPattern),
-      ...liveOrigins.map(originMatchPattern),
-    ].filter((p): p is string => !!p)),
-  ];
-  let sitesGranted = true;
-  if (patterns.length > 0) {
-    try {
-      await chrome.permissions.request({ origins: patterns });
-    } catch {
-      // Declining is a legitimate choice; the settings still save.
+  // Refuse to silently discard invalid JSON or out-of-range numeric drafts.
+  const firstInvalid = app.querySelector<HTMLElement>('.input--invalid');
+  if (firstInvalid) {
+    firstInvalid.closest('details')?.setAttribute('open', '');
+    firstInvalid.focus();
+    if (store.footerStatus) {
+      store.footerStatus.className = 'status status--error';
+      store.footerStatus.textContent = 'Fix the highlighted field before saving.';
     }
+    return;
   }
 
-  // Checked rather than inferred from the request's result: the request covers
-  // API endpoints too, so a `false` there does not say which half was refused —
-  // and saying "shortcuts are on" when the listener could not be registered is
-  // exactly the kind of claim that leaves a user pressing a dead key.
-  // Sites, not endpoints: the script has to be registered on each of these to
-  // be in the page before the user acts.
-  const sitePatterns = [...settings.shortcutOrigins, ...liveOrigins]
-    .map(originMatchPattern)
-    .filter((p): p is string => !!p);
-  if (sitePatterns.length > 0) {
-    sitesGranted = await chrome.permissions
-      .contains({ origins: sitePatterns })
-      .catch(() => false);
+  store.saving = true;
+  saveBtn.disabled = true;
+  if (store.footerStatus) {
+    store.footerStatus.className = 'status';
+    store.footerStatus.textContent = 'Saving…';
   }
 
   try {
-    // After the permission prompt, which needs the click still in scope.
-    const edited = JSON.stringify(settings);
-    mergeOnSave(settings, JSON.parse(savedSnapshot) as Settings, await loadSettings());
-    await saveSettings(settings);
-    savedSnapshot = JSON.stringify(settings);
-    // Show what was kept, or the boxes would still hold the old lists and the
-    // next edit to them would drop those sites after all.
-    if (savedSnapshot !== edited) {
-      render();
-      if (footerStatus) status = footerStatus;
+    const beforeNormalize = JSON.stringify(store.settings);
+
+    for (const connection of store.settings.connections) {
+      connection.baseUrl = normalizeBaseUrl(connection.baseUrl);
     }
-    unsavedNoticeShown = false;
+
+    store.settings.shortcutOrigins = [
+      ...new Set(store.settings.shortcutOrigins.map(normalizeOrigin).filter((o): o is string => !!o)),
+    ];
+    const { liveCheck } = store.settings;
+    liveCheck.enabledOrigins = [
+      ...new Set(liveCheck.enabledOrigins.map(normalizeOrigin).filter((o): o is string => !!o)),
+    ];
+    liveCheck.blockedOrigins = [
+      ...new Set(liveCheck.blockedOrigins.map(normalizeOrigin).filter((o): o is string => !!o)),
+    ];
+    const liveOrigins = liveCheck.enabledOrigins.filter((o) => !liveCheck.blockedOrigins.includes(o));
+
+    const patterns = [
+      ...new Set(
+        [
+          ...store.settings.connections.map(originPattern),
+          ...store.settings.shortcutOrigins.map(originMatchPattern),
+          ...liveOrigins.map(originMatchPattern),
+        ].filter((p): p is string => !!p),
+      ),
+    ];
+    let sitesGranted = true;
+    if (patterns.length > 0) {
+      try {
+        await chrome.permissions.request({ origins: patterns });
+      } catch {
+        // Declining is a legitimate choice; the settings still save.
+      }
+    }
+
+    const sitePatterns = [...store.settings.shortcutOrigins, ...liveOrigins]
+      .map(originMatchPattern)
+      .filter((p): p is string => !!p);
+    if (sitePatterns.length > 0) {
+      sitesGranted = await chrome.permissions
+        .contains({ origins: sitePatterns })
+        .catch(() => false);
+    }
+
+    mergeOnSave(
+      store.settings,
+      JSON.parse(store.savedSnapshot) as Settings,
+      await loadSettings(),
+      { preserveFrameOrigins: store.importedPending },
+    );
+    await saveSettings(store.settings);
+    store.importedPending = false;
+    store.savedSnapshot = JSON.stringify(store.settings);
+
+    // Re-render if normalisation or merging changed anything, so textareas
+    // and card warnings match what was actually saved.
+    if (store.savedSnapshot !== beforeNormalize) render();
+
+    const status = store.footerStatus;
+    store.unsavedNoticeShown = false;
     document.title = BASE_TITLE;
-    status.parentElement?.classList.remove('footer--dirty');
-    const usable = connectionChain(settings).some(
+    status?.parentElement?.classList.remove('footer--dirty');
+    const usable = connectionChain(store.settings).some(
       (c) => validateConnection(c) === null && builtinCardProblem(c) === null,
     );
-    status.className = usable && sitesGranted ? 'status status--ok' : 'status status--error';
-    status.textContent = !usable
-      ? 'Saved, but no provider is usable yet — check the warnings above.'
-      : sitesGranted
-        ? 'Saved.'
-        : 'Saved, but access to some sites was not granted, so shortcuts and live checking will not start there on their own.';
+    if (status) {
+      status.className = usable && sitesGranted ? 'status status--ok' : 'status status--error';
+      status.textContent = !usable
+        ? 'Saved, but no provider is usable yet — check the warnings above.'
+        : sitesGranted
+          ? 'Saved.'
+          : 'Saved, but access to some sites was not granted, so shortcuts and live checking will not start there on their own.';
+    }
   } catch (error) {
-    status.className = 'status status--error';
-    // Storage can refuse a write, for example when the disk is full.
-    status.textContent = `Could not save: ${error instanceof Error ? error.message : String(error)}`;
+    if (store.footerStatus) {
+      store.footerStatus.className = 'status status--error';
+      store.footerStatus.textContent = `Could not save: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  } finally {
+    store.saving = false;
+    if (saveBtn.isConnected) saveBtn.disabled = false;
   }
 }
