@@ -115,6 +115,15 @@ function startStubProvider() {
         return;
       }
 
+      // A reply held back long enough to navigate the tab meanwhile.
+      if (body && request.method === 'POST' && String(JSON.parse(body).messages?.at(-1)?.content ?? '').endsWith('slow-hold')) {
+        setTimeout(() => response.end(JSON.stringify({
+          model: 'stub-openai',
+          choices: [{ message: { content: 'There is a lot to do.' }, finish_reason: 'stop' }],
+        })), 1500);
+        return;
+      }
+
       // A model that answers in another language on text it cannot recognise:
       // "drift-always" never recovers, "drift-once" recovers when the reply is
       // asked again with the language rule restated at the end of the prompt.
@@ -1487,6 +1496,20 @@ async function run() {
     }
   }
 
+  // A page changing its URL (a single-page app routing, a frame loading) is not
+  // the tab going away: the request in flight there must still be answered.
+  {
+    console.log('\nrequests survive navigation inside the tab:');
+    await page.evaluate((settings) => chrome.storage.local.set({ 'proofkey:settings': settings }), settingsFor('chat_completions'));
+    const held = page.evaluate(() =>
+      chrome.runtime.sendMessage({ type: 'proofkey:run', actionId: 'fix-grammar', text: 'Their is alot to do slow-hold' }),
+    );
+    await page.waitForTimeout(400);
+    await page.evaluate(() => { location.hash = '#route-change'; });
+    const reply = await held;
+    check('a URL change in the tab does not cancel the request', reply?.ok === true, JSON.stringify(reply));
+  }
+
   // Settings opened before a site was switched on wrote their old lists back on
   // Save, and live checking went off in that tab (seen in Brave, 2026-10-04).
   {
@@ -1515,6 +1538,34 @@ async function run() {
     const shown = await stale.locator('textarea[placeholder^="https://mail.google.com"]').inputValue().catch(() => '');
     check('and the settings page shows the site, so the next edit keeps it', /switched-on\.example/.test(shown), JSON.stringify(shown));
     await stale.close();
+  }
+
+  // Saving writes storage, and the page's own storage listener then redrew the
+  // form, wiping the "Saved." line a moment after it appeared.
+  {
+    console.log('\nthe Saved line stays after Save:');
+    const own = await context.newPage();
+    // Keep the page's storage listeners, so the event for its own write can be
+    // delivered after Save has finished, which the browser does not promise against.
+    await own.addInitScript(() => {
+      window.__storageListeners = [];
+      const add = chrome.storage.onChanged.addListener.bind(chrome.storage.onChanged);
+      chrome.storage.onChanged.addListener = (fn) => { window.__storageListeners.push(fn); add(fn); };
+    });
+    await own.goto(`chrome-extension://${extensionId}/options/index.html`);
+    await own.waitForTimeout(800);
+    await own.evaluate(() => { chrome.permissions.request = async () => true; });
+    await own.locator('section.card', { hasText: 'Your writing rules' }).locator('textarea').first().fill('Status-line check.');
+    await own.locator('button', { hasText: 'Save' }).last().click();
+    await own.waitForTimeout(1000);
+    await own.evaluate(async () => {
+      const newValue = (await chrome.storage.local.get('proofkey:settings'))['proofkey:settings'];
+      for (const fn of window.__storageListeners) fn({ 'proofkey:settings': { newValue } }, 'local');
+    });
+    await own.waitForTimeout(700);
+    const line = await own.locator('.status[role=status]').last().textContent();
+    check('the page still says Saved after its own write came back through storage', /^Saved/.test(line ?? ''), JSON.stringify(line));
+    await own.close();
   }
 
   // A backup connection: settings sync, so the connection in use is the same on

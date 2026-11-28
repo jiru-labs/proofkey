@@ -42,6 +42,7 @@ import { applyNewsAction, emptyNewsState, installedNewsState, NEWS, newsLink, ta
 import type { Connection, WritingAction } from '../core/types';
 import { askOffscreen, warmLiveCheck } from '../core/providers/inBrowser';
 import { coalesced } from './coalesce';
+import { ensureInjected } from './injection';
 import { IN_BROWSER_MODEL } from '../core/providers/inBrowserModel';
 import {
   activeConnection,
@@ -283,26 +284,46 @@ async function ensureContentScript(
 ): Promise<false | 'present' | 'injected'> {
   if (!tab?.id || !isInjectableUrl(tab.url)) return false;
 
-  // Already there? Cheaper than injecting twice and losing in-page state.
-  try {
-    const pong =
-      frameId !== undefined
-        ? await chrome.tabs.sendMessage(tab.id, { type: 'proofkey:ping' } satisfies WorkerRequest, { frameId })
-        : await chrome.tabs.sendMessage(tab.id, { type: 'proofkey:ping' } satisfies WorkerRequest);
-    if (pong) return 'present';
-  } catch {
-    // No receiver yet — expected on the first invocation for a tab.
-  }
+  const tabId = tab.id;
+  const ping = async (): Promise<boolean> => {
+    try {
+      const pong =
+        frameId !== undefined
+          ? await chrome.tabs.sendMessage(tabId, { type: 'proofkey:ping' } satisfies WorkerRequest, { frameId })
+          : await chrome.tabs.sendMessage(tabId, { type: 'proofkey:ping' } satisfies WorkerRequest);
+      return !!pong;
+    } catch {
+      // No receiver yet — expected on the first invocation for a tab.
+      return false;
+    }
+  };
 
   try {
-    if (hasScriptingApi()) {
-      const injected = await injectIntoBareFrames(tab.id);
-      if (injected) return 'injected';
-      // All reachable frames may already have it (e.g. ping timed out on a specific frame).
-      return 'present';
-    }
-    await injectFiles(tab.id, [CONTENT_SCRIPT]);
-    return 'injected';
+    // Already there? Cheaper than injecting twice and losing in-page state.
+    return await ensureInjected({
+      ping,
+      injectBare: async () => {
+        if (!hasScriptingApi()) {
+          await injectFiles(tabId, [CONTENT_SCRIPT]);
+          return true;
+        }
+        return injectIntoBareFrames(tabId);
+      },
+      injectTarget: async () => {
+        // The orphaned root of a script from before an update would otherwise
+        // be reused with nothing behind it; the new script builds its own.
+        if (hasScriptingApi()) {
+          const target = { tabId, frameIds: [frameId ?? 0] };
+          await chrome.scripting.executeScript({
+            target,
+            func: () => document.getElementById('proofkey-root')?.remove(),
+          });
+          await chrome.scripting.executeScript({ target, files: [CONTENT_SCRIPT] });
+        } else {
+          await injectFiles(tabId, [CONTENT_SCRIPT]);
+        }
+      },
+    });
   } catch (error) {
     console.warn('[ProofKey] injection failed', error);
     return false;
@@ -320,7 +341,7 @@ async function sendToTab(tabId: number, message: WorkerRequest, frameId?: number
 
 // ------------------------------------------------------ request cancellation
 
-/** Active requests per tab, aborted when the tab closes or navigates away. */
+/** Active requests per tab, aborted when the tab closes. */
 const tabControllers = new Map<number, Set<AbortController>>();
 /** Latest in-flight live-check per (tab, frame), superseded by a newer check. */
 const liveControllers = new Map<string, AbortController>();
@@ -328,14 +349,13 @@ const liveControllers = new Map<string, AbortController>();
 function abortTabRequests(tabId: number): void {
   const set = tabControllers.get(tabId);
   if (!set) return;
-  for (const controller of set) controller.abort(new DOMException('Tab closed or navigated.', 'AbortError'));
+  for (const controller of set) controller.abort(new DOMException('Tab closed.', 'AbortError'));
   tabControllers.delete(tabId);
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => abortTabRequests(tabId));
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.status === 'loading' || changeInfo.url) abortTabRequests(tabId);
-});
+// Not onUpdated: a frame loading or a single-page app changing its URL fires it
+// while the tab, and the text waiting on an answer, are still there.
 
 function trackController(tabId: number | undefined, controller: AbortController): () => void {
   if (tabId === undefined) return () => {};
