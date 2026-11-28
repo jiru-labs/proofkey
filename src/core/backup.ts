@@ -105,6 +105,10 @@ const NESTED_STRING_ARRAY_FIELDS = new Set([
   'profile.neverFlag',
 ]);
 
+// Optional nested fields have no entry in the defaults, so the one-level walk
+// below would drop them; the ones we know are listed with their type.
+const OPTIONAL_NESTED_STRINGS = new Set(['liveCheck.connectionId']);
+
 export function parseBackup(text: string, defaults: Settings): ParsedBackup {
   let file: unknown;
   try {
@@ -143,8 +147,14 @@ export function parseBackup(text: string, defaults: Settings): ParsedBackup {
     if (isObject(value) && isObject(expected) && Object.keys(expected).length > 0) {
       const cleanNested: Record<string, unknown> = {};
       for (const [inner, innerValue] of Object.entries(value)) {
-        if (!Object.hasOwn(expected, inner)) continue;
         const path = `${name}.${inner}`;
+        if (!Object.hasOwn(expected, inner)) {
+          if (OPTIONAL_NESTED_STRINGS.has(path) && innerValue !== undefined) {
+            if (typeof innerValue !== 'string') return { error: `The file is damaged: ${path} should be text.` };
+            cleanNested[inner] = innerValue;
+          }
+          continue;
+        }
         const innerProblem = shapeProblem(innerValue, expected[inner], path);
         if (innerProblem) return { error: `The file is damaged: ${innerProblem}.` };
         if (NESTED_STRING_ARRAY_FIELDS.has(path) && !isStringArray(innerValue)) {
@@ -237,15 +247,22 @@ export function parseBackup(text: string, defaults: Settings): ParsedBackup {
       ids.add(connection.id as string);
       for (const k of ['extraHeaders', 'extraQuery']) {
         if (connection[k] !== undefined) {
-          if (!isObject(connection[k]) || !Object.values(connection[k] as Record<string, unknown>).every((v) => typeof v === 'string')) {
+          const bag = connection[k];
+          // 0.1.27 wrote whatever the user typed, so numbers and booleans exist in old files.
+          if (!isObject(bag) || !Object.values(bag).every((v) => ['string', 'number', 'boolean'].includes(typeof v))) {
             return { error: `The file is damaged: a provider's ${k} should hold text values.` };
           }
+          connection[k] = Object.fromEntries(Object.entries(bag).map(([name, v]) => [name, String(v)]));
         }
       }
       if (connection.extraBody !== undefined && !isObject(connection.extraBody)) {
         return { error: "The file is damaged: a provider's extraBody is not a set of fields." };
       }
     }
+    // A live-check provider the file does not carry would fall back to whatever is
+    // active on import, which is not what the user picked: drop it instead.
+    const live = settings.liveCheck as Record<string, unknown> | undefined;
+    if (live && typeof live.connectionId === 'string' && !ids.has(live.connectionId)) delete live.connectionId;
   }
 
   return {

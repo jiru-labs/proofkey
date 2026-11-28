@@ -70,7 +70,7 @@ const settings = {
     connection('b', 'ollama', { extraBody: { reasoning_effort: 'none', api_key: 'body-secret' } }),
   ],
   activeConnectionId: 'a',
-  liveCheck: { ...defaults.liveCheck, enabledOrigins: ['https://mail.example'], dictionary: ['ProofKey'] },
+  liveCheck: { ...defaults.liveCheck, enabledOrigins: ['https://mail.example'], dictionary: ['ProofKey'], connectionId: 'a' },
 } as Settings;
 
 const options = (includeSecrets: boolean): BackupOptions => ({
@@ -114,6 +114,7 @@ if ('settings' in parsedPlain) {
   check('reports secrets absent', parsedPlain.secretsIncluded === false);
 }
 
+
 const envelope = JSON.parse(full.text) as Record<string, unknown>;
 const refuse = (name: string, text: string) => {
   const result = parseBackup(text, defaults);
@@ -136,12 +137,68 @@ refuse('a non-string shortcutOrigin entry', JSON.stringify({ ...envelope, settin
 refuse('a bad frameOrigins value', JSON.stringify({ ...envelope, settings: { frameOrigins: { 'https://a.test': 'not-a-list' } } }));
 refuse('a customAction missing systemPrompt', JSON.stringify({ ...envelope, settings: { customActions: [{ id: 'c1', label: 'X', enabled: true }] } }));
 
+console.log('Import edge cases');
+const absent = parseBackup(
+  JSON.stringify({ ...envelope, settings: { ...settings, liveCheck: { ...settings.liveCheck, connectionId: 'not-in-file' } } }),
+  defaults,
+);
+check(
+  'a live-check provider the file does not carry is dropped, not pointed at the active one',
+  'settings' in absent && absent.settings.liveCheck?.connectionId === undefined,
+  'error' in absent ? absent.error : JSON.stringify(absent.settings.liveCheck),
+);
+refuse('a live-check provider that is not an id', JSON.stringify({ ...envelope, settings: { ...settings, liveCheck: { ...settings.liveCheck, connectionId: 5 } } }));
+
+const numerics = parseBackup(
+  JSON.stringify({
+    ...envelope,
+    settings: {
+      ...settings,
+      connections: [{ ...settings.connections[0], extraHeaders: { 'X-Org': 1, 'X-Flat': true }, extraQuery: { org: 2 } }],
+    },
+  }),
+  defaults,
+);
+check(
+  'number and boolean header and query values import as text, as 0.1.27 accepted them',
+  'settings' in numerics &&
+    numerics.settings.connections![0]!.extraHeaders!['X-Org'] === '1' &&
+    numerics.settings.connections![0]!.extraHeaders!['X-Flat'] === 'true' &&
+    numerics.settings.connections![0]!.extraQuery!['org'] === '2',
+  'error' in numerics ? numerics.error : JSON.stringify(numerics.settings.connections![0]),
+);
+refuse('a header value that is an object', JSON.stringify({ ...envelope, settings: { connections: [{ ...settings.connections[0], extraHeaders: { 'X-Org': { a: 1 } } }] } }));
+refuse('a header value that is null', JSON.stringify({ ...envelope, settings: { connections: [{ ...settings.connections[0], extraHeaders: { 'X-Org': null } }] } }));
+
+
 const protoPayload = `{"proofkey":"proofkey-settings","formatVersion":1,"settings":{"__proto__":{"polluted":true},"connections":[]}}`;
 const protoParsed = parseBackup(protoPayload, defaults);
 check('ignores __proto__ without polluting prototype', 'settings' in protoParsed && !('polluted' in protoParsed.settings) && !('polluted' in Object.prototype));
 
 const extra = parseBackup(JSON.stringify({ ...envelope, settings: { connections: [], mystery: 1 } }), defaults);
 check('drops fields it does not know', 'settings' in extra && !('mystery' in extra.settings));
+
+console.log('Import keeps optional fields and 0.1.27-shaped values');
+{
+  const withConn = { ...settings, liveCheck: { ...defaults.liveCheck, connectionId: 'b' } } as Settings;
+  const parsed = parseBackup(exportBackup(withConn, options(true)).text, defaults);
+  check(
+    'liveCheck.connectionId survives the round trip',
+    'settings' in parsed && parsed.settings.liveCheck?.connectionId === 'b',
+    JSON.stringify('settings' in parsed ? parsed.settings.liveCheck : parsed),
+  );
+  const legacy = JSON.parse(full.text) as { settings: { connections: Record<string, unknown>[] } };
+  legacy.settings.connections[0]!.extraHeaders = { 'X-Num': 42, 'X-Flag': true };
+  legacy.settings.connections[0]!.extraQuery = { n: 7 };
+  const old = parseBackup(JSON.stringify(legacy), defaults);
+  check('a 0.1.27 file with number/boolean header and query values is accepted', 'settings' in old, 'error' in old ? old.error : '');
+  if ('settings' in old) {
+    const c = old.settings.connections![0]!;
+    check('and those values become text', c.extraHeaders['X-Num'] === '42' && c.extraHeaders['X-Flag'] === 'true' && c.extraQuery.n === '7', JSON.stringify([c.extraHeaders, c.extraQuery]));
+  }
+  legacy.settings.connections[0]!.extraHeaders = { 'X-Obj': { a: 1 } };
+  refuse('an object as a header value', JSON.stringify(legacy));
+}
 
 console.log(failures === 0 ? '\nAll backup checks passed.' : `\n${failures} backup check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);
