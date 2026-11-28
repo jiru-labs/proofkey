@@ -1507,6 +1507,21 @@ async function run() {
     );
   }
 
+  // An editor already focused before get-state resolves (such as an auto-focused
+  // Lexical or Slate composer) must still attach live checking without a second focusin.
+  {
+    console.log('\nauto-focused editor before get-state resolves:');
+    await page.goto(`${BASE}?field=lexical&delayState=200`, { waitUntil: 'load' });
+    await page.waitForTimeout(1500);
+    const state = await page.evaluate(probe, ['lexical', MIRRORED]);
+    const checkCount = await page.evaluate(() => window.__pkSent.filter((t) => t === 'proofkey:check').length);
+    check(
+      'already-focused editor attaches once get-state resolves and shows live underlines',
+      checkCount > 0 && state.highlightCounts > 0 && Number(state.badge?.text) > 0,
+      JSON.stringify({ checkCount, highlights: state.highlightCounts, badge: state.badge?.text ?? null }),
+    );
+  }
+
   check('no uncaught page exceptions', pageErrors.length === 0, pageErrors.join('; ') || 'clean');
 
   await browser.close();
