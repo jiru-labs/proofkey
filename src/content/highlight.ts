@@ -1,5 +1,5 @@
 import type { Suggestion } from '../core/types';
-import { flatten, rangeFor } from './target';
+import { flatten, rangeFor, type FlatText } from './target';
 
 /**
  * Two renderers, because the browser gives us two very different surfaces.
@@ -19,10 +19,12 @@ export type FieldRef =
   | { kind: 'contenteditable'; node: HTMLElement };
 
 export interface Highlighter {
-  render(suggestions: Suggestion[]): void;
+  render(suggestions: Suggestion[], flat?: FlatText): void;
   clear(): void;
   /** Viewport rect of a suggestion, for positioning the card. */
   rectFor(id: string): DOMRect | null;
+  /** Individual line-box rects of a suggestion, for accurate hit-testing on wrapped text. */
+  rectsFor(id: string): DOMRect[];
   destroy(): void;
 }
 
@@ -40,13 +42,13 @@ const supportsHighlightApi =
  * this one rule has to live in the page rather than in our shadow root. It is
  * scoped to our own highlight names and touches nothing else.
  */
-let pageStyleInjected = false;
+const PAGE_STYLE_ID = 'proofkey-highlight-style';
+
 function ensurePageStyle(): void {
-  if (pageStyleInjected) return;
-  pageStyleInjected = true;
+  if (document.getElementById(PAGE_STYLE_ID)) return;
 
   const style = document.createElement('style');
-  style.id = 'proofkey-highlight-style';
+  style.id = PAGE_STYLE_ID;
   style.textContent = `
 ::highlight(${HIGHLIGHT_NAMES.grammar}) {
   text-decoration: underline wavy #d92d20;
@@ -63,7 +65,7 @@ function ensurePageStyle(): void {
   text-decoration-skip-ink: none;
   background-color: rgba(41, 112, 255, 0.08);
 }`.trim();
-  document.head.append(style);
+  (document.head ?? document.documentElement).append(style);
 }
 
 export function createHighlighter(field: FieldRef, shadow: ShadowRoot): Highlighter {
@@ -84,12 +86,12 @@ function createRangeHighlighter(node: HTMLElement): Highlighter {
   }
 
   return {
-    render(suggestions) {
+    render(suggestions, precomputedFlat) {
       clear();
       if (!supportsHighlightApi || suggestions.length === 0) return;
       ensurePageStyle();
 
-      const flat = flatten(node);
+      const flat = precomputedFlat ?? flatten(node);
       const bySeverity = new Map<string, Range[]>();
 
       for (const suggestion of suggestions) {
@@ -110,6 +112,14 @@ function createRangeHighlighter(node: HTMLElement): Highlighter {
     rectFor(id) {
       const rect = ranges.get(id)?.getBoundingClientRect();
       return rect && rect.width + rect.height > 0 ? rect : null;
+    },
+    rectsFor(id) {
+      const range = ranges.get(id);
+      if (!range) return [];
+      const rects = [...range.getClientRects()].filter((r) => r.width + r.height > 0);
+      if (rects.length > 0) return rects;
+      const fallback = range.getBoundingClientRect();
+      return fallback.width + fallback.height > 0 ? [fallback] : [];
     },
     destroy: clear,
   };
@@ -142,44 +152,91 @@ function createOverlayHighlighter(
 
   let current: Suggestion[] = [];
   let frame = 0;
+  let stylesDirty = true;
 
-  const reposition = () => {
+  const isSingleInput = node instanceof HTMLInputElement;
+
+  const syncPosition = () => {
     frame = 0;
-    const rect = node.getBoundingClientRect();
-    const style = getComputedStyle(node);
-
-    // A field scrolled out of view, hidden, or detached should draw nothing.
-    if (rect.width === 0 || rect.height === 0 || style.display === 'none') {
+    if (!node.isConnected) {
       overlay.style.display = 'none';
       return;
     }
-    overlay.style.display = 'block';
-    overlay.style.left = `${rect.left}px`;
-    overlay.style.top = `${rect.top}px`;
-    overlay.style.width = `${rect.width}px`;
-    overlay.style.height = `${rect.height}px`;
-    overlay.style.borderRadius = style.borderRadius;
+    const rect = node.getBoundingClientRect();
 
-    for (const property of MIRRORED_PROPERTIES) {
-      content.style[property] = style[property];
+    // A field scrolled out of view, hidden, or detached should draw nothing.
+    if (rect.width === 0 || rect.height === 0) {
+      overlay.style.display = 'none';
+      return;
     }
-    // A textarea wraps; a single-line input never does.
-    content.style.whiteSpace = node instanceof HTMLTextAreaElement ? 'pre-wrap' : 'pre';
-    // A scrollbar takes its width out of the field's text, not out of the
-    // mirror's: the lines broke in different places and every underline after
-    // the first wrap sat words away from its own (seen in Brave on Windows,
-    // 2026-10-04, in a textarea long enough to scroll).
-    const borders = parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
-    const scrollbar = Math.max(0, node.offsetWidth - node.clientWidth - Math.round(borders));
-    const inner = style.boxSizing === 'border-box'
-      ? 0
-      : borders + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-    content.style.width = `${rect.width - scrollbar - inner}px`;
-    content.style.transform = `translate(${-node.scrollLeft}px, ${-node.scrollTop}px)`;
+
+    let style: CSSStyleDeclaration | null = null;
+    if (stylesDirty) {
+      style = getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') {
+        overlay.style.display = 'none';
+        return;
+      }
+      overlay.style.borderRadius = style.borderRadius;
+      for (const property of MIRRORED_PROPERTIES) {
+        content.style[property] = style[property];
+      }
+      // A textarea wraps; a single-line input never does.
+      content.style.whiteSpace = isSingleInput ? 'pre' : 'pre-wrap';
+      // A scrollbar takes its width out of the field's text, not out of the
+      // mirror's: the lines broke in different places and every underline after
+      // the first wrap sat words away from its own (seen in Brave on Windows,
+      // 2026-10-04, in a textarea long enough to scroll).
+      const borders = parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+      const scrollbar = Math.max(0, node.offsetWidth - node.clientWidth - Math.round(borders));
+      const inner = style.boxSizing === 'border-box'
+        ? 0
+        : borders + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+      content.style.width = `${rect.width - scrollbar - inner}px`;
+      content.style.marginLeft = style.direction === 'rtl' && scrollbar > 0 ? `${scrollbar}px` : '';
+      stylesDirty = false;
+    }
+
+    // Clip against scrolling ancestors so fixed underlines never paint over
+    // page headers or modal chrome.
+    let clipTop = rect.top;
+    let clipRight = rect.right;
+    let clipBottom = rect.bottom;
+    let clipLeft = rect.left;
+    let ancestor = node.parentElement;
+    while (ancestor && ancestor !== document.documentElement) {
+      const aStyle = getComputedStyle(ancestor);
+      if (/(auto|scroll|hidden|clip)/.test(`${aStyle.overflowX} ${aStyle.overflowY}`)) {
+        const aRect = ancestor.getBoundingClientRect();
+        clipTop = Math.max(clipTop, aRect.top);
+        clipRight = Math.min(clipRight, aRect.right);
+        clipBottom = Math.min(clipBottom, aRect.bottom);
+        clipLeft = Math.max(clipLeft, aRect.left);
+      }
+      ancestor = ancestor.parentElement;
+    }
+    const visWidth = clipRight - clipLeft;
+    const visHeight = clipBottom - clipTop;
+    if (visWidth <= 0 || visHeight <= 0) {
+      overlay.style.display = 'none';
+      return;
+    }
+
+    overlay.style.display = isSingleInput ? 'flex' : 'block';
+    overlay.style.alignItems = isSingleInput ? 'center' : '';
+    overlay.style.left = `${clipLeft}px`;
+    overlay.style.top = `${clipTop}px`;
+    overlay.style.width = `${visWidth}px`;
+    overlay.style.height = `${visHeight}px`;
+
+    const offsetX = rect.left - clipLeft;
+    const offsetY = rect.top - clipTop;
+    content.style.transform = `translate(${offsetX - node.scrollLeft}px, ${offsetY - node.scrollTop}px)`;
   };
 
-  const schedule = () => {
-    if (frame === 0) frame = requestAnimationFrame(reposition);
+  const schedule = (resyncStyles = false) => {
+    if (resyncStyles) stylesDirty = true;
+    if (frame === 0) frame = requestAnimationFrame(syncPosition);
   };
 
   const paint = () => {
@@ -201,15 +258,16 @@ function createOverlayHighlighter(
     }
 
     content.append(document.createTextNode(value.slice(cursor)));
-    schedule();
+    schedule(true);
   };
 
-  const onScrollOrResize = () => schedule();
-  node.addEventListener('scroll', onScrollOrResize, { passive: true });
-  window.addEventListener('scroll', onScrollOrResize, { passive: true, capture: true });
-  window.addEventListener('resize', onScrollOrResize, { passive: true });
+  const onScroll = () => schedule(false);
+  const onResize = () => schedule(true);
+  node.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('scroll', onScroll, { passive: true, capture: true });
+  window.addEventListener('resize', onResize, { passive: true });
 
-  const observer = new ResizeObserver(schedule);
+  const observer = new ResizeObserver(() => schedule(true));
   observer.observe(node);
 
   return {
@@ -226,11 +284,19 @@ function createOverlayHighlighter(
       const rect = mark?.getBoundingClientRect();
       return rect && rect.width + rect.height > 0 ? rect : null;
     },
+    rectsFor(id) {
+      const mark = content.querySelector<HTMLElement>(`[data-pk-id="${CSS.escape(id)}"]`);
+      if (!mark) return [];
+      const rects = [...mark.getClientRects()].filter((r) => r.width + r.height > 0);
+      if (rects.length > 0) return rects;
+      const fallback = mark.getBoundingClientRect();
+      return fallback.width + fallback.height > 0 ? [fallback] : [];
+    },
     destroy() {
       observer.disconnect();
-      node.removeEventListener('scroll', onScrollOrResize);
-      window.removeEventListener('scroll', onScrollOrResize, { capture: true });
-      window.removeEventListener('resize', onScrollOrResize);
+      node.removeEventListener('scroll', onScroll);
+      window.removeEventListener('scroll', onScroll, { capture: true });
+      window.removeEventListener('resize', onResize);
       if (frame) cancelAnimationFrame(frame);
       overlay.remove();
     },

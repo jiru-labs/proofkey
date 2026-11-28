@@ -38,6 +38,8 @@ export function toast(root: ShadowRoot, options: ToastOptions): () => void {
 
   const node = document.createElement('div');
   node.className = `pk-toast pk-toast--${options.kind}${options.action ? ' pk-toast--with-action' : ''}`;
+  node.setAttribute('role', options.kind === 'error' ? 'alert' : 'status');
+  node.setAttribute('aria-live', options.kind === 'error' ? 'assertive' : 'polite');
 
   if (options.kind === 'busy') {
     const spinner = document.createElement('span');
@@ -113,7 +115,11 @@ export function toast(root: ShadowRoot, options: ToastOptions): () => void {
     schedule(Math.max(readingTime(options.text), options.minMs ?? 0));
   }
 
-  return dismissCurrent;
+  // Scoped to this toast so a slow `Working…` dismiss handle never removes a
+  // newer toast that already replaced it.
+  return () => {
+    if (current === entry) dismissCurrent();
+  };
 }
 
 function dismissCurrent(): void {

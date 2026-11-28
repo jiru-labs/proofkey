@@ -27,30 +27,41 @@ const WIDTH = 320;
 export function createCard(shadow: ShadowRoot, handlers: CardHandlers): SuggestionCard {
   const root = document.createElement('div');
   root.className = 'pk-card';
+  root.setAttribute('role', 'dialog');
+  root.setAttribute('aria-label', 'Writing suggestion');
   root.hidden = true;
   shadow.append(root);
 
   let open: Suggestion | null = null;
+  let lastAnchor: DOMRect | null = null;
 
   function hide(): void {
     open = null;
+    lastAnchor = null;
     root.hidden = true;
     root.replaceChildren();
   }
 
   function position(anchor: DOMRect): void {
-    // Prefer below the word; flip above when there is no room.
+    lastAnchor = anchor;
+    // Measure actual card dimensions (fallback to WIDTH when unlaid out) so
+    // narrow viewports and expanded explanations never clip off-screen.
+    const measured = root.getBoundingClientRect();
+    const cardWidth = measured.width > 0 ? measured.width : Math.min(WIDTH, window.innerWidth - GAP * 2);
+    const cardHeight = measured.height > 0 ? measured.height : 140;
+
     const below = anchor.bottom + GAP;
-    const room = window.innerHeight - below;
-    const left = Math.min(Math.max(GAP, anchor.left), window.innerWidth - WIDTH - GAP);
+    const roomBelow = window.innerHeight - below - GAP;
+    const maxLeft = Math.max(GAP, window.innerWidth - cardWidth - GAP);
+    const left = Math.min(Math.max(GAP, anchor.left), maxLeft);
 
     root.style.left = `${left}px`;
-    if (room < 140 && anchor.top > 160) {
+    if (roomBelow < cardHeight && anchor.top > cardHeight + GAP) {
       root.style.top = '';
-      root.style.bottom = `${window.innerHeight - anchor.top + GAP}px`;
+      root.style.bottom = `${Math.max(GAP, window.innerHeight - anchor.top + GAP)}px`;
     } else {
       root.style.bottom = '';
-      root.style.top = `${below}px`;
+      root.style.top = `${Math.max(GAP, Math.min(below, window.innerHeight - cardHeight - GAP))}px`;
     }
   }
 
@@ -112,9 +123,11 @@ export function createCard(shadow: ShadowRoot, handlers: CardHandlers): Suggesti
           original: suggestion.original,
           replacement: suggestion.replacement,
         });
+        if (open?.id !== suggestion.id) return;
         button.remove();
         explanation.hidden = false;
         explanation.textContent = result.ok ? result.value.text : result.error;
+        if (lastAnchor) position(lastAnchor);
       }),
       makeButton('Ignore', 'ghost', () => {
         handlers.dismiss(suggestion);
@@ -139,11 +152,13 @@ export function createCard(shadow: ShadowRoot, handlers: CardHandlers): Suggesti
     if (!open) return;
     if (event.key === 'Escape') {
       hide();
-      event.stopPropagation();
-    } else if (event.key === 'Enter' && event.ctrlKey) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
       handlers.apply(open);
       hide();
       event.preventDefault();
+      event.stopImmediatePropagation();
     }
   };
   window.addEventListener('keydown', onKeydown, true);

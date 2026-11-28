@@ -37,7 +37,8 @@ export type EditTarget =
 const TEXTUAL_INPUT_TYPES = new Set(['text', 'search', 'url', 'tel', 'email', '']);
 
 /** Fields whose contents should never be sent anywhere. */
-const SENSITIVE = /password|otp|one-time-code|credit-card|cc-number|new-password|current-password/i;
+const SENSITIVE =
+  /password|passwd|passcode|passphrase|otp|one-time-code|credit-card|cc-number|cc-csc|cc-exp|cvv|cvc|new-password|current-password|secret|api[-_]?key/i;
 
 const BLOCK_TAGS = new Set([
   'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DD', 'DIV', 'DL', 'DT', 'FIELDSET',
@@ -65,11 +66,29 @@ export interface FlatText {
  * Block boundaries and `<br>` become newlines; those positions belong to no
  * text node and are therefore not editable targets.
  */
+const SKIPPED_TAGS = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'NOSCRIPT']);
+
 export function flatten(root: HTMLElement): FlatText {
   const chunks: Chunk[] = [];
   let text = '';
 
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as Element;
+        // Skip non-editable islands (mentions, chips, embedded toolbars) and
+        // non-content / Slate sentinel nodes so their text is never rewritten.
+        if (
+          SKIPPED_TAGS.has(el.tagName) ||
+          el.getAttribute('contenteditable') === 'false' ||
+          el.hasAttribute('data-slate-zero-width')
+        ) {
+          return NodeFilter.FILTER_REJECT;
+        }
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
   let node: Node | null;
   while ((node = walker.nextNode()) !== null) {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -82,12 +101,17 @@ export function flatten(root: HTMLElement): FlatText {
 
     const element = node as Element;
     if (element.tagName === 'BR') {
-      // Lexical ends a paragraph whose last child is a line break with a second,
-      // placeholder <br> so the empty line has height. It is not in the editor's
-      // text; counting it put a phantom newline at the end of every WhatsApp
-      // message that ended on Shift+Enter, and edits mapped against that phantom
-      // landed a stray copy of a corrected word on the empty line.
-      if (element.hasAttribute('data-lexical-managed-linebreak')) continue;
+      // Lexical and ProseMirror insert placeholder <br> elements so empty lines
+      // have height; counting them puts phantom newlines into flat text.
+      if (
+        element.hasAttribute('data-lexical-managed-linebreak') ||
+        element.classList.contains('ProseMirror-trailingBreak')
+      ) {
+        continue;
+      }
+      if (element.nextSibling === null && element.parentElement && BLOCK_TAGS.has(element.parentElement.tagName) && text.endsWith('\n')) {
+        continue;
+      }
       text += '\n';
     } else if (BLOCK_TAGS.has(element.tagName) && text.length > 0 && !text.endsWith('\n')) {
       text += '\n';
@@ -97,18 +121,25 @@ export function flatten(root: HTMLElement): FlatText {
   return { text, chunks };
 }
 
-function locate(flat: FlatText, offset: number): { node: Text; offset: number } | null {
+function locate(flat: FlatText, offset: number, affinity: 'start' | 'end' = 'start'): { node: Text; offset: number } | null {
+  let fallback: { node: Text; offset: number } | null = null;
   for (const chunk of flat.chunks) {
-    if (offset >= chunk.start && offset <= chunk.end) {
-      return { node: chunk.node, offset: offset - chunk.start };
-    }
+    if (offset < chunk.start || offset > chunk.end) continue;
+    const hit = { node: chunk.node, offset: offset - chunk.start };
+    // Prefer the interior of the chunk matching the endpoint's direction so a
+    // range starting right after `<strong>foo</strong>` lands in `"bar"` rather
+    // than at the end of `<strong>`, which would leak bold onto plain text.
+    if (affinity === 'start' && offset < chunk.end) return hit;
+    if (affinity === 'end' && offset > chunk.start) return hit;
+    fallback ??= hit;
   }
-  return null;
+  return fallback;
 }
 
 export function rangeFor(flat: FlatText, start: number, end: number): Range | null {
-  const from = locate(flat, start);
-  const to = locate(flat, end);
+  const collapsed = start === end;
+  const from = locate(flat, start, 'start');
+  const to = collapsed ? from : locate(flat, end, 'end');
   if (!from || !to) return null;
 
   const range = document.createRange();
@@ -149,7 +180,7 @@ export function offsetOfPoint(flat: FlatText, node: Node, offset: number): numbe
 // ------------------------------------------------------------------ read
 
 /** `document.activeElement` stops at a shadow boundary; walk through it. */
-function deepActiveElement(): Element | null {
+export function deepActiveElement(): Element | null {
   let node = document.activeElement;
   while (node?.shadowRoot?.activeElement) node = node.shadowRoot.activeElement;
   return node;
@@ -162,7 +193,7 @@ function isTextInput(node: Element | null): node is TextInput {
   return TEXTUAL_INPUT_TYPES.has(node.type.toLowerCase());
 }
 
-function isSensitive(node: Element): boolean {
+export function isSensitive(node: Element): boolean {
   if (node instanceof HTMLInputElement && node.type.toLowerCase() === 'password') return true;
   const signals = [
     node.getAttribute('autocomplete'),
@@ -227,18 +258,26 @@ export function readTarget(): EditTarget | null {
   }
 
   if (active instanceof HTMLElement && active.isContentEditable) {
-    if (isSensitive(active)) return null;
-    const flat = flatten(active);
-    return { kind: 'contenteditable', node: active, start: 0, end: flat.text.length, text: flat.text };
+    const host = outermostEditableHost(active);
+    if (!host || isSensitive(host)) return null;
+    const flat = flatten(host);
+    return { kind: 'contenteditable', node: host, start: 0, end: flat.text.length, text: flat.text };
   }
 
   return null;
 }
 
+/** Walks up to the outermost contiguous `isContentEditable` host around `node`. */
+export function outermostEditableHost(node: Node): HTMLElement | null {
+  let current: HTMLElement | null = node instanceof HTMLElement ? node : node.parentElement;
+  while (current && !current.isContentEditable) current = current.parentElement;
+  if (!current) return null;
+  while (current.parentElement?.isContentEditable) current = current.parentElement;
+  return current;
+}
+
 function closestEditableHost(node: Node): HTMLElement | null {
-  const start = node instanceof HTMLElement ? node : node.parentElement;
-  const host = start?.closest<HTMLElement>('[contenteditable]');
-  return host?.isContentEditable ? host : null;
+  return outermostEditableHost(node);
 }
 
 // ----------------------------------------------------------------- write
@@ -286,14 +325,25 @@ function settle(): Promise<void> {
 }
 
 function applyToInput(node: TextInput, start: number, end: number, text: string): boolean {
-  node.focus();
+  const before = node.value;
+  const expected = before.slice(0, start) + text + before.slice(end);
+  const { scrollTop, scrollLeft } = node;
+  node.focus({ preventScroll: true });
   try {
     node.setSelectionRange(start, end);
   } catch {
     return false;
   }
 
-  if (document.execCommand('insertText', false, text)) return true;
+  const applied = text ? document.execCommand('insertText', false, text) : document.execCommand('delete');
+  if (applied && node.value === expected) {
+    node.scrollTop = scrollTop;
+    node.scrollLeft = scrollLeft;
+    return true;
+  }
+  // If execCommand mutated the value into something unexpected (e.g. maxLength
+  // truncation or a framework interceptor), do not write a second time on top.
+  if (node.value !== before) return false;
 
   // execCommand is refused in a few editors. Fall back to the prototype setter,
   // which is what React's own value tracker reads, then announce the change.
@@ -302,12 +352,17 @@ function applyToInput(node: TextInput, start: number, end: number, text: string)
   const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
   if (!setter) return false;
 
-  const next = node.value.slice(0, start) + text + node.value.slice(end);
-  setter.call(node, next);
+  setter.call(node, expected);
   node.dispatchEvent(new Event('input', { bubbles: true }));
   node.dispatchEvent(new Event('change', { bubbles: true }));
-  node.setSelectionRange(start + text.length, start + text.length);
-  return true;
+  try {
+    node.setSelectionRange(start + text.length, start + text.length);
+  } catch {
+    /* ignore */
+  }
+  node.scrollTop = scrollTop;
+  node.scrollLeft = scrollLeft;
+  return node.value === expected;
 }
 
 /**
@@ -465,6 +520,9 @@ async function applyOneEdit(
   // `selectionchange`, and inserting before it arrives writes at the caret the
   // editor still believes in.
   await settle();
+  // Re-verify after waiting: user typing during the two-frame settle must not
+  // be overwritten.
+  if (!sameText(flatten(node).text.slice(from, to), original.slice(span.start, span.end))) return false;
 
   const applied = span.text
     ? document.execCommand('insertText', false, span.text)
@@ -502,6 +560,9 @@ async function applyChanges(
 
     selection.removeAllRanges();
     selection.addRange(range);
+    // Let framework editors sync their internal selection before execCommand.
+    await settle();
+    if (!sameText(flatten(node).text.slice(from, to), original.slice(change.start, change.end))) return false;
 
     const applied = change.replacement
       ? document.execCommand('insertText', false, change.replacement)
