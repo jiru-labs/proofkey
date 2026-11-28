@@ -146,12 +146,12 @@ What ProofKey protects you from, and what it does not, in the terms
 
 | Permission | Why |
 |---|---|
-| `storage` | To keep the settings listed above on your device |
+| `storage` | To keep the settings listed above on your device (plus an ephemeral random session UUID in `chrome.storage.session`, cleared on browser close, when using OpenCode Go's required `x-opencode-session` header) |
 | `contextMenus` | To put the actions on the right-click menu |
 | `activeTab` | To read the text you selected, on the tab you invoked it from |
 | `scripting` | To place the assistant into the field you are typing in |
 | `offscreen` | To run the in-browser model in a hidden extension page, if you choose that model. It reads no page and makes no request except the one download described above |
-| Host permissions | Requested **per site, by you**, and only for the sites where you want live checking or per-action shortcuts. Not requested up front and not granted for all sites |
+| Host permissions | Requested **per origin, by you**: for the API endpoint you configure, for loopback local model servers when you click "Find a model on this computer", for sites where you turn on live checking or per-action shortcuts, and for cross-origin editor frames you allow. Not requested up front and not granted for all sites |
 
 ## If this ever changes
 

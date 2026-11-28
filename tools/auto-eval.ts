@@ -29,19 +29,14 @@ import { autoFixable, classifyChange, diffWords, type Change } from '../src/core
 import {
   composeCheckPrompt,
   dropAddedFullStops,
+  emptyProfile,
   formatCheckPayload,
   parseCheckReply,
 } from '../src/core/prompts.ts';
 import type { WritingProfile } from '../src/core/types.ts';
 import { FIXTURES, type Fixture } from './eval-fixtures.ts';
 
-const EMPTY_PROFILE: WritingProfile = {
-  styleGuide: '',
-  neverFlag: [],
-  nativeLanguage: '',
-  explainLanguage: '',
-  translateLanguage: '',
-};
+const EMPTY_PROFILE: WritingProfile = emptyProfile();
 
 const BATCH = 8;
 

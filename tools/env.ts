@@ -35,7 +35,10 @@ export function writeEnvValue(key: string, value: string): void {
 }
 
 /** Fail loudly and early rather than sending a half-formed request to Google. */
-export function requireKeys(env: Record<string, string>, keys: string[]): void {
+export function requireKeys<K extends string>(
+  env: Record<string, string>,
+  keys: readonly K[],
+): asserts env is Record<string, string> & Record<K, string> {
   const missing = keys.filter((k) => !env[k])
   if (missing.length) {
     throw new Error(`.env is missing a value for: ${missing.join(', ')}`)

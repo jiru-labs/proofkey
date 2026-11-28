@@ -316,10 +316,7 @@ recording a per-action chord, and unbound commands were dropped on the floor.
 Verified in a real browser both ways: no warning when the command is bound, the
 warning present when it is not.
 
-The **Draft.js** row in the editors table stays `Untested` regardless. The engine
-attribution for X is best-effort, as the heading of this section says, so what
-was verified is a site, not the engine we guess it runs. Promoting an engine on
-that basis is exactly the drift the tier rule exists to stop.
+At the time of that X report, the **Draft.js** row in the editors table stayed `Untested` — the engine attribution for X is best-effort, as the heading of this section says, so promoting an engine on that basis alone would violate the tier rule. Draft.js was later verified directly against its own public demo (see the editors table above).
 
 The same visit turned up a second one behind it, and it is the same mistake in a
 different place: applying a correction rewrote the sentence, the rewritten
@@ -402,15 +399,17 @@ paused mid-text edit.
 
 ## Providers
 
-Thirty-six presets, but only **two transports** — so this is not thirty-six
-separate integrations. What varies per provider is the auth style, the base URL
+Thirty-six presets, over **three remote transports** and **two on-device transports** — so this is not thirty-six
+separate integrations. What varies per remote provider is the auth style, the base URL
 and the model naming, not the logic.
 
 | Transport | What it sends | Status | Evidence |
 |---|---|---|---|
 | `chat_completions` | `POST {baseUrl}/chat/completions`, `Bearer` auth, system as the first message, no `temperature` | `Tested` | `test:ext` — asserted against the real service worker with the extension loaded (863d241) |
+| `openai_responses` | `POST {baseUrl}/responses`, `instructions` + single user `input`, no `temperature`, `x-opencode-session` where required | `Tested` + `Verified` | `test:ext` — wire shape asserted against a stub; verified against OpenCode Go (`gpt-6-luna`, `gpt-5.6-luna`, `grok-4.7`) in the rows below |
 | `anthropic_messages` | `POST {baseUrl}/messages`, `x-api-key`, `anthropic-version`, `anthropic-dangerous-direct-browser-access`, system as a top-level string | `Tested` | `test:ext` |
 | `chrome_builtin` | No request: `LanguageModel.create` in the service worker, system prompt as `initialPrompts`, greedy (`temperature: 0`, `topK: 1`), languages `en es de fr ja` declared | `Tested` + `Verified` | `tools/builtin-test.mjs` — the real build, freshly loaded into Google Chrome 153 with nothing configured: 11 checks through the real worker, 2026-09-13. `test:ext` cannot run the model — its Playwright Chromium answers `unavailable` in the extension worker — so it asserts the other half instead: a fresh install fails with a message naming the built-in model, refuses non-offered actions, and sends no request (6 checks) |
+| `in_browser` | No check requests leave the machine: WebLLM running `Qwen3.5-4B-q4f16_1-MLC` on WebGPU inside the offscreen document after a one-time download from Hugging Face | `Tested` + `Verified` | `tools/in-browser-check.ts` and `test:ext` (stand-in engine); verified in Brave on an 8 GB GPU (see [MODELS.md](MODELS.md#results--a-model-inside-the-browser-webllm)) |
 
 `test:ext` asserts the shape of what goes on the wire against a stub that
 records requests. It does **not** prove any real provider accepts it — a stub

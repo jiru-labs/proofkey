@@ -38,6 +38,7 @@ import {
   composeCheckPrompt,
   composeSystemPrompt,
   dropAddedFullStops,
+  emptyProfile,
   formatCheckPayload,
   parseCheckReply,
 } from '../src/core/prompts';
@@ -71,13 +72,7 @@ const MODELS = [
   { id: 'Phi-4-mini-instruct-q4f16_1-MLC', checked: false },
 ];
 
-const EMPTY_PROFILE: WritingProfile = {
-  styleGuide: '',
-  neverFlag: [],
-  nativeLanguage: '',
-  explainLanguage: '',
-  translateLanguage: '',
-};
+const EMPTY_PROFILE: WritingProfile = emptyProfile();
 
 /** Whitespace-insensitive, everything else exact — the same rule as `tools/eval.ts`. */
 const normalise = (text: string): string => text.replace(/\s+/g, ' ').trim();

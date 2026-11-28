@@ -9,9 +9,10 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync, rmSync, statSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { readEnv, requireKeys } from './env.ts'
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const MANIFEST = `${ROOT}/public/manifest.json`
 const PACKAGE = `${ROOT}/package.json`
 const LOCK = `${ROOT}/package-lock.json`
@@ -37,7 +38,7 @@ const rank = (v: string) => v.split('.').map(Number)
 const isGreater = (a: string, b: string) => {
   const [x, y] = [rank(a), rank(b)]
   for (let i = 0; i < 3; i++) {
-    if (x[i] !== y[i]) return x[i] > y[i]
+    if (x[i]! !== y[i]!) return x[i]! > y[i]!
   }
   return false
 }
@@ -149,6 +150,10 @@ if (dry) {
 }
 
 const env = readEnv()
+const missing = ['CWS_CLIENT_ID', 'CWS_CLIENT_SECRET', 'CWS_REFRESH_TOKEN', 'CWS_ITEM_ID'].filter((k) => !env[k])
+if (missing.length > 0) {
+  rollBack(`missing ${missing.join(', ')} in .env`)
+}
 requireKeys(env, ['CWS_CLIENT_ID', 'CWS_CLIENT_SECRET', 'CWS_REFRESH_TOKEN', 'CWS_ITEM_ID'])
 
 step('Getting an access token')
@@ -166,7 +171,7 @@ const tokenBody = (await tokenResponse.json()) as { access_token?: string }
 if (!tokenResponse.ok || !tokenBody.access_token) {
   console.error('Could not refresh the access token:', JSON.stringify(tokenBody, null, 2))
   console.error('\nIf this says invalid_grant, the refresh token was revoked. Re-run: npm run token')
-  process.exit(1)
+  rollBack('could not refresh the Chrome Web Store access token')
 }
 const accessToken = tokenBody.access_token
 const auth = { Authorization: `Bearer ${accessToken}`, 'x-goog-api-version': '2' }

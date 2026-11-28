@@ -294,7 +294,8 @@ What made it a hand-typed field rather than a default was that the field is not
 portable — see the table below. The setting resolves that by asking the
 **preset**, not the user, how a given endpoint spells "do not think", and sending
 nothing where nobody has measured an answer. Today that is Gemini on every model,
-and xAI on `grok-4.3` alone. Everywhere else the setting is honest about doing
+xAI on `grok-4.3`, OpenRouter on `openai/gpt-5.6-luna`, and Ollama on every model
+(since 0.1.27). Everywhere else the setting is honest about doing
 nothing, and **Extra body fields** remains the escape hatch if you know your
 endpoint's dialect.
 
@@ -445,9 +446,10 @@ That translated ES/EN line recurs later in this page, this time as a
 `gemini-2.5-flash` quick-action failure with its own fix — see [Measuring quick
 actions](#measuring-quick-actions). Llama itself has not been re-measured.
 
-Two OpenRouter-specific things to set up. The **Thinking** setting does nothing
-here — an aggregator's behaviour is a property of the upstream, not of
-OpenRouter, so no fragment is declared for it — so put `{"reasoning_effort":
+Two OpenRouter-specific things to set up. The **Thinking** setting automatically
+sends `reasoning_effort: "none"` for the preset default `openai/gpt-5.6-luna`,
+and leaves other models untouched (since upstream behaviour varies per model).
+For other thinking models on OpenRouter, put `{"reasoning_effort":
 "none"}` in **Extra body fields** yourself. It is accepted by every model
 measured here except
 `openai/gpt-oss-20b`, which rejects it with HTTP 400, and it cut the bill 10.8× on
@@ -524,8 +526,8 @@ see below.
 
 **Settings → Live checking → Connection.** Leave it on *Same as the active
 connection* to keep one model for everything, or point it at a second, cheaper
-connection and get the split above. Unset, it falls back to the active
-connection (`src/background/index.ts:255`).
+connection and get the split above. Unset, it uses the active
+connection alone (`liveChain` in `src/background/index.ts`).
 
 One difference worth knowing: quick actions fall through the fallback chain when
 a provider fails, but live checking does not. A pinned connection is the only
@@ -587,8 +589,8 @@ setting](#using-two-models) is what makes the split usable.
 ### What this means in the product
 
 No preset defaults to an excluded model, and that is checked rather than assumed:
-xAI defaults to `grok-4.20-0309-non-reasoning`, OpenCode Go to `gpt-5.6-luna`,
-Gemini to `gemini-2.5-flash`. `npm run eval` measures none of them by default
+xAI defaults to `grok-4.20-0309-non-reasoning`, OpenCode Go to `gpt-6-luna` (since 0.1.15),
+Gemini to `gemini-3.5-flash-lite` (since 0.1.21). `npm run eval` measures none of them by default
 either.
 
 Nor does any preset leave thinking on where it can be turned off: the
