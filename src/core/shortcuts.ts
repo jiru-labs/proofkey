@@ -85,7 +85,7 @@ const BROWSER_RESERVED = new Set([
   'Alt+Shift+KeyT', 'Alt+Shift+KeyI', 'Alt+Shift+KeyA', 'Alt+Shift+KeyN',
   // DevTools.
   'Ctrl+Shift+KeyI', 'Ctrl+Shift+KeyJ', 'Ctrl+Shift+KeyC',
-  'Meta+Alt+KeyI', 'Meta+Alt+KeyJ', 'Meta+Alt+KeyC',
+  'Alt+Meta+KeyI', 'Alt+Meta+KeyJ', 'Alt+Meta+KeyC',
   // The address bar swallows the keydown entirely.
   'Ctrl+KeyL', 'Alt+KeyD', 'Ctrl+KeyK', 'Ctrl+KeyE',
   // The Chrome menu (Windows, Linux).
@@ -94,14 +94,14 @@ const BROWSER_RESERVED = new Set([
   // documents no use for either, which is what makes them a safe suggestion.
   'F1', 'F3', 'F5', 'F6', 'F7', 'F10', 'F11', 'F12',
   'Shift+F5', 'Ctrl+F5', 'Ctrl+F6',
-  // macOS equivalents.
+  // macOS equivalents (canonical modifier order: Ctrl, Alt, Shift, Meta).
   'Meta+KeyN', 'Meta+KeyT', 'Meta+KeyW', 'Meta+KeyQ', 'Meta+KeyM', 'Meta+KeyH',
-  'Meta+Shift+KeyN', 'Meta+Shift+KeyT', 'Meta+Shift+KeyW',
-  'Meta+KeyY', 'Meta+Shift+KeyJ', 'Meta+Shift+KeyB', 'Meta+Alt+KeyB',
-  'Meta+Shift+KeyM', 'Meta+Shift+Delete', 'Meta+KeyL', 'Meta+Comma',
-  'Meta+Alt+Shift+KeyI', 'Meta+Alt+Shift+KeyA', 'Meta+Alt+KeyN',
+  'Shift+Meta+KeyN', 'Shift+Meta+KeyT', 'Shift+Meta+KeyW',
+  'Meta+KeyY', 'Shift+Meta+KeyJ', 'Shift+Meta+KeyB', 'Alt+Meta+KeyB',
+  'Shift+Meta+KeyM', 'Shift+Meta+Delete', 'Meta+KeyL', 'Meta+Comma',
+  'Alt+Shift+Meta+KeyI', 'Alt+Shift+Meta+KeyA', 'Alt+Meta+KeyN',
   'Meta+BracketLeft', 'Meta+BracketRight', 'Meta+ArrowLeft', 'Meta+ArrowRight',
-  'Meta+Alt+ArrowLeft', 'Meta+Alt+ArrowRight',
+  'Alt+Meta+ArrowLeft', 'Alt+Meta+ArrowRight',
   // Ctrl+1..8 jump to a tab, Ctrl+9 to the last one; Ctrl+0 resets zoom.
   ...Array.from({ length: 10 }, (_, digit) => `Ctrl+Digit${digit}`),
   ...Array.from({ length: 10 }, (_, digit) => `Meta+Digit${digit}`),
@@ -117,7 +117,7 @@ const BROWSER_SHARED = new Set([
   'Ctrl+KeyS', 'Ctrl+KeyP', 'Ctrl+KeyF', 'Ctrl+KeyD', 'Ctrl+KeyO', 'Ctrl+KeyU',
   'Ctrl+KeyG', 'Ctrl+KeyR', 'Ctrl+Shift+KeyG', 'Ctrl+Shift+KeyR', 'Ctrl+Shift+KeyD',
   'Meta+KeyS', 'Meta+KeyP', 'Meta+KeyF', 'Meta+KeyD', 'Meta+KeyO',
-  'Meta+KeyG', 'Meta+Shift+KeyG', 'Meta+Shift+KeyR', 'Meta+Shift+KeyD',
+  'Meta+KeyG', 'Shift+Meta+KeyG', 'Shift+Meta+KeyR', 'Shift+Meta+KeyD',
 ]);
 
 /**
@@ -499,9 +499,16 @@ export function parseCommandShortcut(shortcut: string): string | null {
   if (!trimmed) return null;
 
   const chord: Chord = { ctrl: false, alt: false, shift: false, meta: false, code: '' };
-  // Chrome writes these with "+" on Windows and Linux, and as bare glyphs on
-  // macOS ("⌘⇧K"), so both spellings have to be understood.
-  const parts = trimmed.includes('+') ? trimmed.split('+') : [...trimmed];
+  // Chrome writes these with "+" on Windows and Linux, and as leading modifier
+  // glyphs followed by a key token on macOS ("⌘⇧K", "⌘⇧F9", "⌘⇧Space").
+  let parts: string[];
+  if (trimmed.includes('+')) {
+    parts = trimmed.split('+');
+  } else {
+    const match = /^([⌃⌥⇧⌘]*)(.+)$/.exec(trimmed);
+    if (!match) return null;
+    parts = [...match[1]!, match[2]!];
+  }
 
   for (const raw of parts) {
     const part = raw.trim();
@@ -509,6 +516,7 @@ export function parseCommandShortcut(shortcut: string): string | null {
     switch (part) {
       case 'Ctrl':
       case 'Control':
+      case 'MacCtrl':
       case '⌃':
         chord.ctrl = true;
         continue;
@@ -522,7 +530,6 @@ export function parseCommandShortcut(shortcut: string): string | null {
         chord.shift = true;
         continue;
       case 'Command':
-      case 'MacCtrl':
       case 'Meta':
       case '⌘':
         chord.meta = true;
@@ -531,6 +538,7 @@ export function parseCommandShortcut(shortcut: string): string | null {
         break;
     }
 
+    if (chord.code) return null;
     if (/^[A-Za-z]$/.test(part)) chord.code = `Key${part.toUpperCase()}`;
     else if (/^[0-9]$/.test(part)) chord.code = `Digit${part}`;
     else if (isFunctionKey(part)) chord.code = part;

@@ -61,7 +61,8 @@ export async function probeLocalServer(
     const response = await fetchImpl(`${server.baseUrl}/models`, { signal: controller.signal });
     if (!response.ok) return { server, status: 'refused', httpStatus: response.status };
     const body = (await response.json().catch(() => null)) as { data?: { id?: unknown }[] } | null;
-    const models = (body?.data ?? [])
+    if (!body || !Array.isArray(body.data)) return { server, status: 'absent' };
+    const models = body.data
       .map((m) => m?.id)
       .filter((id): id is string => typeof id === 'string' && id.length > 0);
     return { server, status: 'found', models };

@@ -88,18 +88,23 @@ export function normalizeSettings(raw: Partial<Settings>, keys: Record<string, s
   // Shallow merge against defaults so a settings object written by an older
   // version keeps working after new fields are added.
   const defaults = defaultSettings();
+  const hasConnections = Array.isArray(raw.connections) && raw.connections.length > 0;
+  const connections = hasConnections
+    ? raw.connections!.map((connection) => ({
+        ...migrateConnection(connection),
+        apiKey: connection.apiKey || keys[connection.id] || '',
+      }))
+    : defaults.connections;
+  const activeId = hasConnections && raw.activeConnectionId && connections.some((c) => c.id === raw.activeConnectionId)
+    ? raw.activeConnectionId
+    : connections[0]!.id;
   return {
     ...defaults,
     ...raw,
     profile: { ...defaults.profile, ...(raw.profile ?? {}) },
     liveCheck: { ...defaults.liveCheck, ...(raw.liveCheck ?? {}) },
-    connections: raw.connections?.length
-      ? raw.connections.map((connection) => ({
-          ...migrateConnection(connection),
-          apiKey: connection.apiKey || keys[connection.id] || '',
-        }))
-      : defaults.connections,
-    activeConnectionId: raw.activeConnectionId ?? defaults.activeConnectionId,
+    connections,
+    activeConnectionId: activeId,
   };
 }
 
@@ -118,7 +123,22 @@ export function normalizeSettings(raw: Partial<Settings>, keys: Record<string, s
  */
 function migrateConnection(stored: Connection): Connection {
   const partial = stored as Partial<Connection>;
-  return { ...stored, model: liveModel(stored), thinking: partial.thinking ?? 'off' };
+  const preset = getPreset(stored.presetId);
+  return {
+    ...stored,
+    label: partial.label ?? preset.label,
+    apiKey: partial.apiKey ?? '',
+    authStyle: partial.authStyle ?? preset.authStyle,
+    extraHeaders: partial.extraHeaders ? { ...partial.extraHeaders } : {},
+    extraQuery: partial.extraQuery ? { ...partial.extraQuery } : {},
+    extraBody: partial.extraBody ? { ...partial.extraBody } : {},
+    maxOutputTokens:
+      typeof partial.maxOutputTokens === 'number' && Number.isFinite(partial.maxOutputTokens) && partial.maxOutputTokens > 0
+        ? partial.maxOutputTokens
+        : 2048,
+    model: liveModel(stored),
+    thinking: partial.thinking ?? 'off',
+  };
 }
 
 /**
@@ -175,7 +195,16 @@ export const SETTINGS_STORAGE_KEY = KEY_SETTINGS;
  * them; they move to the record, as `mirrorApiKeys` did, and sync is rewritten
  * without them so they stop travelling.
  */
-export async function migrateSettingsToLocal(): Promise<Partial<Settings> | undefined> {
+let migratingToLocal: Promise<Partial<Settings> | undefined> | null = null;
+
+export function migrateSettingsToLocal(): Promise<Partial<Settings> | undefined> {
+  migratingToLocal ??= runMigrateSettingsToLocal().finally(() => {
+    migratingToLocal = null;
+  });
+  return migratingToLocal;
+}
+
+async function runMigrateSettingsToLocal(): Promise<Partial<Settings> | undefined> {
   const readLocal = async () => (await chrome.storage.local.get(KEY_SETTINGS))[KEY_SETTINGS] as Partial<Settings> | undefined;
   const local = await readLocal();
   if (local) return local;
@@ -204,17 +233,24 @@ export async function migrateSettingsToLocal(): Promise<Partial<Settings> | unde
  * The settings a page that has been open a while should save.
  *
  * The worker writes some of them too — the sites live checking and the
- * shortcuts run on, the frames allowed from a page, the dictionary — whenever
- * the user acts on a page. Settings opened before that held the old lists, and
- * Save wrote them back whole: switching live checking on in a tab, then saving
- * a provider change in settings, switched it off again (seen in Brave,
- * 2026-10-04). So those lists are taken from storage as it is now, with only
- * this page's own additions and removals applied on top.
+ * shortcuts run on, the frames allowed from a page, the dictionary, automatic
+ * spelling correction toggled from a news toast, and a retired model switched
+ * to its replacement — whenever the user acts on a page. Settings opened before
+ * that held the old copies, and Save wrote them back whole: switching live
+ * checking on in a tab, then saving a provider change in settings, switched it
+ * off again (seen in Brave, 2026-10-04). So those fields are three-way merged
+ * against storage as it is now, keeping concurrent worker updates wherever this
+ * page did not edit them.
  *
  * In place: the page's inputs hold references to these objects, and a copy
  * would leave every later edit writing to the one that is no longer saved.
  */
-export function mergeOnSave(edited: Settings, loaded: Settings, stored: Settings): void {
+export function mergeOnSave(
+  edited: Settings,
+  loaded: Settings,
+  stored: Settings,
+  options: { preserveFrameOrigins?: boolean } = {},
+): void {
   const merge = (now: string[], before: string[], mine: string[]): string[] => {
     const removed = new Set(before.filter((item) => !mine.includes(item)));
     const added = mine.filter((item) => !before.includes(item));
@@ -222,10 +258,22 @@ export function mergeOnSave(edited: Settings, loaded: Settings, stored: Settings
   };
   const { liveCheck } = edited;
   edited.shortcutOrigins = merge(stored.shortcutOrigins, loaded.shortcutOrigins, edited.shortcutOrigins);
-  edited.frameOrigins = stored.frameOrigins;
+  if (!options.preserveFrameOrigins) edited.frameOrigins = stored.frameOrigins;
   liveCheck.enabledOrigins = merge(stored.liveCheck.enabledOrigins, loaded.liveCheck.enabledOrigins, liveCheck.enabledOrigins);
   liveCheck.blockedOrigins = merge(stored.liveCheck.blockedOrigins, loaded.liveCheck.blockedOrigins, liveCheck.blockedOrigins);
   liveCheck.dictionary = merge(stored.liveCheck.dictionary, loaded.liveCheck.dictionary, liveCheck.dictionary);
+  if (liveCheck.autoCorrect === loaded.liveCheck.autoCorrect) {
+    liveCheck.autoCorrect = stored.liveCheck.autoCorrect;
+  }
+  const loadedById = new Map(loaded.connections.map((c) => [c.id, c]));
+  const storedById = new Map(stored.connections.map((c) => [c.id, c]));
+  for (const conn of edited.connections) {
+    const before = loadedById.get(conn.id);
+    const now = storedById.get(conn.id);
+    if (before && now && conn.model === before.model && now.model !== before.model) {
+      conn.model = now.model;
+    }
+  }
 }
 
 export function activeConnection(settings: Settings): Connection | undefined {
@@ -239,11 +287,19 @@ export function activeConnection(settings: Settings): Connection | undefined {
 export function connectionChain(settings: Settings): Connection[] {
   const byId = new Map(settings.connections.map((c) => [c.id, c]));
   const chain: Connection[] = [];
+  const seen = new Set<string>();
   const active = activeConnection(settings);
-  if (active) chain.push(active);
+  if (active) {
+    chain.push(active);
+    seen.add(active.id);
+  }
   for (const id of settings.fallbackConnectionIds) {
+    if (seen.has(id)) continue;
     const connection = byId.get(id);
-    if (connection && connection.id !== active?.id) chain.push(connection);
+    if (connection) {
+      chain.push(connection);
+      seen.add(id);
+    }
   }
   return chain;
 }

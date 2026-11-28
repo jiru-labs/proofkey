@@ -98,7 +98,7 @@ const NOT_ENGLISH_LETTER = /[^\P{Script=Latin}a-z]/u;
 export function foreignWordsInEnglish(text: string): string[] {
   const found = new Map<string, string>();
   for (const token of text.match(WORD) ?? []) {
-    const word = token.toLowerCase().replace('’', "'");
+    const word = token.toLowerCase().replace(/[‘’ʼ]/g, "'");
     if (!found.has(word) && (NOT_ENGLISH.has(word) || NOT_ENGLISH_LETTER.test(word))) found.set(word, token);
   }
   return [...found.values()];
@@ -142,7 +142,7 @@ function clauseLanguage(clause: string): string | undefined {
   const tokens = new Set(
     clause
       .split(/\s+/)
-      .map((token) => token.replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, '').replace('’', "'").toLowerCase())
+      .map((token) => token.replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, '').replace(/[‘’ʼ]/g, "'").toLowerCase())
       .filter((token) => WHOLE_WORD.test(token)),
   );
   const count = (list: ReadonlySet<string>) => [...tokens].filter((token) => list.has(token));
@@ -200,16 +200,20 @@ export function mixedClauses(text: string): LanguagePart[] {
  * clause fixtures (Gemini 2.5 Flash and Qwen3-4B, five actions), it named 190
  * of the 191 that lost the mixture and none of the 194 that kept it.
  */
+/** Common English words that collide with another language's function-word list. */
+const SHARED_IN_MIXTURES = words('a do no son hat bin die');
+
 export function lostMixture(text: string, rewrite: string): boolean {
   const other = mixedClauses(text).find((part) => part.language !== LANGUAGE_NAMES.en)?.language;
   const code = Object.keys(LANGUAGE_NAMES).find((key) => LANGUAGE_NAMES[key] === other);
   if (!code) return false;
   const tokens = rewrite
     .split(/\s+/)
-    .map((token) => token.replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, '').replace('’', "'").toLowerCase())
-    // `a` is French, Spanish and Portuguese as well as English: counted, an
-    // all-English rewrite of a French text read as keeping the French.
-    .filter((token) => !SHARED_WITH_ENGLISH.has(token) && token !== 'a');
+    .map((token) => token.replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, '').replace(/[‘’ʼ]/g, "'").toLowerCase())
+    // `a`, `do`, `no`, `son`, `hat`, `bin`, `die` are English words as well as
+    // function words of French, Spanish, Portuguese or German: counted, an
+    // all-English rewrite read as keeping the other language.
+    .filter((token) => !SHARED_WITH_ENGLISH.has(token) && !SHARED_IN_MIXTURES.has(token));
   const english = tokens.some((token) => FUNCTION_WORDS.en!.has(token) || ENGLISH_CONTRACTIONS.has(token));
   return !english || !tokens.some((token) => FUNCTION_WORDS[code]!.has(token));
 }
@@ -258,7 +262,7 @@ export async function loadLexicon(read: (file: string) => Promise<ArrayBuffer>):
     read('en.txt'),
     ...BASES.map((language) => read(`${language}.bin`)),
   ]);
-  const list = new TextDecoder().decode(english).split('\n').filter(Boolean);
+  const list = new TextDecoder().decode(english).split(/\r?\n/).filter(Boolean);
   const absentFrom = Object.fromEntries(
     BASES.map((language, i) => [language, new Uint8Array(masks[i]!)]),
   ) as Record<BorrowedBase, Uint8Array>;

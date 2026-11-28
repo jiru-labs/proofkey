@@ -42,7 +42,7 @@ const lexicon = await loadLexicon(read);
 
 console.log('the shipped word lists:');
 check('the English list is sorted the way the search compares',
-  lexicon.english.every((word, i) => i === 0 || lexicon.english[i - 1] < word));
+  lexicon.english.every((word, i) => i === 0 || lexicon.english[i - 1]! < word));
 check('and holds only lowercase words of three letters or more',
   lexicon.english.every((word) => /^[a-z]{3,}$/.test(word)), `${lexicon.english.length} words`);
 let refused = false;
@@ -162,6 +162,9 @@ check('both kept with the switch inside a clause, where no comma splits it',
 check('all in Spanish', lostMixture(spanishFirst, 'Ya terminé el informe, solo necesito enviárselo a Laura antes del almuerzo.'));
 check('all in English', lostMixture("I'll call you tonight, mais je ne sais pas encore à quelle heure.",
   "I'll call you tonight, but I don't know yet at what time."));
+check('all in English containing "do" or "no" still caught as losing Portuguese',
+  lostMixture('We can meet on Friday, se você ainda estiver na cidade.',
+    'We can meet on Friday, do not worry if you have no time.'));
 check('nothing to lose in a text in one language',
   !lostMixture('Ich schicke dir die Unterlagen morgen früh, dann koennen wir am Freitag darüber sprechen.', 'Ich schicke dir die Unterlagen morgen.'));
 check('nor in one with borrowed words only',

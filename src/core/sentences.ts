@@ -53,7 +53,11 @@ function fallbackSegment(text: string): Sentence[] {
 
 /** Index of the sentence containing `caret`, or -1. */
 export function sentenceAt(sentences: Sentence[], caret: number): number {
-  return sentences.findIndex((sentence) => caret >= sentence.start && caret <= sentence.end);
+  return sentences.findIndex((sentence, index) =>
+    index === sentences.length - 1
+      ? caret >= sentence.start && caret <= sentence.end
+      : caret >= sentence.start && caret < sentence.end,
+  );
 }
 
 /**

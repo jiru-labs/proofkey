@@ -60,6 +60,9 @@ export async function complete(
 }
 
 function parseMessage(connection: Connection, payload: unknown): CompletionResult {
+  if (typeof payload === 'string') {
+    throw new ProviderError('Anthropic did not return JSON.', connection.label);
+  }
   if (!payload || typeof payload !== 'object') {
     throw new ProviderError('Anthropic returned an empty response.', connection.label);
   }

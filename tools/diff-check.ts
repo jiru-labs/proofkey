@@ -110,7 +110,7 @@ const grouping: [string, string, [string, string, string][]][] = [
   [
     'their is alot of things',
     'there are a lot of things',
-    [['their is alot ', 'there are a lot ', 'Grammar']],
+    [['their is alot', 'there are a lot', 'Grammar']],
   ],
 ];
 
@@ -173,11 +173,20 @@ const autoCases: [string, string, boolean, boolean?][] = [
   ['alot', 'a lot', false],
   ['their is', 'there is', false],
   ['show', 'shows', false],
+  // Inflection or variety word sitting before punctuation must stay underlined, not auto-fix.
+  ['show.', 'shows.', false],
+  ['program.', 'programme.', false],
+  // British/American centred/centered pair.
+  ['centred', 'centered', false],
+  ['centred', 'centered', true, true],
   // The word is the same but the punctuation moved: not a typo.
   ['done.', 'done,', false],
+  ['(teh)', 'the()', false],
   // Scripts written without spaces: the "word" is the whole run of text, so
   // the edit-distance bound would let a clause be rewritten. Underlined only.
   ['日本語を勉強します', '日本誤を勉強します', false],
+  // Japanese dakuten (NFD diacritic) turns one word into another ("persimmon" -> "key").
+  ['かき', 'かぎ', false],
   ['我今天很高心', '我今天很高兴', false],
   ['ฉันชอบกินข้าวผด', 'ฉันชอบกินข้าวผัด', false],
   // Korean is written with spaces, so its words are words.
@@ -196,5 +205,21 @@ for (const [before, after, expected, englishPinned = false] of autoCases) {
 }
 
 const total = failures + groupFailures + autoFailures;
-console.log(total === 0 ? '\nDiff checks passed.' : `\n${total} FAILED`);
-process.exit(total === 0 ? 0 : 1);
+// Large document with a single-word fix must still diff via prefix/suffix trimming.
+const longWords = Array.from({ length: 1000 }, (_, i) => `word${i}`);
+const longBefore = longWords.join(' ');
+longWords[500] = 'fixed500';
+const longAfter = longWords.join(' ');
+const longChanges = diffWords(longBefore, longAfter);
+const longOk = longChanges !== null && longChanges.length === 1 && apply(longBefore, longChanges) === longAfter;
+console.log(`\nLarge document prefix/suffix trim:\n  ${longOk ? 'PASS' : 'FAIL'}  2000-token single-word edit`);
+
+// Punctuation-only change on a word should classify as Punctuation, not Spelling.
+const punctChange = (diffWords('done.', 'done,') ?? [])[0]!;
+const punctCat = classifyChange(punctChange, 'done.').category;
+const punctOk = punctCat === 'Punctuation';
+console.log(`  ${punctOk ? 'PASS' : 'FAIL'}  "done." -> "done," classifies as Punctuation (got ${punctCat})`);
+
+const finalTotal = total + (longOk ? 0 : 1) + (punctOk ? 0 : 1);
+console.log(finalTotal === 0 ? '\nDiff checks passed.' : `\n${finalTotal} FAILED`);
+process.exit(finalTotal === 0 ? 0 : 1);

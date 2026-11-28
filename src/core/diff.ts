@@ -52,12 +52,32 @@ function tokenize(text: string): Token[] {
 export function diffWords(before: string, after: string): Change[] | null {
   if (before === after) return [];
 
-  const a = tokenize(before);
-  const b = tokenize(after);
+  const allA = tokenize(before);
+  const allB = tokenize(after);
+
+  // Trim unchanged leading and trailing tokens before checking MAX_TOKENS or
+  // building the quadratic LCS table: a one-word fix in a 2,000-token field
+  // shrinks to a tiny middle slice instead of falling back to wholesale replace.
+  let prefix = 0;
+  const maxPrefix = Math.min(allA.length, allB.length);
+  while (prefix < maxPrefix && allA[prefix]!.text === allB[prefix]!.text) prefix++;
+
+  let suffix = 0;
+  const maxSuffix = Math.min(allA.length - prefix, allB.length - prefix);
+  while (
+    suffix < maxSuffix &&
+    allA[allA.length - 1 - suffix]!.text === allB[allB.length - 1 - suffix]!.text
+  ) {
+    suffix++;
+  }
+
+  const a = allA.slice(prefix, allA.length - suffix);
+  const b = allB.slice(prefix, allB.length - suffix);
   if (a.length > MAX_TOKENS || b.length > MAX_TOKENS) return null;
 
   const n = a.length;
   const m = b.length;
+  const tailOffset = allA.length - suffix < allA.length ? allA[allA.length - suffix]!.start : before.length;
 
   // Longest common subsequence over suffixes, so the backtrack runs forward
   // and produces changes already in document order.
@@ -77,8 +97,8 @@ export function diffWords(before: string, after: string): Change[] | null {
 
   const beginChange = (index: number): Change => ({
     // An insertion with nothing to delete anchors at the next token's start.
-    start: index < n ? a[index]!.start : before.length,
-    end: index < n ? a[index]!.start : before.length,
+    start: index < n ? a[index]!.start : tailOffset,
+    end: index < n ? a[index]!.start : tailOffset,
     replacement: '',
   });
 
@@ -194,18 +214,29 @@ export function classifyChange(change: Change, before: string): {
   const originalWords = original.trim().split(/\s+/).length;
   const replacementWords = replacement.trim().split(/\s+/).length;
   if (originalWords === 1 && replacementWords === 1) {
+    const aParts = splitOuterPunctuation(original);
+    const bParts = splitOuterPunctuation(replacement);
     const a = original.trim().toLowerCase();
     const b = replacement.trim().toLowerCase();
 
     if (a === b) return { category: 'Capitalisation', severity: 'spelling' };
 
+    const coreA = aParts.core.toLowerCase();
+    const coreB = bParts.core.toLowerCase();
+    const samePunct = aParts.prefix === bParts.prefix && aParts.suffix === bParts.suffix;
+
+    if (coreA && coreA === coreB && !samePunct) {
+      return { category: 'Punctuation', severity: 'grammar' };
+    }
+
     // One word extending the other is an inflection — "show"/"shows",
-    // "walk"/"walked" — which is agreement or tense, not a typo.
-    if (a.startsWith(b) || b.startsWith(a)) {
+    // "walk"/"walked" — which is agreement or tense, not a typo. Checked on the
+    // core word so trailing punctuation ("show."/"shows.") does not mask it.
+    if (coreA && coreB && samePunct && (coreA.startsWith(coreB) || coreB.startsWith(coreA))) {
       return { category: 'Word form', severity: 'grammar' };
     }
 
-    return editDistanceWithin(a, b, 2)
+    return editDistanceWithin(coreA || a, coreB || b, 2)
       ? { category: 'Spelling', severity: 'spelling' }
       : { category: 'Word choice', severity: 'style' };
   }
@@ -240,20 +271,25 @@ export function autoFixable(
   category: string,
   englishVarietyPinned = false,
 ): boolean {
-  if (category === 'Accent' || category === 'Capitalisation') return true;
-  if (category !== 'Spelling') return false;
+  if (category !== 'Accent' && category !== 'Capitalisation' && category !== 'Spelling') return false;
 
-  const a = coreWord(original);
-  const b = coreWord(replacement);
+  const aParts = splitOuterPunctuation(original);
+  const bParts = splitOuterPunctuation(replacement);
+  const a = aParts.core;
+  const b = bParts.core;
   if (!a || !b || /\s/.test(a) || /\s/.test(b)) return false;
   // In a script written without spaces the "word" is the whole run of text,
-  // so the distance bound below would let a clause be rewritten.
+  // and Japanese dakuten/handakuten decompose as Unicode diacritics (turning
+  // one word into another, e.g. かき → かぎ). Check before Accent/Capitalisation.
   if (UNSPACED_SCRIPT.test(a) || UNSPACED_SCRIPT.test(b)) return false;
+  // Only the word may change; punctuation moving across or around it is not a typo.
+  if (aParts.prefix !== bParts.prefix || aParts.suffix !== bParts.suffix) return false;
+
+  if (category === 'Accent' || category === 'Capitalisation') return true;
+
   // Unpinned, the author's spelling system is kept, so a model converting it
   // is not fixing a typo — and writing that unasked rewrites correct text.
   if (!englishVarietyPinned && sameUnderSpellingSystem(a.toLowerCase(), b.toLowerCase())) return false;
-  // Only the word may change; the punctuation around it is not part of a typo.
-  if (original.trim().replace(a, '') !== replacement.trim().replace(b, '')) return false;
 
   const shorter = Math.min(a.length, b.length);
   if (shorter < 3) return false;
@@ -272,7 +308,8 @@ function sameUnderSpellingSystem(a: string, b: string): boolean {
     word
       .replace(/our/g, 'or')
       .replace(/([iy])s(?=(e|ed|es|ing|ation|ations|er|ers)$)/, '$1z')
-      .replace(/tre(s|d)?$/, 'ter$1')
+      .replace(/tred$/, 'tered')
+      .replace(/tre(s)?$/, 'ter$1')
       .replace(/ogue(s)?$/, 'og$1')
       .replace(/ence(s)?$/, 'ense$1')
       .replace(/ll(?=(ed|ing|er|ers)$)/, 'l')
@@ -282,9 +319,12 @@ function sameUnderSpellingSystem(a: string, b: string): boolean {
 
 const UNSPACED_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
 
-/** The word without the punctuation either side of it. */
-function coreWord(text: string): string {
-  return text.trim().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+/** Splits a token into outer punctuation and the core word between them. */
+function splitOuterPunctuation(text: string): { prefix: string; core: string; suffix: string } {
+  const trimmed = text.trim();
+  const match = /^([^\p{L}\p{N}]*)([\s\S]*?)([^\p{L}\p{N}]*)$/u.exec(trimmed);
+  if (!match) return { prefix: '', core: trimmed, suffix: '' };
+  return { prefix: match[1] ?? '', core: match[2] ?? '', suffix: match[3] ?? '' };
 }
 
 /** Edit distance with an adjacent swap counted as one edit (optimal string alignment). */

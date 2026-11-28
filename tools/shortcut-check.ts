@@ -122,6 +122,12 @@ const shouldBeRefused: [Chord, string][] = [
   [chordFromEvent(press('Digit1', { ctrl: true })), 'Ctrl+1 jumps to the first tab'],
   [chordFromEvent(press('KeyI', { alt: true, shift: true })), 'Alt+Shift+I opens feedback'],
   [chordFromEvent(press('F6')), 'F6 moves focus to the toolbar'],
+  // macOS multi-modifier chords Chrome reserves (previously spelled Meta-first, so unreachable).
+  [chordFromEvent(press('KeyI', { alt: true, meta: true })), 'Cmd+Opt+I opens DevTools on macOS'],
+  [chordFromEvent(press('KeyT', { shift: true, meta: true })), 'Cmd+Shift+T reopens tab on macOS'],
+  [chordFromEvent(press('KeyN', { shift: true, meta: true })), 'Cmd+Shift+N opens incognito on macOS'],
+  [chordFromEvent(press('KeyW', { shift: true, meta: true })), 'Cmd+Shift+W closes window on macOS'],
+  [chordFromEvent(press('ArrowLeft', { alt: true, meta: true })), 'Cmd+Opt+Left switches tab on macOS'],
 ];
 
 for (const [chord, why] of shouldBeRefused) {
@@ -151,6 +157,8 @@ console.log('\nWarnings:');
 const ctrlS = chordFromEvent(press('KeyS', { ctrl: true }));
 check('Ctrl+S is allowed', chordProblem(ctrlS) === null);
 check('Ctrl+S warns', chordWarning(ctrlS) !== null, chordWarning(ctrlS) ?? 'said nothing');
+const cmdShiftG = chordFromEvent(press('KeyG', { shift: true, meta: true }));
+check('Cmd+Shift+G warns (canonical Shift+Meta order)', chordWarning(cmdShiftG) !== null, chordWarning(cmdShiftG) ?? 'said nothing');
 
 // The control: a chord Chrome has no claim on must warn about nothing, or the
 // warning means nothing.
@@ -419,7 +427,12 @@ console.log('\nBrowser commands:');
 
 equal('Ctrl+Shift+K', parseCommandShortcut('Ctrl+Shift+K'), 'Ctrl+Shift+KeyK');
 equal('Command+Shift+K', parseCommandShortcut('Command+Shift+K'), 'Shift+Meta+KeyK');
+equal('MacCtrl+Shift+K maps MacCtrl to Ctrl', parseCommandShortcut('MacCtrl+Shift+K'), 'Ctrl+Shift+KeyK');
 equal('macOS glyphs', parseCommandShortcut('⌘⇧K'), 'Shift+Meta+KeyK');
+equal('macOS glyphs with multi-char function key', parseCommandShortcut('⌘⇧F9'), 'Shift+Meta+F9');
+equal('bare multi-char function key', parseCommandShortcut('F9'), 'F9');
+equal('macOS glyphs with named key', parseCommandShortcut('⌘⇧Space'), 'Shift+Meta+Space');
+equal('duplicate key tokens rejected', parseCommandShortcut('Ctrl+A+B'), null);
 equal('Alt+Shift+1', parseCommandShortcut('Alt+Shift+1'), 'Alt+Shift+Digit1');
 equal('an unbound command', parseCommandShortcut(''), null);
 equal('something unparseable', parseCommandShortcut('Ctrl+Shift+SomethingElse'), null);

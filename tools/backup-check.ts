@@ -30,7 +30,7 @@ function connection(id: string, presetId: string, extra: Partial<Connection> = {
     id,
     label: id,
     presetId: presetId as Connection['presetId'],
-    transport: 'openai-chat' as Connection['transport'],
+    transport: 'chat_completions',
     baseUrl: 'https://example.test/v1',
     apiKey: '',
     model: 'm',
@@ -128,6 +128,17 @@ refuse('a connection without an id', JSON.stringify({ ...envelope, settings: { c
 refuse('two connections with one id', JSON.stringify({ ...envelope, settings: { connections: [settings.connections[0], settings.connections[0]] } }));
 refuse('a list where a list of sites belongs', JSON.stringify({ ...envelope, settings: { shortcutOrigins: 'https://a' } }));
 refuse('a wrong type inside live checking', JSON.stringify({ ...envelope, settings: { liveCheck: { enabledOrigins: 5 } } }));
+refuse('formatVersion zero', JSON.stringify({ ...envelope, formatVersion: 0 }));
+refuse('non-integer schemaVersion', JSON.stringify({ ...envelope, settings: { schemaVersion: '1' } }));
+refuse('an unknown transport', JSON.stringify({ ...envelope, settings: { connections: [{ ...settings.connections[0], transport: 'bogus' }] } }));
+refuse('a non-string apiKey', JSON.stringify({ ...envelope, settings: { connections: [{ ...settings.connections[0], apiKey: 123 }] } }));
+refuse('a non-string shortcutOrigin entry', JSON.stringify({ ...envelope, settings: { shortcutOrigins: [42] } }));
+refuse('a bad frameOrigins value', JSON.stringify({ ...envelope, settings: { frameOrigins: { 'https://a.test': 'not-a-list' } } }));
+refuse('a customAction missing systemPrompt', JSON.stringify({ ...envelope, settings: { customActions: [{ id: 'c1', label: 'X', enabled: true }] } }));
+
+const protoPayload = `{"proofkey":"proofkey-settings","formatVersion":1,"settings":{"__proto__":{"polluted":true},"connections":[]}}`;
+const protoParsed = parseBackup(protoPayload, defaults);
+check('ignores __proto__ without polluting prototype', 'settings' in protoParsed && !('polluted' in protoParsed.settings) && !('polluted' in Object.prototype));
 
 const extra = parseBackup(JSON.stringify({ ...envelope, settings: { connections: [], mystery: 1 } }), defaults);
 check('drops fields it does not know', 'settings' in extra && !('mystery' in extra.settings));

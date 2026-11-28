@@ -25,14 +25,6 @@ export function hasScriptingApi(): boolean {
   return typeof g.chrome?.scripting?.executeScript === 'function';
 }
 
-/** True when only the MV2 `tabs.executeScript` API is available. */
-export function hasLegacyExecuteScript(): boolean {
-  return (
-    typeof g.browser?.tabs?.executeScript === 'function' ||
-    typeof g.chrome?.tabs?.executeScript === 'function'
-  );
-}
-
 /** True when content scripts can be registered at runtime (Chrome 96+). */
 export function hasDynamicContentScripts(): boolean {
   return typeof g.chrome?.scripting?.registerContentScripts === 'function';
@@ -80,11 +72,18 @@ export function normalizeOrigin(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
-  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  // Reject non-web schemes like `mailto:a@b.com` or `javascript:...` rather than
+  // prefixing `https://` onto them; allow bare `host:port` (digits after `:`).
+  if (/^[a-z][a-z0-9+.-]*:(?!\d+(?:\/|$))/i.test(trimmed) && !/^https?:\/\//i.test(trimmed)) {
+    return null;
+  }
+
+  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   try {
     const url = new URL(withScheme);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-    if (!url.hostname.includes('.') && url.hostname !== 'localhost') return null;
+    const isIpv6 = url.hostname.startsWith('[') && url.hostname.endsWith(']');
+    if (!url.hostname.includes('.') && url.hostname !== 'localhost' && !isIpv6) return null;
     return url.origin;
   } catch {
     return null;
@@ -106,9 +105,13 @@ export function originMatchPattern(origin: string): string | null {
   }
 }
 
-/** Injectable pages exclude the Web Store and browser-internal schemes. */
+/** Injectable pages exclude extension stores and browser-internal schemes. */
 export function isInjectableUrl(url: string | undefined): boolean {
   if (!url) return false;
   if (!/^https?:/i.test(url) && !/^file:/i.test(url)) return false;
-  return !/^https:\/\/chromewebstore\.google\.com/i.test(url);
+  return (
+    !/^https:\/\/chromewebstore\.google\.com/i.test(url) &&
+    !/^https:\/\/chrome\.google\.com\/webstore/i.test(url) &&
+    !/^https:\/\/microsoftedge\.microsoft\.com\/addons/i.test(url)
+  );
 }

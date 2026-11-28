@@ -72,6 +72,16 @@ console.log('probing:');
 
 {
   const { server, port } = await serve((_req, res) => {
+    res.setHeader('content-type', 'text/html');
+    res.end('<html><body>Vite dev server</body></html>');
+  });
+  const probe = await probeLocalServer(at(port));
+  check('an HTML 200 dev server is not mistaken for a model server', probe.status === 'absent', probe.status);
+  server.close();
+}
+
+{
+  const { server, port } = await serve((_req, res) => {
     res.statusCode = 403;
     res.end();
   });

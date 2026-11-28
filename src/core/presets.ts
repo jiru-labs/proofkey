@@ -361,7 +361,11 @@ export const PRESETS: readonly Preset[] = [
 ];
 
 export function getPreset(id: PresetId): Preset {
-  return PRESETS.find((preset) => preset.id === id) ?? PRESETS[0]!;
+  return (
+    PRESETS.find((preset) => preset.id === id) ??
+    PRESETS.find((preset) => preset.id === 'custom') ??
+    PRESETS[0]!
+  );
 }
 
 /**
@@ -442,14 +446,15 @@ export function replacementModel(connection: Connection, available: readonly str
 
 /**
  * Normalises whatever the user pasted into a base URL we can append paths to:
- * trims trailing slashes and strips a trailing endpoint path, so pasting a full
- * `https://host/v1/chat/completions` URL works.
+ * trims surrounding whitespace and trailing slashes and strips a trailing
+ * endpoint path, so pasting a full `https://host/v1/chat/completions` URL works.
  */
 export function normalizeBaseUrl(raw: string): string {
-  let url = raw.trim().replace(/\s+/g, '');
+  let url = raw.trim();
   if (!url) return '';
   url = url.replace(/\/+$/, '');
   url = url.replace(/\/(chat\/completions|completions|messages|responses)$/i, '');
+  url = url.replace(/\/+$/, '');
   return url;
 }
 
